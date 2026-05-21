@@ -41,6 +41,10 @@ noncomputable def permExp
     (I : MinorIndex m n t) (σ : Equiv.Perm (Fin t)) : (Fin m × Fin n) →₀ ℕ :=
   ∑ k : Fin t, Finsupp.single (I.row k, I.col (σ k)) 1
 
+noncomputable def antidiagExp (I : MinorIndex m n t) :
+    (Fin m × Fin n) →₀ ℕ :=
+  ∑ k : Fin t, Finsupp.single (I.row k, I.col (k.rev)) 1
+
 @[simp] theorem permExp_one (I : MinorIndex m n t) :
     permExp I (1 : Equiv.Perm (Fin t)) = diagExp I := by
   simp [permExp, diagExp]
@@ -48,6 +52,7 @@ noncomputable def permExp
 @[simp] theorem permExp_refl (I : MinorIndex m n t) :
     permExp I (Equiv.refl (Fin t)) = diagExp I := by
   simp [permExp, diagExp]
+
 
 end Exponents
 
@@ -61,9 +66,38 @@ noncomputable def diagMonomial (I : MinorIndex m n t) :
     MvPolynomial (Fin m × Fin n) k :=
   MvPolynomial.monomial (diagExp I) 1
 
+noncomputable def diagTerm (I : MinorIndex m n t) :
+  MvPolynomial (Fin m × Fin n) k :=
+  ∏ i : Fin t, (Matrix.diag (Matrix.submatrix (genericMatrix m n k) I.row I.col)) i
+
 @[simp] theorem diagMonomial_def (I : MinorIndex m n t) :
-    diagMonomial I = MvPolynomial.monomial (diagExp I) 1 :=
+  diagMonomial I = MvPolynomial.monomial (diagExp I) (1 : k) :=
   rfl
+
+@[simp] theorem diagTerm_def (I : MinorIndex m n t) :
+  diagTerm I = ∏ i : Fin t, (Matrix.diag (Matrix.submatrix (genericMatrix m n k) I.row I.col)) i :=
+  rfl
+
+/-- The anti-diagonal monomial attached to a minor. -/
+noncomputable def antidiagMonomial (I : MinorIndex m n t) :
+  MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.monomial (antidiagExp I) 1
+
+@[simp] theorem antidiagMonomial_def (I : MinorIndex m n t) :
+  antidiagMonomial I = MvPolynomial.monomial (antidiagExp I) 1 :=
+  rfl
+
+lemma diagTerm_eq_diagMonomial (I : MinorIndex m n t) :
+  diagTerm (k := k) I = diagMonomial I:=by
+  classical
+  unfold diagTerm diagMonomial
+  change
+      (∏ i : Fin t,
+        MvPolynomial.X (I.row i, I.col i)) =
+      MvPolynomial.monomial (diagExp I) (1 : k)
+  rw [diagExp]
+  exact
+    Eq.symm (MvPolynomial.monomial_sum_one Finset.univ fun i ↦ Finsupp.single (I.row i, I.col i) 1)
 
 end MonomialTerms
 

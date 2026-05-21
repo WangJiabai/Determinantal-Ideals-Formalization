@@ -7,3 +7,5 @@ import MyProject.Determinantalideals.MinorTerms
 import MyProject.Determinantalideals.DiagonalOrder
 import MyProject.Determinantalideals.BaseChange
 import MyProject.Determinantalideals.ConcreteMatrix
+import MyProject.Determinantalideals.Sturmfels_lemma
+import MyProject.Determinantalideals.Sturmfels

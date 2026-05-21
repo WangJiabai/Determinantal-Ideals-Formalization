@@ -1,1 +1,21 @@
 /.lake
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Lean/Mathlib build artifacts
+*.olean
+.elan
+lake-gen/
+lake-packages/
+build/
+bin/
+
+# Misc
+*.log
+.env
