@@ -1,3 +1,13 @@
+## Status
+
+This is an ongoing formalization project. The foundational API for generic
+minors and determinantal ideals has been developed, while the final Gröbner
+basis theorem is still under construction.
+
+Current directions:
+- Algebraic route via S-polynomials and Laplace expansions;
+- Combinatorial route via KRS correspondence and straightening theory.
+
 # Determinantal Ideals in Lean 4
 
 This repository contains a Lean 4 / Mathlib formalization project on generic minors and determinantal ideals.

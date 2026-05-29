@@ -7833,7 +7833,47 @@ theorem krs_shape_numBoxes {m n : ℕ} (W : Biword m n) :
 theorem schensted_lds_eq_firstColumnHeight {m n : ℕ} (W : Biword m n) :
     generalizedPermutation.width W.1 =
       firstColumnHeight (krsTableauPair W).shape := by
-  sorry
+  have hrun :
+      KRSForwardRun W.1
+        (krsForwardStateOfList (m := m) (n := n) W.1 W.2) := by
+    exact krsForwardStateOfList_run
+      (m := m) (n := n) W.1 W.2
+  /-
+  Every strictly decreasing subsequence of the processed lower word
+  is controlled by the rows created in the insertion tableau.
+  -/
+  have hwidth_le_height :
+      ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
+        KRSForwardRun w S →
+          generalizedPermutation.width w ≤ firstColumnHeight S.shape := by
+    intro w S hrun
+    induction hrun with
+    | nil =>
+        sorry
+    | @snoc w S z hrun hsorted hrec hsame_next ih =>
+        sorry
+  /-
+  The first column of the insertion tableau witnesses a strictly decreasing
+  subsequence of the processed lower word of the same length.
+  -/
+  have hheight_le_width :
+      ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
+        KRSForwardRun w S →
+          firstColumnHeight S.shape ≤ generalizedPermutation.width w := by
+    intro w S hrun
+    induction hrun with
+    | nil =>
+        sorry
+    | @snoc w S z hrun hsorted hrec hsame_next ih =>
+        sorry
+  have hEq :
+      generalizedPermutation.width W.1 =
+        firstColumnHeight
+          (krsForwardStateOfList (m := m) (n := n) W.1 W.2).shape := by
+    exact le_antisymm
+      (hwidth_le_height hrun)
+      (hheight_le_width hrun)
+  simpa [krsTableauPair, KRSForwardState.toTableauPair] using hEq
 
 /-- The top row length is zero only for the empty diagram, so the first column is empty too. -/
 private lemma colLen_zero_eq_zero_of_rowLen_zero {μ : YoungDiagram}
@@ -8777,7 +8817,7 @@ theorem natCard_standardBitableau_lengthLE_degree_eq_monomial_widthLE
   rcases exists_krsEquiv_of_degree_widthLE m n r d with ⟨κ, _⟩
   exact (Nat.card_congr κ).symm
 
-
+/-
 /--
 Proposition 3: straightening law for Young bitableaux.
 
@@ -11079,6 +11119,6 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
   have hstrict_self : Nat.card CountedMonomials < Nat.card CountedMonomials := by
     simp [CountedMonomials] at hstrict_hilbert
   exact (lt_irrefl _ hstrict_self)
-
+-/
 
 end Determinantal
