@@ -962,6 +962,26 @@ theorem bumped_gt {N : ℕ} {μ : YoungDiagram}
   rw [← B.bumped_eq]
   exact B.entry_gt
 
+theorem col_le_of_entry_gt {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (B : RowBumpStepResult T row x) {j : ℕ}
+    (hcell : (row, j) ∈ μ) (hgt : x.val < T.T row j) :
+    B.col ≤ j := by
+  by_contra hnot
+  have hjlt : j < B.col := Nat.lt_of_not_ge hnot
+  exact not_lt_of_ge (B.left_le hjlt hcell) hgt
+
+theorem bumped_le_entry_of_entry_gt {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (B : RowBumpStepResult T row x) {j : ℕ}
+    (hcell : (row, j) ∈ μ) (hgt : x.val < T.T row j) :
+    B.bumped.val ≤ T.T row j := by
+  have hcol : B.col ≤ j := B.col_le_of_entry_gt hcell hgt
+  rcases lt_or_eq_of_le hcol with hlt | heq
+  · rw [← B.bumped_eq]
+    exact T.T.row_weak hlt hcell
+  · simpa [heq] using B.bumped_eq.symm.le
+
 theorem unchanged_of_row_ne {N : ℕ} {μ : YoungDiagram}
     {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
     (B : RowBumpStepResult T row x) {i j : ℕ} (hi : i ≠ row) :
@@ -1303,6 +1323,19 @@ theorem result_newCell_col {N : ℕ} {μ : YoungDiagram}
     A.result.newCell.2 = μ.rowLen row := by
   rw [A.newCell_eq]
 
+theorem unchanged_of_row_ne {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (A : RowAppendStepResult T row x) {i j : ℕ} (hi : i ≠ row) :
+    A.result.tableau.T i j = T.T i j := by
+  by_cases hμ : (i, j) ∈ μ
+  · exact A.unchanged_on_old_shape hμ
+  · have hresult : (i, j) ∉ A.result.shape := by
+      intro hcell
+      rcases (A.result.shape_mem_iff (i, j)).1 hcell with hold | hnew
+      · exact hμ hold
+      · exact hi (by simpa [A.newCell_eq] using congrArg Prod.fst hnew)
+    rw [A.result.tableau.T.zeros hresult, T.T.zeros hμ]
+
 theorem result_card_eq {N : ℕ} {μ : YoungDiagram}
     {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
     (A : RowAppendStepResult T row x) :
@@ -1416,6 +1449,131 @@ def result {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
   | done A => A.result
   | bump _ tail => result tail
 
+/-- Source labels transported in parallel with row insertion.  Labels are intentionally
+independent of the tableau alphabet: Schensted arguments use insertion times as labels. -/
+abbrev OriginLabels := ℕ → ℕ → Option ℕ
+
+def OriginLabels.replace (labels : OriginLabels) (row col tag : ℕ) : OriginLabels :=
+  fun i j => if (i, j) = (row, col) then some tag else labels i j
+
+def OriginLabels.Valid (labels : OriginLabels) (μ : YoungDiagram) : Prop :=
+  ∀ {i j : ℕ}, (i, j) ∈ μ → ∃ source, labels i j = some source
+
+@[simp]
+theorem OriginLabels.replace_same (labels : OriginLabels) (row col tag : ℕ) :
+    labels.replace row col tag row col = some tag := by
+  simp [OriginLabels.replace]
+
+theorem OriginLabels.replace_ne (labels : OriginLabels) (row col tag : ℕ)
+    {i j : ℕ} (h : (i, j) ≠ (row, col)) :
+    labels.replace row col tag i j = labels i j := by
+  simp [OriginLabels.replace, h]
+
+/-- A row-insertion trace carrying source labels.  At a bump, the incoming source label
+stays in the replaced cell and the old cell label follows the bumped value downward. -/
+inductive TaggedRowInsertionTrace (N : ℕ) {μ : YoungDiagram} :
+    {T : BoundedSSYT μ N} →
+      (labels : OriginLabels) → (row : ℕ) → (x : Fin N) → (tag : ℕ) →
+        RowInsertionTrace N T row x → Type
+  | done {T : BoundedSSYT μ N} {labels : OriginLabels} {row : ℕ}
+      {x : Fin N} {tag : ℕ} (A : RowAppendStepResult T row x) :
+      TaggedRowInsertionTrace N labels row x tag (.done A)
+  | bump {T : BoundedSSYT μ N} {labels : OriginLabels} {row : ℕ}
+      {x : Fin N} {tag : ℕ} (B : RowBumpStepResult T row x)
+      (tail : RowInsertionTrace N B.tableau (row + 1) B.bumped)
+      (bumpedTag : ℕ)
+      (hbumpedTag : labels row B.col = some bumpedTag)
+      (taggedTail :
+        TaggedRowInsertionTrace N (labels.replace row B.col tag) (row + 1)
+          B.bumped bumpedTag tail) :
+      TaggedRowInsertionTrace N labels row x tag (.bump B tail)
+
+namespace TaggedRowInsertionTrace
+
+/-- Final source labels obtained by following a tagged insertion trace. -/
+def resultLabels {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
+    {labels : OriginLabels} {row : ℕ} {x : Fin N} {tag : ℕ}
+    {tr : RowInsertionTrace N T row x} :
+    TaggedRowInsertionTrace N labels row x tag tr → OriginLabels
+  | .done A => labels.replace A.result.newCell.1 A.result.newCell.2 tag
+  | .bump _ _ _ _ taggedTail => taggedTail.resultLabels
+
+/-- Every ordinary insertion trace admits the canonical parallel source-label trace. -/
+noncomputable def ofTrace {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
+    (labels : OriginLabels) {row : ℕ} {x : Fin N} (tag : ℕ)
+    (tr : RowInsertionTrace N T row x)
+    (hlabels : labels.Valid μ) :
+    TaggedRowInsertionTrace N labels row x tag tr :=
+  match tr with
+  | .done A => .done A
+  | .bump B tail =>
+      let bumpedTag := (hlabels B.cell_mem).choose
+      .bump B tail bumpedTag (hlabels B.cell_mem).choose_spec
+        (ofTrace (labels.replace row B.col tag) bumpedTag tail (by
+          intro i j hcell
+          by_cases h : (i, j) = (row, B.col)
+          · exact ⟨tag, by simp [OriginLabels.replace, h]⟩
+          · rcases hlabels hcell with ⟨source, hsource⟩
+            exact ⟨source, by simpa [OriginLabels.replace_ne labels row B.col tag h]⟩))
+
+theorem valid_resultLabels {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
+    {labels : OriginLabels} {row : ℕ} {x : Fin N} {tag : ℕ}
+    {tr : RowInsertionTrace N T row x}
+    (tagged : TaggedRowInsertionTrace N labels row x tag tr)
+    (hvalid : labels.Valid μ) :
+    tagged.resultLabels.Valid tr.result.shape := by
+  induction tagged with
+  | done A =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      intro i j hcell
+      rcases (A.result.shape_mem_iff (i, j)).1 hcell with hold | hnew
+      · rcases hvalid hold with ⟨source, hsource⟩
+        refine ⟨source, ?_⟩
+        change OriginLabels.replace labels₀ A.result.newCell.1 A.result.newCell.2 tag₀ i j =
+          some source
+        rw [OriginLabels.replace_ne]
+        · exact hsource
+        · intro heq
+          exact A.result.newCell_not_mem_old (by simpa [heq] using hold)
+      · refine ⟨tag₀, ?_⟩
+        change OriginLabels.replace labels₀ A.result.newCell.1 A.result.newCell.2 tag₀ i j =
+          some tag₀
+        simp [OriginLabels.replace, hnew]
+  | bump B tail bumpedTag hbumpedTag taggedTail ih =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      apply ih
+      intro i j hcell
+      by_cases h : (i, j) = (row₀, B.col)
+      · exact ⟨tag₀, by simp [OriginLabels.replace, h]⟩
+      · rcases hvalid hcell with ⟨source, hsource⟩
+        exact ⟨source, by simpa [OriginLabels.replace_ne labels₀ row₀ B.col tag₀ h]⟩
+
+theorem resultLabels_eq_of_row_lt {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
+    {labels : OriginLabels} {row : ℕ} {x : Fin N} {tag : ℕ}
+    {tr : RowInsertionTrace N T row x}
+    (tagged : TaggedRowInsertionTrace N labels row x tag tr)
+    {i j : ℕ} (hi : i < row) :
+    tagged.resultLabels i j = labels i j := by
+  induction tagged with
+  | done A =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      rw [resultLabels, OriginLabels.replace_ne]
+      intro h
+      have hrow : i = row₀ := by
+        calc
+          i = A.result.newCell.1 := congrArg Prod.fst h
+          _ = row₀ := A.result_newCell_row
+      omega
+  | bump B tail bumpedTag hbumpedTag taggedTail ih =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      change taggedTail.resultLabels i j = labels₀ i j
+      rw [ih (by omega)]
+      exact OriginLabels.replace_ne _ _ _ _ (by
+        intro h
+        exact hi.ne (congrArg Prod.fst h))
+
+end TaggedRowInsertionTrace
+
 theorem exists_cast_of_heq {N : ℕ} {μ ν : YoungDiagram}
     {T : BoundedSSYT μ N} {S : BoundedSSYT ν N} {row : ℕ} {x : Fin N}
     (hμ : μ = ν) (hT : HEq T S)
@@ -1511,6 +1669,81 @@ theorem result_tableau_eq_of_row_lt {N : ℕ} {μ : YoungDiagram}
           result_tableau_eq_of_row_lt tail (by omega) hcell
         _ = T.T i j := RowBumpStepResult.unchanged_of_row_ne B (Nat.ne_of_lt hi)
 termination_by sizeOf tr
+
+namespace TaggedRowInsertionTrace
+
+/-- The source tag entering a trace remains attached to an entry carrying the inserted
+value.  Later bumps may move older tags downward, but they never erase this source. -/
+theorem exists_resultLabels_eq_tag_and_entry_eq {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {labels : OriginLabels} {row : ℕ} {x : Fin N} {tag : ℕ}
+    {tr : RowInsertionTrace N T row x}
+    (tagged : TaggedRowInsertionTrace N labels row x tag tr) :
+    ∃ c ∈ tr.result.shape,
+      tagged.resultLabels c.1 c.2 = some tag ∧ tr.result.tableau.T c.1 c.2 = x.val := by
+  cases tagged with
+  | done A =>
+      refine ⟨A.result.newCell, A.result.newCell_mem, ?_, ?_⟩
+      · simp [resultLabels, OriginLabels.replace]
+      · simpa [A.newCell_eq] using A.inserted_entry
+  | bump B tail bumpedTag hbumpedTag taggedTail =>
+      refine ⟨(row, B.col), tail.result.old_subset (row, B.col) B.cell_mem, ?_, ?_⟩
+      · calc
+          taggedTail.resultLabels row B.col =
+              (labels.replace row B.col tag) row B.col :=
+            taggedTail.resultLabels_eq_of_row_lt (by omega)
+          _ = some tag := OriginLabels.replace_same labels row B.col tag
+      · calc
+          tail.result.tableau.T row B.col = B.tableau.T row B.col :=
+            tail.result_tableau_eq_of_row_lt (by omega) B.cell_mem
+          _ = x.val := B.replaced_entry
+
+theorem exists_resultLabels_eq_of_old_entry {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {labels : OriginLabels} {row : ℕ} {x : Fin N} {tag : ℕ}
+    {tr : RowInsertionTrace N T row x}
+    (tagged : TaggedRowInsertionTrace N labels row x tag tr)
+    {c : ℕ × ℕ} (hcell : c ∈ μ) {source value : ℕ}
+    (hsource : labels c.1 c.2 = some source)
+    (hvalue : T.T c.1 c.2 = value) :
+    ∃ d ∈ tr.result.shape,
+      tagged.resultLabels d.1 d.2 = some source ∧ tr.result.tableau.T d.1 d.2 = value := by
+  induction tagged with
+  | done A =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      refine ⟨c, A.result.old_subset c hcell, ?_, ?_⟩
+      · change labels₀.replace A.result.newCell.1 A.result.newCell.2 tag₀ c.1 c.2 =
+          some source
+        exact (OriginLabels.replace_ne labels₀ A.result.newCell.1
+          A.result.newCell.2 tag₀ (by
+            intro heq
+            apply A.result.newCell_not_mem_old
+            have hc_eq : c = A.result.newCell := by
+              simpa using heq
+            simpa [← hc_eq] using hcell)).trans hsource
+      · exact (A.unchanged_on_old_shape hcell).trans hvalue
+  | bump B tail bumpedTag hbumpedTag taggedTail ih =>
+      rename_i T₀ labels₀ row₀ x₀ tag₀
+      by_cases hc : c = (row₀, B.col)
+      · have hsource_eq : source = bumpedTag := by
+          apply Option.some.inj
+          calc
+            some source = labels₀ c.1 c.2 := hsource.symm
+            _ = labels₀ row₀ B.col := by rw [hc]
+            _ = some bumpedTag := hbumpedTag
+        subst source
+        have hbumped_value : B.bumped.val = value := by
+          calc
+            B.bumped.val = T₀.T row₀ B.col := B.bumped_eq.symm
+            _ = T₀.T c.1 c.2 := by rw [hc]
+            _ = value := hvalue
+        simpa [hbumped_value] using
+          taggedTail.exists_resultLabels_eq_tag_and_entry_eq
+      · apply ih
+        · rw [OriginLabels.replace_ne]
+          · exact hsource
+          · simpa using hc
+        · exact (B.unchanged_of_ne (by simpa using hc)).trans hvalue
+
+end TaggedRowInsertionTrace
 
 theorem result_rowLen_eq_of_row_lt {N : ℕ} {μ : YoungDiagram}
     {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
@@ -1764,6 +1997,38 @@ theorem trace_newCell_col_le_cap {N : ℕ} {μ : YoungDiagram}
       exact le_trans (ih hinv') hcol_le
 
 end RowInsertionPathInvariant
+
+theorem RowBumpStepResult.pathInvariant_after_step {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (B : RowBumpStepResult T row x) :
+    RowInsertionPathInvariant B.tableau (row + 1) B.col B.bumped := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro i j hi hj hcell
+    have hi_cases : i < row ∨ i = row := by omega
+    rcases hi_cases with hi_old | rfl
+    · rw [RowBumpStepResult.unchanged_of_row_ne B (by omega)]
+      have hrow_cell : (row, j) ∈ μ :=
+        μ.up_left_mem le_rfl hj B.cell_mem
+      have hcol_lt : T.T i j < T.T row j :=
+        T.T.col_strict hi_old hrow_cell
+      have hrow_le : T.T row j ≤ T.T row B.col := by
+        rcases lt_or_eq_of_le hj with hjlt | rfl
+        · exact T.T.row_weak hjlt B.cell_mem
+        · exact le_rfl
+      rw [B.bumped_eq] at hrow_le
+      exact lt_of_lt_of_le hcol_lt hrow_le
+    · by_cases hjcol : j = B.col
+      · subst j
+        rw [B.replaced_entry]
+        exact B.bumped_gt
+      · have hjlt : j < B.col := lt_of_le_of_ne hj hjcol
+        rw [RowBumpStepResult.unchanged_of_col_ne B hjcol]
+        exact lt_of_le_of_lt (B.left_le hjlt hcell) B.bumped_gt
+  · intro j hj hcell
+    subst j
+    rw [RowBumpStepResult.unchanged_of_row_ne B (by omega), ← B.bumped_eq]
+    exact T.T.col_strict (by omega) hcell
+  · exact Or.inr (by simpa using B.cell_mem)
 
 /-- A right-hand lower-bound invariant for a row-insertion path.
 
@@ -5507,6 +5772,625 @@ theorem rowBumping_newBox_right_of_le {N : ℕ} {μ : YoungDiagram}
       (rowInsert (rowInsert T x).tableau y).newCell.2 := by
   exact rowInsertionTrace_newCell_right_of_le T hxy
 
+/-- Strict successive-insertion comparison with an explicit second starting tableau.
+If the later inserted letter is strictly smaller, its new cell is weakly to the left. -/
+theorem rowInsertionTrace_newCell_col_le_after_gt_aux {N : ℕ} {μ : YoungDiagram} :
+    ∀ {T : BoundedSSYT μ N} {row : ℕ} {x y : Fin N}
+      (trx : RowInsertionTrace N T row x)
+      {S : BoundedSSYT trx.result.shape N}
+      (_hS : ∀ {i j : ℕ}, row ≤ i → S.T i j = trx.result.tableau.T i j)
+      (trY : RowInsertionTrace N S row y),
+      y < x → trY.result.newCell.2 ≤ trx.result.newCell.2 := by
+  intro T row x y trx
+  induction trx generalizing y with
+  | done A =>
+      rename_i T₀ row₀ x₀
+      intro S hS trY hyx
+      cases trY with
+      | done AY =>
+          have hentry :
+              S.T row₀ A.result.newCell.2 = x₀.val := by
+            calc
+              S.T row₀ A.result.newCell.2 =
+                  A.result.tableau.T row₀ A.result.newCell.2 := hS le_rfl
+              _ = x₀.val := by simpa [A.newCell_eq] using A.inserted_entry
+          have hlt : y.val < S.T row₀ A.result.newCell.2 := by
+            simpa [hentry] using hyx
+          have hcell : (row₀, A.result.newCell.2) ∈ A.result.shape := by
+            simpa only [← A.result_newCell_row] using A.result.newCell_mem
+          have hcol_lt : A.result.newCell.2 < A.result.shape.rowLen row₀ := by
+            rwa [YoungDiagram.mem_iff_lt_rowLen] at hcell
+          have hle : S.T row₀ A.result.newCell.2 ≤ y.val :=
+            AY.location.row_entries_le hcol_lt
+          exact False.elim (not_lt_of_ge hle hlt)
+      | bump BY tailY =>
+          have hentry :
+              S.T row₀ A.result.newCell.2 = x₀.val := by
+            calc
+              S.T row₀ A.result.newCell.2 =
+                  A.result.tableau.T row₀ A.result.newCell.2 := hS le_rfl
+              _ = x₀.val := by simpa [A.newCell_eq] using A.inserted_entry
+          have hcell : (row₀, A.result.newCell.2) ∈ A.result.shape := by
+            simpa only [← A.result_newCell_row] using A.result.newCell_mem
+          have hBY_le : BY.col ≤ A.result.newCell.2 :=
+            BY.col_le_of_entry_gt hcell (by simpa [hentry] using hyx)
+          exact le_trans
+            (RowInsertionPathInvariant.trace_newCell_col_le_cap
+              BY.pathInvariant_after_step tailY)
+            hBY_le
+  | bump B tail ih =>
+      rename_i T₀ row₀ x₀
+      intro S hS trY hyx
+      cases trY with
+      | done AY =>
+          have hentry :
+              S.T row₀ B.col = x₀.val := by
+            calc
+              S.T row₀ B.col = tail.result.tableau.T row₀ B.col := hS le_rfl
+              _ = B.tableau.T row₀ B.col :=
+                tail.result_tableau_eq_of_row_lt (by omega) B.cell_mem
+              _ = x₀.val := B.replaced_entry
+          have hcol_lt : B.col < tail.result.shape.rowLen row₀ := by
+            have hcellS : (row₀, B.col) ∈ tail.result.shape :=
+              tail.result.old_subset (row₀, B.col) B.cell_mem
+            rwa [YoungDiagram.mem_iff_lt_rowLen] at hcellS
+          have hle : S.T row₀ B.col ≤ y.val :=
+            AY.location.row_entries_le hcol_lt
+          omega
+      | bump BY tailY =>
+          have hcellS : (row₀, B.col) ∈ tail.result.shape :=
+            tail.result.old_subset (row₀, B.col) B.cell_mem
+          have hentry :
+              S.T row₀ B.col = x₀.val := by
+            calc
+              S.T row₀ B.col = tail.result.tableau.T row₀ B.col := hS le_rfl
+              _ = B.tableau.T row₀ B.col :=
+                tail.result_tableau_eq_of_row_lt (by omega) B.cell_mem
+              _ = x₀.val := B.replaced_entry
+          have hBY_le : BY.col ≤ B.col :=
+            BY.col_le_of_entry_gt hcellS (by simpa [hentry] using hyx)
+          have hBY_bumped_lt : BY.bumped < B.bumped := by
+            change BY.bumped.val < B.bumped.val
+            have hle : BY.bumped.val ≤ S.T row₀ B.col :=
+              BY.bumped_le_entry_of_entry_gt hcellS (by simpa [hentry] using hyx)
+            exact lt_of_le_of_lt (by simpa [hentry] using hle) B.bumped_gt
+          have hS' :
+              ∀ {i j : ℕ}, row₀ + 1 ≤ i →
+                BY.tableau.T i j = tail.result.tableau.T i j := by
+            intro i j hi
+            calc
+              BY.tableau.T i j = S.T i j :=
+                RowBumpStepResult.unchanged_of_row_ne BY (by omega)
+              _ = tail.result.tableau.T i j := hS (by omega)
+          exact ih hS' tailY hBY_bumped_lt
+/-- Strict successive-insertion comparison: inserting a smaller letter next creates a
+new cell weakly to the left of the preceding new cell. -/
+theorem rowInsertionTrace_newCell_col_le_after_gt {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) {x y : Fin N} (hyx : y < x) :
+    (rowInsertionTrace (rowInsertionTrace T x).result.tableau y).result.newCell.2 ≤
+      (rowInsertionTrace T x).result.newCell.2 := by
+  exact rowInsertionTrace_newCell_col_le_after_gt_aux
+    (rowInsertionTrace T x) (fun {_ _} _ => rfl)
+    (rowInsertionTrace (rowInsertionTrace T x).result.tableau y) hyx
+
+/-- Strict successive-insertion row comparison: inserting a smaller letter next creates
+a new cell in a strictly lower row. -/
+theorem rowBumping_newBox_row_lt_after_gt {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) {x y : Fin N} (hyx : y < x) :
+    (rowInsert T x).newCell.1 <
+      (rowInsert (rowInsert T x).tableau y).newCell.1 := by
+  let R₁ := rowInsert T x
+  let R₂ := rowInsert R₁.tableau y
+  have hcol : R₂.newCell.2 ≤ R₁.newCell.2 := by
+    exact rowInsertionTrace_newCell_col_le_after_gt T hyx
+  have hmem : R₁.newCell ∈ R₂.shape :=
+    R₂.old_subset R₁.newCell R₁.newCell_mem
+  by_contra hnot
+  have hrow : R₂.newCell.1 ≤ R₁.newCell.1 := Nat.le_of_not_gt hnot
+  have heq : R₁.newCell = R₂.newCell :=
+    R₂.newCell_removable.ge_eq hmem ⟨hrow, hcol⟩
+  exact R₂.newCell_not_mem_old (by simpa [heq] using R₁.newCell_mem)
+
+/-- Direct trace comparison for two weakly increasing letters inserted into tableaux that
+agree from the current row downward.  This is the same-row version of the row-bumping
+comparison: the later/larger insertion cannot finish strictly to the left. -/
+theorem rowInsertionTrace_newCell_col_le_of_le_aux {N : ℕ} {μ : YoungDiagram}
+    {T S : BoundedSSYT μ N} {row cap : ℕ} {x y : Fin N}
+    (hinv : RowInsertionPathInvariant T row cap x)
+    (trx : RowInsertionTrace N T row x)
+    (hxy : x ≤ y)
+    (hS : ∀ {i j : ℕ}, row ≤ i → S.T i j = T.T i j)
+    (trY : RowInsertionTrace N S row y) :
+    trx.result.newCell.2 ≤ trY.result.newCell.2 := by
+  cases trx with
+  | done A =>
+      cases trY with
+      | done Ay =>
+          change A.result.newCell.2 ≤ Ay.result.newCell.2
+          rw [A.result_newCell_col, Ay.result_newCell_col]
+      | bump By _ =>
+          let Ly : RowBumpLocation T row y :=
+            { col := By.col
+              cell_mem := By.cell_mem
+              entry_gt := by
+                have hSeq : S.T row By.col = T.T row By.col := hS le_rfl
+                simpa [hSeq] using By.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hSeq : S.T row j = T.T row j := hS le_rfl
+                calc
+                  T.T row j = S.T row j := hSeq.symm
+                  _ ≤ y.val := By.left_le hj hcell }
+          exact False.elim (not_rowBumpLocation_of_append_of_le hxy A.location ⟨Ly⟩)
+  | bump B tail =>
+      have hinv' : RowInsertionPathInvariant B.tableau (row + 1) B.col B.bumped :=
+        RowInsertionPathInvariant.next_after_bump_step hinv B
+      cases trY with
+      | done Ay =>
+          let AyB : RowAppendLocation B.tableau row y :=
+            { col := Ay.location.col
+              col_eq_rowLen := Ay.location.col_eq_rowLen
+              row_entries_le := by
+                intro j hj
+                by_cases hjcol : j = B.col
+                · subst hjcol
+                  rw [B.replaced_entry]
+                  exact hxy
+                · have hSeq : S.T row j = T.T row j := hS le_rfl
+                  calc
+                    B.tableau.T row j = T.T row j := by
+                      rw [RowBumpStepResult.unchanged_of_col_ne B hjcol]
+                    _ = S.T row j := hSeq.symm
+                    _ ≤ y.val := Ay.location.row_entries_le hj }
+          have htail_le : tail.result.newCell.2 ≤ B.col :=
+            RowInsertionPathInvariant.trace_newCell_col_le_cap hinv' tail
+          have hBlt : B.col < AyB.col :=
+            rowBumpStep_col_lt_next_append B AyB
+          change tail.result.newCell.2 ≤ Ay.result.newCell.2
+          have hAy : Ay.result.newCell.2 = Ay.location.col := by
+            rw [Ay.result_newCell_col, Ay.location.col_eq_rowLen]
+          rw [hAy]
+          exact le_trans htail_le (le_of_lt hBlt)
+      | bump By tailY =>
+          let LyT : RowBumpLocation T row y :=
+            { col := By.col
+              cell_mem := By.cell_mem
+              entry_gt := by
+                have hSeq : S.T row By.col = T.T row By.col := hS le_rfl
+                simpa [hSeq] using By.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hSeq : S.T row j = T.T row j := hS le_rfl
+                calc
+                  T.T row j = S.T row j := hSeq.symm
+                  _ ≤ y.val := By.left_le hj hcell }
+          have hB_le_By : B.col ≤ By.col :=
+            rowBumpLocation_col_le_of_le hxy B.location LyT
+          have hbumped_le : B.bumped ≤ By.bumped := by
+            change B.bumped.val ≤ By.bumped.val
+            rcases lt_or_eq_of_le hB_le_By with hlt | heq
+            · calc
+                B.bumped.val = T.T row B.col := B.bumped_eq.symm
+                _ ≤ T.T row By.col := T.T.row_weak hlt By.cell_mem
+                _ = S.T row By.col := (hS le_rfl).symm
+                _ = By.bumped.val := By.bumped_eq
+            · exact le_of_eq (by
+                calc
+                  B.bumped.val = T.T row B.col := B.bumped_eq.symm
+                  _ = T.T row By.col := by rw [heq]
+                  _ = S.T row By.col := (hS le_rfl).symm
+                  _ = By.bumped.val := By.bumped_eq)
+          have hS' :
+              ∀ {i j : ℕ}, row + 1 ≤ i →
+                By.tableau.T i j = B.tableau.T i j := by
+            intro i j hi
+            calc
+              By.tableau.T i j = S.T i j :=
+                RowBumpStepResult.unchanged_of_row_ne By (by omega)
+              _ = T.T i j := hS (by omega)
+              _ = B.tableau.T i j :=
+                (RowBumpStepResult.unchanged_of_row_ne B (by omega)).symm
+          exact rowInsertionTrace_newCell_col_le_of_le_aux hinv' tail hbumped_le hS' tailY
+termination_by sizeOf trx
+
+/-- Direct row-bumping comparison for weakly increasing inserted letters. -/
+theorem rowInsertionTrace_newCell_col_le_of_le {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) {x y : Fin N} (hxy : x ≤ y) :
+    (rowInsertionTrace T x).result.newCell.2 ≤
+      (rowInsertionTrace T y).result.newCell.2 := by
+  exact rowInsertionTrace_newCell_col_le_of_le_aux
+    (RowInsertionPathInvariant.initial T x)
+    (rowInsertionTrace T x)
+    hxy
+    (fun {_ _} _ => rfl)
+    (rowInsertionTrace T y)
+
+/-- Direct row-bumping comparison for the packaged row insertion result. -/
+theorem rowBumping_newBox_col_le_of_le {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) {x y : Fin N} (hxy : x ≤ y) :
+    (rowInsert T x).newCell.2 ≤ (rowInsert T y).newCell.2 := by
+  exact rowInsertionTrace_newCell_col_le_of_le T hxy
+
+/-- Row insertion from `row` only depends on the part of the tableau at or below `row`.
+This transport form permits the ambient shapes to differ above `row`. -/
+theorem RowInsertionTrace.result_newCell_eq_of_rows_equiv {N : ℕ} :
+    ∀ {μ ν : YoungDiagram} {T : BoundedSSYT μ N} {S : BoundedSSYT ν N}
+      {row : ℕ} {x : Fin N}
+      (trT : RowInsertionTrace N T row x) (trS : RowInsertionTrace N S row x),
+      (∀ {i j : ℕ}, row ≤ i → ((i, j) ∈ μ ↔ (i, j) ∈ ν)) →
+      (∀ {i j : ℕ}, row ≤ i → T.T i j = S.T i j) →
+      trT.result.newCell = trS.result.newCell := by
+  intro μ ν T S row x trT trS hshape hentry
+  cases trT with
+  | done A =>
+      cases trS with
+      | done AS =>
+          have hrowLen : μ.rowLen row = ν.rowLen row := by
+            apply eq_of_forall_lt_iff
+            intro j
+            rw [← YoungDiagram.mem_iff_lt_rowLen, ← YoungDiagram.mem_iff_lt_rowLen]
+            exact hshape le_rfl
+          change A.result.newCell = AS.result.newCell
+          rw [A.newCell_eq, AS.newCell_eq, hrowLen]
+      | bump BS _ =>
+          have hcellT : (row, BS.col) ∈ μ := (hshape le_rfl).2 BS.cell_mem
+          have hle : T.T row BS.col ≤ x.val :=
+            A.location.row_entries_le (by
+              rwa [YoungDiagram.mem_iff_lt_rowLen] at hcellT)
+          have heq : T.T row BS.col = S.T row BS.col := hentry le_rfl
+          exact False.elim (not_lt_of_ge (by simpa [← heq] using hle) BS.entry_gt)
+  | bump B tail =>
+      cases trS with
+      | done AS =>
+          have hcellS : (row, B.col) ∈ ν := (hshape le_rfl).1 B.cell_mem
+          have hle : S.T row B.col ≤ x.val :=
+            AS.location.row_entries_le (by
+              rwa [YoungDiagram.mem_iff_lt_rowLen] at hcellS)
+          have heq : T.T row B.col = S.T row B.col := hentry le_rfl
+          exact False.elim (not_lt_of_ge (by simpa [← heq] using hle) B.entry_gt)
+      | bump BS tailS =>
+          let BST : RowBumpLocation T row x :=
+            { col := BS.col
+              cell_mem := (hshape le_rfl).2 BS.cell_mem
+              entry_gt := by
+                simpa [hentry le_rfl] using BS.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hcellS : (row, j) ∈ ν := (hshape le_rfl).1 hcell
+                simpa [hentry le_rfl] using BS.left_le hj hcellS }
+          let BTS : RowBumpLocation S row x :=
+            { col := B.col
+              cell_mem := (hshape le_rfl).1 B.cell_mem
+              entry_gt := by
+                simpa [← hentry le_rfl] using B.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hcellT : (row, j) ∈ μ := (hshape le_rfl).2 hcell
+                simpa [← hentry le_rfl] using B.left_le hj hcellT }
+          have hcol : B.col = BS.col := by
+            exact le_antisymm
+              (rowBumpLocation_col_le_of_le le_rfl B.location BST)
+              (rowBumpLocation_col_le_of_le le_rfl BS.location BTS)
+          have hbumped : B.bumped = BS.bumped := by
+            apply Fin.ext
+            calc
+              B.bumped.val = T.T row B.col := B.bumped_eq.symm
+              _ = S.T row B.col := hentry le_rfl
+              _ = S.T row BS.col := by rw [hcol]
+              _ = BS.bumped.val := BS.bumped_eq
+          let tailS' : RowInsertionTrace N BS.tableau (row + 1) B.bumped :=
+            RowInsertionTrace.castValue hbumped tailS
+          have hshape' :
+              ∀ {i j : ℕ}, row + 1 ≤ i → ((i, j) ∈ μ ↔ (i, j) ∈ ν) := by
+            intro i j hi
+            exact hshape (by omega)
+          have hentry' :
+              ∀ {i j : ℕ}, row + 1 ≤ i → B.tableau.T i j = BS.tableau.T i j := by
+            intro i j hi
+            calc
+              B.tableau.T i j = T.T i j :=
+                RowBumpStepResult.unchanged_of_row_ne B (by omega)
+              _ = S.T i j := hentry (by omega)
+              _ = BS.tableau.T i j :=
+                (RowBumpStepResult.unchanged_of_row_ne BS (by omega)).symm
+          calc
+            tail.result.newCell = tailS'.result.newCell :=
+              RowInsertionTrace.result_newCell_eq_of_rows_equiv tail tailS' hshape' hentry'
+            _ = tailS.result.newCell := by
+              exact congrArg RowInsertResult.newCell
+                (RowInsertionTrace.castValue_result_eq hbumped tailS)
+termination_by μ ν T S row x trT _trS _hshape _hentry => sizeOf trT
+
+set_option maxRecDepth 4000 in
+/-- If a smaller insertion creates a first-column cell while a larger insertion does not,
+then inserting the smaller value after the larger one still creates a first-column cell.
+The third trace is allowed to start in a tableau equivalent below the current row, which
+is what makes the induction stable after commuting the two current-row bump steps. -/
+theorem rowInsertionTrace_newCell_col_zero_after_prior_of_le_aux {N : ℕ} :
+    ∀ {μ κ ν : YoungDiagram} {T : BoundedSSYT μ N} {W : BoundedSSYT κ N}
+      {Z : BoundedSSYT ν N}
+      {row : ℕ} {x y : Fin N}
+      (trx : RowInsertionTrace N T row x)
+      (trY : RowInsertionTrace N W row y)
+      (trXY : RowInsertionTrace N Z row x),
+      x ≤ y →
+      trx.result.newCell.2 = 0 →
+      trY.result.newCell.2 ≠ 0 →
+      (∀ {i j : ℕ}, row ≤ i → ((i, j) ∈ μ ↔ (i, j) ∈ κ)) →
+      (∀ {i j : ℕ}, row ≤ i → T.T i j = W.T i j) →
+      (∀ {i j : ℕ}, row ≤ i →
+        ((i, j) ∈ trY.result.shape ↔ (i, j) ∈ ν)) →
+      (∀ {i j : ℕ}, row ≤ i →
+      trY.result.tableau.T i j = Z.T i j) →
+      trXY.result.newCell.2 = 0 := by
+  intro μ κ ν T W Z row x y trx trY trXY hxy hx hY hshapeTW hentryTW hshape hentry
+  cases trx with
+  | done A =>
+      cases trY with
+      | done AY =>
+          exact False.elim (hY (by
+            simp only [RowInsertionTrace.result] at hx hY ⊢
+            rw [AY.result_newCell_col]
+            rw [A.result_newCell_col] at hx
+            have hrowLen : μ.rowLen row = κ.rowLen row := by
+              apply eq_of_forall_lt_iff
+              intro j
+              rw [← YoungDiagram.mem_iff_lt_rowLen, ← YoungDiagram.mem_iff_lt_rowLen]
+              exact hshapeTW le_rfl
+            simpa [← hrowLen] using hx))
+      | bump BY _ =>
+          have BYT : RowBumpLocation T row y :=
+            { col := BY.col
+              cell_mem := (hshapeTW le_rfl).2 BY.cell_mem
+              entry_gt := by simpa [hentryTW le_rfl] using BY.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hcellW : (row, j) ∈ κ := (hshapeTW le_rfl).1 hcell
+                simpa [hentryTW le_rfl] using BY.left_le hj hcellW }
+          exact False.elim
+            (not_rowBumpLocation_of_append_of_le hxy A.location ⟨BYT⟩)
+  | bump B tail =>
+      have htail_zero : tail.result.newCell.2 = 0 := hx
+      cases trY with
+      | done AY =>
+          simp only [RowInsertionTrace.result] at hY hshape hentry
+          let hB_in_Z : RowBumpLocation Z row x :=
+            { col := B.col
+              cell_mem := (hshape le_rfl).1
+                (AY.result.old_subset (row, B.col) ((hshapeTW le_rfl).1 B.cell_mem))
+              entry_gt := by
+                rw [← hentry le_rfl,
+                  AY.unchanged_on_old_shape ((hshapeTW le_rfl).1 B.cell_mem)]
+                rw [← hentryTW le_rfl]
+                exact B.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hcell_old : (row, j) ∈ μ := by
+                  rw [YoungDiagram.mem_iff_lt_rowLen]
+                  have hBcell := B.cell_mem
+                  rw [YoungDiagram.mem_iff_lt_rowLen] at hBcell
+                  omega
+                rw [← hentry le_rfl,
+                  AY.unchanged_on_old_shape ((hshapeTW le_rfl).1 hcell_old)]
+                rw [← hentryTW le_rfl]
+                exact B.left_le hj hcell_old }
+          cases trXY with
+          | done AXY =>
+              exact False.elim
+                ((not_lt_of_ge
+                  (AXY.location.row_entries_le hB_in_Z.col_lt_rowLen))
+                  hB_in_Z.entry_gt)
+          | bump BXY tailXY =>
+              have hcol : BXY.col = B.col := by
+                exact le_antisymm
+                  (by simpa using
+                    (rowBumpLocation_col_le_of_le le_rfl BXY.location hB_in_Z))
+                  (by simpa using
+                    (rowBumpLocation_col_le_of_le le_rfl hB_in_Z BXY.location))
+              have hbumped : BXY.bumped = B.bumped := by
+                apply Fin.ext
+                calc
+                  BXY.bumped.val = Z.T row BXY.col := BXY.bumped_eq.symm
+                  _ = Z.T row B.col := by rw [hcol]
+                  _ = AY.result.tableau.T row B.col := (hentry le_rfl).symm
+                  _ = W.T row B.col :=
+                    AY.unchanged_on_old_shape ((hshapeTW le_rfl).1 B.cell_mem)
+                  _ = T.T row B.col := (hentryTW le_rfl).symm
+                  _ = B.bumped.val := B.bumped_eq
+              let tailXY' : RowInsertionTrace N BXY.tableau (row + 1) B.bumped :=
+                RowInsertionTrace.castValue hbumped.symm tailXY
+              have hshape' :
+                  ∀ {i j : ℕ}, row + 1 ≤ i →
+                    ((i, j) ∈ μ ↔ (i, j) ∈ ν) := by
+                intro i j hi
+                constructor
+                · intro hcell
+                  exact (hshape (by omega)).1
+                    (AY.result.old_subset (i, j) ((hshapeTW (by omega)).1 hcell))
+                · intro hcell
+                  have hcellAY : (i, j) ∈ AY.result.shape := (hshape (by omega)).2 hcell
+                  rcases (AY.result.shape_mem_iff (i, j)).1 hcellAY with hold | hnew
+                  · exact (hshapeTW (by omega)).2 hold
+                  · have hroweq : i = row := by
+                      simpa [AY.newCell_eq] using congrArg Prod.fst hnew
+                    omega
+              have hentry' :
+                  ∀ {i j : ℕ}, row + 1 ≤ i →
+                    B.tableau.T i j = BXY.tableau.T i j := by
+                intro i j hi
+                calc
+                  B.tableau.T i j = T.T i j :=
+                    RowBumpStepResult.unchanged_of_row_ne B (by omega)
+                  _ = W.T i j := hentryTW (by omega)
+                  _ = AY.result.tableau.T i j :=
+                    (RowAppendStepResult.unchanged_of_row_ne AY (by omega)).symm
+                  _ = Z.T i j := hentry (by omega)
+                  _ = BXY.tableau.T i j :=
+                    (RowBumpStepResult.unchanged_of_row_ne BXY (by omega)).symm
+              have heq :=
+                RowInsertionTrace.result_newCell_eq_of_rows_equiv tail tailXY' hshape' hentry'
+              have htailXY' : tailXY'.result.newCell.2 = 0 := by
+                simpa [heq] using htail_zero
+              rw [RowInsertionTrace.castValue_result_eq hbumped.symm tailXY] at htailXY'
+              exact htailXY'
+      | bump BY tailY =>
+          simp only [RowInsertionTrace.result] at hY hshape hentry
+          let BYT : RowBumpLocation T row y :=
+            { col := BY.col
+              cell_mem := (hshapeTW le_rfl).2 BY.cell_mem
+              entry_gt := by simpa [hentryTW le_rfl] using BY.entry_gt
+              left_le := by
+                intro j hj hcell
+                have hcellW : (row, j) ∈ κ := (hshapeTW le_rfl).1 hcell
+                simpa [hentryTW le_rfl] using BY.left_le hj hcellW }
+          have hB_le_BY : B.col ≤ BY.col :=
+            by simpa [BYT] using rowBumpLocation_col_le_of_le hxy B.location BYT
+          rcases lt_or_eq_of_le hB_le_BY with hcol_lt | hcol_eq
+          · let hB_in_Z : RowBumpLocation Z row x :=
+              { col := B.col
+                cell_mem := by
+                  exact (hshape le_rfl).1
+                    (tailY.result.old_subset (row, B.col)
+                      ((hshapeTW le_rfl).1 B.cell_mem))
+                entry_gt := by
+                  rw [← hentry le_rfl]
+                  rw [tailY.result_tableau_eq_of_row_lt (by omega)
+                    ((hshapeTW le_rfl).1 B.cell_mem)]
+                  rw [RowBumpStepResult.unchanged_of_col_ne BY (by omega)]
+                  rw [← hentryTW le_rfl]
+                  exact B.entry_gt
+                left_le := by
+                  intro j hj hcell
+                  rw [← hentry le_rfl]
+                  have hcell_old : (row, j) ∈ μ := by
+                    rw [YoungDiagram.mem_iff_lt_rowLen]
+                    have hBcell := B.cell_mem
+                    rw [YoungDiagram.mem_iff_lt_rowLen] at hBcell
+                    omega
+                  rw [tailY.result_tableau_eq_of_row_lt (by omega)
+                    ((hshapeTW le_rfl).1 hcell_old)]
+                  rw [RowBumpStepResult.unchanged_of_col_ne BY (by omega)]
+                  rw [← hentryTW le_rfl]
+                  exact B.left_le hj hcell_old }
+            cases trXY with
+            | done AXY =>
+                exact False.elim
+                  ((not_lt_of_ge
+                    (AXY.location.row_entries_le hB_in_Z.col_lt_rowLen))
+                    hB_in_Z.entry_gt)
+            | bump BXY tailXY =>
+                have hcolXY : BXY.col = B.col := by
+                  exact le_antisymm
+                    (by simpa using
+                      (rowBumpLocation_col_le_of_le le_rfl BXY.location hB_in_Z))
+                    (by simpa using
+                      (rowBumpLocation_col_le_of_le le_rfl hB_in_Z BXY.location))
+                have hbumpedXY : BXY.bumped = B.bumped := by
+                  apply Fin.ext
+                  calc
+                    BXY.bumped.val = Z.T row BXY.col := BXY.bumped_eq.symm
+                    _ = Z.T row B.col := by rw [hcolXY]
+                    _ = tailY.result.tableau.T row B.col := (hentry le_rfl).symm
+                    _ = BY.tableau.T row B.col :=
+                      tailY.result_tableau_eq_of_row_lt (by omega)
+                        ((hshapeTW le_rfl).1 B.cell_mem)
+                    _ = W.T row B.col :=
+                      RowBumpStepResult.unchanged_of_col_ne BY (by omega)
+                    _ = T.T row B.col := (hentryTW le_rfl).symm
+                    _ = B.bumped.val := B.bumped_eq
+                have hbumped_le : B.bumped ≤ BY.bumped := by
+                  change B.bumped.val ≤ BY.bumped.val
+                  calc
+                    B.bumped.val = T.T row B.col := B.bumped_eq.symm
+                    _ ≤ T.T row BY.col := T.T.row_weak hcol_lt BYT.cell_mem
+                    _ = W.T row BY.col := hentryTW le_rfl
+                    _ = BY.bumped.val := BY.bumped_eq
+                let tailXY' : RowInsertionTrace N BXY.tableau (row + 1) B.bumped :=
+                  RowInsertionTrace.castValue hbumpedXY.symm tailXY
+                have hshape' :
+                    ∀ {i j : ℕ}, row + 1 ≤ i →
+                      ((i, j) ∈ μ ↔ (i, j) ∈ κ) := by
+                  intro i j hi
+                  exact hshapeTW (by omega)
+                have hentry' :
+                    ∀ {i j : ℕ}, row + 1 ≤ i →
+                      B.tableau.T i j = BY.tableau.T i j := by
+                  intro i j hi
+                  calc
+                    B.tableau.T i j = T.T i j :=
+                      RowBumpStepResult.unchanged_of_row_ne B (by omega)
+                    _ = W.T i j := hentryTW (by omega)
+                    _ = BY.tableau.T i j :=
+                      (RowBumpStepResult.unchanged_of_row_ne BY (by omega)).symm
+                have hshapeY' :
+                    ∀ {i j : ℕ}, row + 1 ≤ i →
+                      ((i, j) ∈ tailY.result.shape ↔ (i, j) ∈ ν) := by
+                  intro i j hi
+                  exact hshape (by omega)
+                have hentryY' :
+                    ∀ {i j : ℕ}, row + 1 ≤ i →
+                      tailY.result.tableau.T i j = BXY.tableau.T i j := by
+                  intro i j hi
+                  calc
+                    tailY.result.tableau.T i j = Z.T i j := hentry (by omega)
+                    _ = BXY.tableau.T i j :=
+                      (RowBumpStepResult.unchanged_of_row_ne BXY (by omega)).symm
+                have hrec : tailXY'.result.newCell.2 = 0 :=
+                  rowInsertionTrace_newCell_col_zero_after_prior_of_le_aux
+                    (trx := tail) (trY := tailY) (trXY := tailXY')
+                    hbumped_le htail_zero hY hshape' hentry' hshapeY' hentryY'
+                rw [RowInsertionTrace.castValue_result_eq hbumpedXY.symm tailXY] at hrec
+                exact hrec
+          · have hbumped : B.bumped = BY.bumped := by
+              apply Fin.ext
+              calc
+                B.bumped.val = T.T row B.col := B.bumped_eq.symm
+                _ = T.T row BY.col := by rw [hcol_eq]
+                _ = W.T row BY.col := hentryTW le_rfl
+                _ = BY.bumped.val := BY.bumped_eq
+            let tailY' : RowInsertionTrace N BY.tableau (row + 1) B.bumped :=
+              RowInsertionTrace.castValue hbumped tailY
+            have hshape' :
+                ∀ {i j : ℕ}, row + 1 ≤ i → ((i, j) ∈ μ ↔ (i, j) ∈ κ) := by
+              intro i j hi
+              exact hshapeTW (by omega)
+            have hentry' :
+                ∀ {i j : ℕ}, row + 1 ≤ i →
+                  B.tableau.T i j = BY.tableau.T i j := by
+              intro i j hi
+              calc
+                B.tableau.T i j = T.T i j :=
+                  RowBumpStepResult.unchanged_of_row_ne B (by omega)
+                _ = W.T i j := hentryTW (by omega)
+                _ = BY.tableau.T i j :=
+                  (RowBumpStepResult.unchanged_of_row_ne BY (by omega)).symm
+            have heq :=
+              RowInsertionTrace.result_newCell_eq_of_rows_equiv tail tailY' hshape' hentry'
+            have htailY' : tailY'.result.newCell.2 = 0 := by
+              simpa [heq] using htail_zero
+            exact False.elim (hY (by
+              rw [RowInsertionTrace.castValue_result_eq hbumped tailY] at htailY'
+              exact htailY'))
+termination_by _μ _κ _ν _T _W _Z _row _x _y trx _trY _trXY _hxy _hx _hY
+    _hshapeTW _hentryTW _hshape _hentry => sizeOf trx
+
+/-- Chosen-trace form of the first-column preservation lemma. -/
+theorem rowInsertionTrace_newCell_col_zero_after_prior_of_le {N : ℕ}
+    {μ : YoungDiagram} (T : BoundedSSYT μ N) {x y : Fin N}
+    (hxy : x ≤ y)
+    (hx : (rowInsertionTrace T x).result.newCell.2 = 0)
+    (hY : (rowInsertionTrace T y).result.newCell.2 ≠ 0) :
+    (rowInsertionTrace (rowInsertionTrace T y).result.tableau x).result.newCell.2 = 0 := by
+  exact rowInsertionTrace_newCell_col_zero_after_prior_of_le_aux
+    (rowInsertionTrace T x)
+    (rowInsertionTrace T y)
+    (rowInsertionTrace (rowInsertionTrace T y).result.tableau x)
+    hxy hx hY
+    (fun {_ _} _ => Iff.rfl)
+    (fun {_ _} _ => rfl)
+    (fun {_ _} _ => Iff.rfl)
+    (fun {_ _} _ => rfl)
+
 theorem RowAppendStepResult.reverseTrace_after_delete_with_continuation {N : ℕ}
     {μ : YoungDiagram} {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
     (A : RowAppendStepResult T row x)
@@ -5847,6 +6731,93 @@ inductive KRSForwardRun {m n : ℕ} :
 
 namespace KRSForwardRun
 
+/-- Source labels transported along a complete KRS run.  The label attached to a newly
+inserted lower letter is its position in the processed prefix. -/
+inductive OriginRun {m n : ℕ} :
+    ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
+      KRSForwardRun w S → RowInsertionTrace.OriginLabels → Prop
+  | nil :
+      OriginRun (.nil : KRSForwardRun ([] : List (Fin m × Fin n))
+        (KRSForwardState.empty m n)) (fun _ _ => none)
+  | snoc {w : List (Fin m × Fin n)} {S : KRSForwardState m n}
+      {z : Fin m × Fin n}
+      {hrun : KRSForwardRun w S}
+      {hsorted : (w ++ [z]).Pairwise (fun x y => toLex x ≤ toLex y)}
+      {hrec : let R := rowInsert S.P z.2; RecordingAppendHyp S.Q z.1 R}
+      {hsame_next : ∀ y : Fin m × Fin n,
+        ((w ++ [z]) ++ [y]).Pairwise (fun x y => toLex x ≤ toLex y) →
+          let S' := krsForwardStep S z hrec
+          let R := rowInsert S'.P y.2
+          ∀ {c : ℕ × ℕ}, c ∈ S'.shape → S'.Q.T c.1 c.2 = y.1.val →
+            c.2 < R.newCell.2}
+      {labels : RowInsertionTrace.OriginLabels}
+      (origin : OriginRun hrun labels)
+      (hvalid : labels.Valid S.shape) :
+      OriginRun (.snoc z hrun hsorted hrec hsame_next)
+        (RowInsertionTrace.TaggedRowInsertionTrace.resultLabels
+          (RowInsertionTrace.TaggedRowInsertionTrace.ofTrace labels w.length
+            (rowInsertionTrace S.P z.2) hvalid))
+
+theorem exists_originRun {m n : ℕ} {w : List (Fin m × Fin n)}
+    {S : KRSForwardState m n} (hrun : KRSForwardRun w S) :
+    ∃ labels, OriginRun hrun labels ∧ labels.Valid S.shape := by
+  induction hrun with
+  | nil =>
+      refine ⟨fun _ _ => none, .nil, ?_⟩
+      intro i j hcell
+      simp [KRSForwardState.empty] at hcell
+  | @snoc w S z hrun hsorted hrec hsame_next ih =>
+      rcases ih with ⟨labels, origin, hvalid⟩
+      let tr := rowInsertionTrace S.P z.2
+      let tagged :=
+        RowInsertionTrace.TaggedRowInsertionTrace.ofTrace labels w.length tr hvalid
+      exact ⟨tagged.resultLabels,
+        .snoc (hsorted := hsorted) (hrec := hrec) (hsame_next := hsame_next)
+          origin hvalid,
+        by
+          change tagged.resultLabels.Valid (rowInsertionTrace S.P z.2).result.shape
+          exact tagged.valid_resultLabels hvalid⟩
+
+/-- Every processed lower letter has a current representative in the insertion tableau.
+The representative may move downward when later letters bump it, but its source label
+and value are preserved. -/
+def OriginRepresentatives {m n : ℕ} (w : List (Fin m × Fin n))
+    (S : KRSForwardState m n) (labels : RowInsertionTrace.OriginLabels) : Prop :=
+  ∀ (k : ℕ) (hk : k < w.length),
+    ∃ c ∈ S.shape,
+      labels c.1 c.2 = some k ∧ S.P.T c.1 c.2 = (w.get ⟨k, hk⟩).2.val
+
+theorem OriginRun.representatives {m n : ℕ} {w : List (Fin m × Fin n)}
+    {S : KRSForwardState m n} {hrun : KRSForwardRun w S}
+    {labels : RowInsertionTrace.OriginLabels}
+    (origin : OriginRun hrun labels) :
+    OriginRepresentatives w S labels := by
+  induction origin with
+  | nil =>
+      intro k hk
+      simp at hk
+  | @snoc w S z hrun hsorted hrec hsame_next labels origin hvalid ih =>
+      intro k hk
+      let tr := rowInsertionTrace S.P z.2
+      let tagged :=
+        RowInsertionTrace.TaggedRowInsertionTrace.ofTrace labels w.length tr hvalid
+      by_cases hk_last : k = w.length
+      · subst k
+        rcases tagged.exists_resultLabels_eq_tag_and_entry_eq with ⟨c, hcell, htag, hvalue⟩
+        refine ⟨c, ?_, htag, ?_⟩
+        · simpa [krsForwardStep, tr] using hcell
+        · simpa using hvalue
+      · have hk_old : k < w.length := by
+          simpa [List.length_append] using
+            (Nat.lt_of_le_of_ne (Nat.le_of_lt_succ (by simpa [List.length_append] using hk))
+              hk_last)
+        rcases ih k hk_old with ⟨c, hcell, htag, hvalue⟩
+        rcases tagged.exists_resultLabels_eq_of_old_entry hcell htag hvalue with
+          ⟨d, hdcell, hdtag, hdvalue⟩
+        refine ⟨d, ?_, hdtag, ?_⟩
+        · simpa [krsForwardStep, tr] using hdcell
+        · simpa [List.get_eq_getElem, hk_old] using hdvalue
+
 /-- Every recording-tableau entry in a reachable state comes from the processed prefix. -/
 def QEntriesFromPrefix {m n : ℕ} {w : List (Fin m × Fin n)}
     (S : KRSForwardState m n) : Prop :=
@@ -5877,6 +6848,15 @@ theorem shape_card {m n : ℕ} {w : List (Fin m × Fin n)}
       simp only [krsForwardStep, List.length_append,
       List.length_cons, List.length_nil, zero_add]
       rw [rowInsert_adds_one_box, ih]
+
+theorem sorted {m n : ℕ} {w : List (Fin m × Fin n)}
+    {S : KRSForwardState m n} (hrun : KRSForwardRun w S) :
+    w.Pairwise (fun x y => toLex x ≤ toLex y) := by
+  induction hrun with
+  | nil =>
+      simp
+  | snoc z hrun hsorted hrec hsame_next ih =>
+      exact hsorted
 
 /-- Source invariant for recording entries.  This should be proved by the same run
 induction that constructs the recording tableau. -/
@@ -7829,6 +8809,1174 @@ theorem krs_shape_numBoxes {m n : ℕ} (W : Biword m n) :
     krsForwardStateOfList_shape_card
       (m := m) (n := n) W.1 W.2
 
+private lemma generalizedPermutation_nil {m n : ℕ} :
+    generalizedPermutation ([] : List (Fin m × Fin n)) = [] := by
+  apply List.eq_nil_of_length_eq_zero
+  have hlen :=
+    (generalizedPermutation.generalizedPermutation_perm
+      ([] : List (Fin m × Fin n))).length_eq
+  simpa using hlen
+
+private lemma width_nil {m n : ℕ} :
+    generalizedPermutation.width ([] : List (Fin m × Fin n)) = 0 := by
+  simp [generalizedPermutation.width, generalizedPermutation.lowerWord,
+    generalizedPermutation_nil]
+
+private lemma generalizedPermutation_eq_self_of_sorted {m n : ℕ}
+    {w : List (Fin m × Fin n)}
+    (hsorted : w.Pairwise (fun x y => toLex x ≤ toLex y)) :
+    generalizedPermutation w = w := by
+  exact generalizedPermutation.generalizedPermutation_unique
+    (xs := w)
+    (w₁ := generalizedPermutation w)
+    (w₂ := w)
+    (generalizedPermutation.generalizedPermutation_perm w)
+    (generalizedPermutation.generalizedPermutation_sorted w)
+    (List.Perm.refl w)
+    hsorted
+
+private lemma lowerWord_eq_map_snd_of_sorted {m n : ℕ}
+    {w : List (Fin m × Fin n)}
+    (hsorted : w.Pairwise (fun x y => toLex x ≤ toLex y)) :
+    generalizedPermutation.lowerWord w = w.map Prod.snd := by
+  simp [generalizedPermutation.lowerWord, generalizedPermutation_eq_self_of_sorted hsorted]
+
+private lemma lowerWord_append_singleton_of_sorted {m n : ℕ}
+    {w : List (Fin m × Fin n)} {z : Fin m × Fin n}
+    (hsorted : (w ++ [z]).Pairwise (fun x y => toLex x ≤ toLex y)) :
+    generalizedPermutation.lowerWord (w ++ [z]) =
+      generalizedPermutation.lowerWord w ++ [z.2] := by
+  have hsorted_w : w.Pairwise (fun x y => toLex x ≤ toLex y) :=
+    (List.pairwise_append.mp hsorted).1
+  simp [lowerWord_eq_map_snd_of_sorted hsorted,
+    lowerWord_eq_map_snd_of_sorted hsorted_w]
+
+private lemma width_le_of_lowerWord_sublist {m n : ℕ}
+    {xs ys : List (Fin m × Fin n)}
+    (hsub :
+      List.Sublist (generalizedPermutation.lowerWord xs)
+        (generalizedPermutation.lowerWord ys)) :
+    generalizedPermutation.width xs ≤ generalizedPermutation.width ys := by
+  unfold generalizedPermutation.width
+  apply generalizedPermutation.foldl_max_length_le
+  · exact Nat.zero_le _
+  · intro s hs
+    have hs_mem :
+        s ∈ (generalizedPermutation.lowerWord xs).sublists := (List.mem_filter.mp hs).1
+    have hs_dec :
+        (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true :=
+      (List.mem_filter.mp hs).2
+    have hs_sub_xs : List.Sublist s (generalizedPermutation.lowerWord xs) :=
+      (List.mem_sublists).1 hs_mem
+    have hs_sub_ys : List.Sublist s (generalizedPermutation.lowerWord ys) :=
+      hs_sub_xs.trans hsub
+    exact length_le_width_of_lowerWord_sublist_pairwise_gt
+      (xs := ys) hs_sub_ys
+      (generalizedPermutation.pairwise_gt_of_zip_tail_all_gt hs_dec)
+
+private lemma width_le_width_append_singleton_of_sorted {m n : ℕ}
+    {w : List (Fin m × Fin n)} {z : Fin m × Fin n}
+    (hsorted : (w ++ [z]).Pairwise (fun x y => toLex x ≤ toLex y)) :
+    generalizedPermutation.width w ≤ generalizedPermutation.width (w ++ [z]) := by
+  apply width_le_of_lowerWord_sublist
+  rw [lowerWord_append_singleton_of_sorted hsorted]
+  exact List.sublist_append_left _ _
+
+private lemma width_append_singleton_le_succ_width_of_sorted {m n : ℕ}
+    {w : List (Fin m × Fin n)} {z : Fin m × Fin n}
+    (hsorted : (w ++ [z]).Pairwise (fun x y => toLex x ≤ toLex y)) :
+    generalizedPermutation.width (w ++ [z]) ≤ generalizedPermutation.width w + 1 := by
+  unfold generalizedPermutation.width
+  rw [lowerWord_append_singleton_of_sorted hsorted, List.sublists_concat]
+  apply generalizedPermutation.foldl_max_length_le
+  · exact Nat.zero_le _
+  · intro s hs
+    have hs_mem :
+        s ∈ (generalizedPermutation.lowerWord w).sublists ++
+          (generalizedPermutation.lowerWord w).sublists.map
+            (fun x => x ++ [z.2]) := (List.mem_filter.mp hs).1
+    have hs_dec :
+        (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true :=
+      (List.mem_filter.mp hs).2
+    rcases List.mem_append.mp hs_mem with hs_old | hs_new
+    · have hsub : List.Sublist s (generalizedPermutation.lowerWord w) :=
+        (List.mem_sublists).1 hs_old
+      have hpair : s.Pairwise (fun a b => a > b) :=
+        generalizedPermutation.pairwise_gt_of_zip_tail_all_gt hs_dec
+      have hlen : s.length ≤ generalizedPermutation.width w :=
+        length_le_width_of_lowerWord_sublist_pairwise_gt
+          (xs := w) hsub hpair
+      change s.length ≤ generalizedPermutation.width w + 1
+      omega
+    · rcases List.mem_map.mp hs_new with ⟨t, htmem, rfl⟩
+      have ht_sub : List.Sublist t (generalizedPermutation.lowerWord w) :=
+        (List.mem_sublists).1 htmem
+      have hs_pair : (t ++ [z.2]).Pairwise (fun a b => a > b) :=
+        generalizedPermutation.pairwise_gt_of_zip_tail_all_gt hs_dec
+      have ht_pair : t.Pairwise (fun a b => a > b) :=
+        hs_pair.sublist (List.sublist_append_left _ _)
+      have ht_len : t.length ≤ generalizedPermutation.width w :=
+        length_le_width_of_lowerWord_sublist_pairwise_gt
+          (xs := w) ht_sub ht_pair
+      simpa [List.length_append, generalizedPermutation.width] using ht_len
+
+private lemma width_append_singleton_le_of_ending_subseq_bound {m n : ℕ}
+    {w : List (Fin m × Fin n)} {z : Fin m × Fin n}
+    (hsorted : (w ++ [z]).Pairwise (fun x y => toLex x ≤ toLex y))
+    (hend :
+      ∀ {t : List (Fin n)},
+        List.Sublist t (generalizedPermutation.lowerWord w) →
+        (t ++ [z.2]).Pairwise (fun a b => a > b) →
+          t.length + 1 ≤ generalizedPermutation.width w) :
+    generalizedPermutation.width (w ++ [z]) ≤ generalizedPermutation.width w := by
+  unfold generalizedPermutation.width
+  rw [lowerWord_append_singleton_of_sorted hsorted, List.sublists_concat]
+  apply generalizedPermutation.foldl_max_length_le
+  · exact Nat.zero_le _
+  · intro s hs
+    have hs_mem :
+        s ∈ (generalizedPermutation.lowerWord w).sublists ++
+          (generalizedPermutation.lowerWord w).sublists.map
+            (fun x => x ++ [z.2]) := (List.mem_filter.mp hs).1
+    have hs_dec :
+        (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true :=
+      (List.mem_filter.mp hs).2
+    rcases List.mem_append.mp hs_mem with hs_old | hs_new
+    · have hsub : List.Sublist s (generalizedPermutation.lowerWord w) :=
+        (List.mem_sublists).1 hs_old
+      have hpair : s.Pairwise (fun a b => a > b) :=
+        generalizedPermutation.pairwise_gt_of_zip_tail_all_gt hs_dec
+      exact length_le_width_of_lowerWord_sublist_pairwise_gt
+        (xs := w) hsub hpair
+    · rcases List.mem_map.mp hs_new with ⟨t, htmem, rfl⟩
+      have ht_sub : List.Sublist t (generalizedPermutation.lowerWord w) :=
+        (List.mem_sublists).1 htmem
+      have ht_pair : (t ++ [z.2]).Pairwise (fun a b => a > b) :=
+        generalizedPermutation.pairwise_gt_of_zip_tail_all_gt hs_dec
+      simpa [List.length_append, generalizedPermutation.width] using
+        hend ht_sub ht_pair
+
+private lemma sublist_append_singleton_cases {α : Type*}
+    {s l : List α} {a : α} (h : List.Sublist s (l ++ [a])) :
+    List.Sublist s l ∨ ∃ t, List.Sublist t l ∧ s = t ++ [a] := by
+  induction l generalizing s with
+  | nil =>
+      rcases (List.sublist_singleton.mp h) with rfl | rfl
+      · exact Or.inl List.Sublist.slnil
+      · exact Or.inr ⟨[], List.Sublist.slnil, rfl⟩
+  | cons b l ih =>
+      cases h with
+      | cons _ htail =>
+          rcases ih htail with hold | ⟨t, ht, rfl⟩
+          · exact Or.inl (List.Sublist.cons b hold)
+          · exact Or.inr ⟨t, List.Sublist.cons b ht, rfl⟩
+      | cons₂ _ htail =>
+          rcases ih htail with hold | ⟨t, ht, ht_eq⟩
+          · exact Or.inl (List.Sublist.cons₂ b hold)
+          · subst ht_eq
+            exact Or.inr ⟨b :: t, List.Sublist.cons₂ b ht, by simp⟩
+
+private lemma firstColumnHeight_bot :
+    firstColumnHeight (⊥ : YoungDiagram) = 0 := by
+  apply Nat.eq_zero_of_not_pos
+  intro hpos
+  have hcell : (0, 0) ∈ (⊥ : YoungDiagram) := by
+    rwa [YoungDiagram.mem_iff_lt_colLen]
+  simp at hcell
+
+/-- A compressed bumping-path ancestry.
+
+Starting at `row` with threshold `x`, each layer chooses a cell weakly below the
+current row whose entry is strictly larger than the current threshold.  The chosen
+entry becomes the next threshold, and the next layer must occur in a strictly lower
+row.  Columns are intentionally existential: they are the caps selected by the
+leftmost-bump rule when this ancestry is replayed by row insertion. -/
+def CompressedBumpChain {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) (row x : ℕ) : ℕ → Prop
+  | 0 => True
+  | k + 1 =>
+      ∃ i j : ℕ, row ≤ i ∧ (i, j) ∈ μ ∧ x < T.T i j ∧
+        CompressedBumpChain T (i + 1) (T.T i j) k
+
+namespace CompressedBumpChain
+
+theorem mono_threshold {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row x y k : ℕ}
+    (hxy : x ≤ y) (hchain : CompressedBumpChain T row y k) :
+    CompressedBumpChain T row x k := by
+  induction k generalizing row y with
+  | zero => trivial
+  | succ k ih =>
+      rcases hchain with ⟨i, j, hrow, hcell, hgt, htail⟩
+      exact ⟨i, j, hrow, hcell, lt_of_le_of_lt hxy hgt, htail⟩
+
+theorem weaken_start {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row row' x k : ℕ}
+    (hrow : row' ≤ row) (hchain : CompressedBumpChain T row x k) :
+    CompressedBumpChain T row' x k := by
+  cases k with
+  | zero => trivial
+  | succ k =>
+      rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+      exact ⟨i, j, le_trans hrow hi, hcell, hgt, htail⟩
+
+theorem length_le_firstColumnHeight_of_start_le {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row x k : ℕ}
+    (hstart : row ≤ firstColumnHeight μ)
+    (hchain : CompressedBumpChain T row x k) :
+    row + k ≤ firstColumnHeight μ := by
+  induction k generalizing row x with
+  | zero => simpa using hstart
+  | succ k ih =>
+      rcases hchain with ⟨i, j, hrow, hcell, hgt, htail⟩
+      have hi_lt : i < μ.colLen j := by
+        rwa [YoungDiagram.mem_iff_lt_colLen] at hcell
+      have hi_height : i + 1 ≤ firstColumnHeight μ := by
+        dsimp [firstColumnHeight]
+        have hcol := μ.colLen_anti 0 j (Nat.zero_le j)
+        omega
+      have htail_bound := ih hi_height htail
+      omega
+
+theorem length_le_firstColumnHeight {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {x k : ℕ}
+    (hchain : CompressedBumpChain T 0 x k) :
+    k ≤ firstColumnHeight μ := by
+  simpa using length_le_firstColumnHeight_of_start_le (T := T)
+    (x := x) (Nat.zero_le _) hchain
+
+theorem of_old_subset_entry_eq {N : ℕ} {μ ν : YoungDiagram}
+    {T : BoundedSSYT μ N} {S : BoundedSSYT ν N} {row x k : ℕ}
+    (hsub : ∀ c, c ∈ μ → c ∈ ν)
+    (hentry : ∀ {i j : ℕ}, row ≤ i → (i, j) ∈ μ → S.T i j = T.T i j)
+    (hchain : CompressedBumpChain T row x k) :
+    CompressedBumpChain S row x k := by
+  induction k generalizing row x with
+  | zero => trivial
+  | succ k ih =>
+      rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+      refine ⟨i, j, hi, hsub (i, j) hcell, ?_, ?_⟩
+      · simpa [hentry hi hcell] using hgt
+      · have htransport :
+            CompressedBumpChain S (i + 1) (T.T i j) k := by
+          apply ih
+          · intro i' j' hi' hcell'
+            exact hentry (by omega) hcell'
+          · exact htail
+        simpa [hentry hi hcell] using htransport
+
+theorem of_rows_equiv {N : ℕ} {μ ν : YoungDiagram}
+    {T : BoundedSSYT μ N} {S : BoundedSSYT ν N} {row x k : ℕ}
+    (hshape : ∀ {i j : ℕ}, row ≤ i → ((i, j) ∈ μ ↔ (i, j) ∈ ν))
+    (hentry : ∀ {i j : ℕ}, row ≤ i → S.T i j = T.T i j)
+    (hchain : CompressedBumpChain T row x k) :
+    CompressedBumpChain S row x k := by
+  induction k generalizing row x with
+  | zero => trivial
+  | succ k ih =>
+      rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+      refine ⟨i, j, hi, (hshape hi).1 hcell, ?_, ?_⟩
+      · simpa [hentry hi] using hgt
+      · have htransport :
+            CompressedBumpChain S (i + 1) (T.T i j) k := by
+          apply ih
+          · intro i' j' hi'
+            exact hshape (by omega)
+          · intro i' j' hi'
+            exact hentry (by omega)
+          · exact htail
+        simpa [hentry hi] using htransport
+
+theorem after_append_start_succ {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N} {k : ℕ}
+    (A : RowAppendLocation T row x)
+    (hchain : CompressedBumpChain T row x.val k) :
+    CompressedBumpChain T (row + 1) x.val k := by
+  induction k generalizing row x with
+  | zero => trivial
+  | succ k ih =>
+      rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+      have hi_ne : i ≠ row := by
+        intro heq
+        subst i
+        have hj : j < μ.rowLen row := by
+          rwa [YoungDiagram.mem_iff_lt_rowLen] at hcell
+        exact (not_lt_of_ge (A.row_entries_le hj)) hgt
+      exact ⟨i, j, by omega, hcell, hgt, htail⟩
+
+end CompressedBumpChain
+
+/-- Row insertion transports compressed ancestries.  If the new threshold is strictly
+smaller than the inserted letter, the inserted path contributes one additional layer. -/
+private theorem RowInsertionTrace.compressedBumpChain_ops {N : ℕ} {μ : YoungDiagram}
+    {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (tr : RowInsertionTrace N T row x) :
+    (∀ (threshold k : ℕ), CompressedBumpChain T row threshold k →
+      CompressedBumpChain tr.result.tableau row threshold k) ∧
+    (∀ (threshold : ℕ), threshold < x.val → ∀ k : ℕ,
+      CompressedBumpChain T row x.val k →
+        CompressedBumpChain tr.result.tableau row threshold (k + 1)) := by
+  induction tr with
+  | done A =>
+      rename_i T₀ row₀ x₀
+      constructor
+      · intro threshold k hchain
+        exact CompressedBumpChain.of_old_subset_entry_eq
+          A.result.old_subset
+          (fun _ hcell => A.unchanged_on_old_shape hcell)
+          hchain
+      · intro threshold hthreshold k hchain
+        have htail :
+            CompressedBumpChain A.result.tableau (row₀ + 1) x₀.val k := by
+          apply CompressedBumpChain.of_old_subset_entry_eq A.result.old_subset
+          · intro i j hi hcell
+            exact A.unchanged_on_old_shape hcell
+          · exact CompressedBumpChain.after_append_start_succ A.location hchain
+        have hcell : (row₀, A.result.newCell.2) ∈ A.result.shape := by
+          simpa only [← A.result_newCell_row] using A.result.newCell_mem
+        have htail' :
+            CompressedBumpChain A.result.tableau (row₀ + 1)
+              (A.result.tableau.T row₀ A.result.newCell.2) k := by
+          have hentry :
+              A.result.tableau.T row₀ A.result.newCell.2 = x₀.val := by
+            rw [A.result_newCell_col]
+            exact A.inserted_entry
+          simpa only [hentry] using htail
+        refine ⟨row₀, A.result.newCell.2, le_rfl, hcell, ?_, htail'⟩
+        have hentry :
+            A.result.tableau.T row₀ A.result.newCell.2 = x₀.val := by
+          rw [A.result_newCell_col]
+          exact A.inserted_entry
+        simpa only [RowInsertionTrace.result, hentry] using hthreshold
+  | bump B tail ih =>
+      rename_i T₀ row₀ x₀
+      rcases ih with ⟨ih_preserve, ih_extend⟩
+      have hlower :
+          ∀ {start threshold k : ℕ}, row₀ + 1 ≤ start →
+            CompressedBumpChain T₀ start threshold k →
+              CompressedBumpChain B.tableau start threshold k := by
+        intro start threshold k hstart hchain
+        exact CompressedBumpChain.of_old_subset_entry_eq
+          (fun _ hcell => hcell)
+          (fun hi _ => B.unchanged_of_row_ne (by omega))
+          hchain
+      have htop_cell : (row₀, B.col) ∈ tail.result.shape :=
+        tail.result.old_subset (row₀, B.col) B.cell_mem
+      have htop_entry :
+          tail.result.tableau.T row₀ B.col = x₀.val := by
+        calc
+          tail.result.tableau.T row₀ B.col = B.tableau.T row₀ B.col :=
+            tail.result_tableau_eq_of_row_lt (by omega) B.cell_mem
+          _ = x₀.val := B.replaced_entry
+      constructor
+      · intro threshold k hchain
+        cases k with
+        | zero => trivial
+        | succ k =>
+            rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+            by_cases hirow : i = row₀
+            · subst i
+              by_cases hxgt : x₀.val < T₀.T row₀ j
+              · have hcol : B.col ≤ j :=
+                  B.col_le_of_entry_gt hcell hxgt
+                rcases lt_or_eq_of_le hcol with hcollt | hcoleq
+                · have htailB := hlower (by omega) htail
+                  have htailR := ih_preserve (T₀.T row₀ j) k htailB
+                  have htailR' :
+                      CompressedBumpChain tail.result.tableau (row₀ + 1)
+                        (tail.result.tableau.T row₀ j) k := by
+                    have hentry :
+                        tail.result.tableau.T row₀ j = T₀.T row₀ j := by
+                      calc
+                        tail.result.tableau.T row₀ j = B.tableau.T row₀ j :=
+                          tail.result_tableau_eq_of_row_lt (by omega) hcell
+                        _ = T₀.T row₀ j :=
+                          B.unchanged_of_col_ne (Nat.ne_of_gt hcollt)
+                    simpa only [hentry] using htailR
+                  refine ⟨row₀, j, le_rfl, tail.result.old_subset (row₀, j) hcell, ?_, htailR'⟩
+                  calc
+                    threshold < T₀.T row₀ j := hgt
+                    _ = B.tableau.T row₀ j := by
+                      symm
+                      exact B.unchanged_of_col_ne (Nat.ne_of_gt hcollt)
+                    _ = tail.result.tableau.T row₀ j := by
+                      symm
+                      exact tail.result_tableau_eq_of_row_lt (by omega) hcell
+                · have hval : T₀.T row₀ j = B.bumped.val := by
+                    simpa [hcoleq] using B.bumped_eq
+                  have htailB := hlower (by omega) htail
+                  have htailB' :
+                      CompressedBumpChain B.tableau (row₀ + 1) B.bumped.val k := by
+                    simpa [hval] using htailB
+                  have hthreshold_bumped : threshold < B.bumped.val := by
+                    simpa [← hval] using hgt
+                  exact CompressedBumpChain.weaken_start (Nat.le_succ row₀)
+                    (ih_extend threshold hthreshold_bumped k htailB')
+              · have hcolne : B.col ≠ j := by
+                  intro hcol
+                  apply hxgt
+                  simpa [hcol] using B.entry_gt
+                have htailB := hlower (by omega) htail
+                have htailR := ih_preserve (T₀.T row₀ j) k htailB
+                have htailR' :
+                    CompressedBumpChain tail.result.tableau (row₀ + 1)
+                      (tail.result.tableau.T row₀ j) k := by
+                  have hentry :
+                      tail.result.tableau.T row₀ j = T₀.T row₀ j := by
+                    calc
+                      tail.result.tableau.T row₀ j = B.tableau.T row₀ j :=
+                        tail.result_tableau_eq_of_row_lt (by omega) hcell
+                      _ = T₀.T row₀ j := B.unchanged_of_col_ne hcolne.symm
+                  simpa only [hentry] using htailR
+                refine ⟨row₀, j, le_rfl, tail.result.old_subset (row₀, j) hcell, ?_, htailR'⟩
+                calc
+                  threshold < T₀.T row₀ j := hgt
+                  _ = B.tableau.T row₀ j := by
+                    symm
+                    exact B.unchanged_of_col_ne hcolne.symm
+                  _ = tail.result.tableau.T row₀ j := by
+                    symm
+                    exact tail.result_tableau_eq_of_row_lt (by omega) hcell
+            · have hi' : row₀ + 1 ≤ i := by omega
+              have hchainB :
+                  CompressedBumpChain B.tableau (row₀ + 1) threshold (k + 1) := by
+                refine ⟨i, j, hi', hcell, ?_, ?_⟩
+                · simpa [B.unchanged_of_row_ne hirow] using hgt
+                · have htailB := hlower (by omega) htail
+                  have hentry : B.tableau.T i j = T₀.T i j :=
+                    B.unchanged_of_row_ne hirow
+                  simpa only [hentry] using htailB
+              exact CompressedBumpChain.weaken_start (Nat.le_succ row₀)
+                (ih_preserve threshold (k + 1) hchainB)
+      · intro threshold hthreshold k hchain
+        cases k with
+        | zero =>
+            exact ⟨row₀, B.col, le_rfl, htop_cell, by
+              change threshold < tail.result.tableau.T row₀ B.col
+              simpa only [htop_entry] using hthreshold,
+              trivial⟩
+        | succ k =>
+            rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+            have hlower_result :
+                CompressedBumpChain tail.result.tableau (row₀ + 1) x₀.val (k + 1) := by
+              by_cases hirow : i = row₀
+              · subst i
+                have hcol : B.col ≤ j := B.col_le_of_entry_gt hcell hgt
+                have hbumped_le : B.bumped.val ≤ T₀.T row₀ j :=
+                  B.bumped_le_entry_of_entry_gt hcell hgt
+                have htailB := hlower (by omega) htail
+                have htailB' :
+                    CompressedBumpChain B.tableau (row₀ + 1) B.bumped.val k :=
+                  CompressedBumpChain.mono_threshold hbumped_le htailB
+                exact ih_extend x₀.val B.bumped_gt k htailB'
+              · have hi' : row₀ + 1 ≤ i := by omega
+                have hchainB :
+                    CompressedBumpChain B.tableau (row₀ + 1) x₀.val (k + 1) := by
+                  refine ⟨i, j, hi', hcell, ?_, ?_⟩
+                  · simpa [B.unchanged_of_row_ne hirow] using hgt
+                  · have htailB := hlower (by omega) htail
+                    have hentry : B.tableau.T i j = T₀.T i j :=
+                      B.unchanged_of_row_ne hirow
+                    simpa only [hentry] using htailB
+                exact ih_preserve x₀.val (k + 1) hchainB
+            have hlower_result' :
+                CompressedBumpChain tail.result.tableau (row₀ + 1)
+                  (tail.result.tableau.T row₀ B.col) (k + 1) := by
+              simpa [htop_entry] using hlower_result
+            exact ⟨row₀, B.col, le_rfl, htop_cell,
+              by
+                change threshold < tail.result.tableau.T row₀ B.col
+                simpa only [htop_entry] using hthreshold,
+              hlower_result'⟩
+
+/-- Every compressed ancestry after insertion either already existed or uses the
+newly inserted letter as its final layer. -/
+private theorem RowInsertionTrace.compressedBumpChain_cases
+    {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (tr : RowInsertionTrace N T row x) :
+    ∀ {threshold k : ℕ},
+      CompressedBumpChain tr.result.tableau row threshold k →
+        CompressedBumpChain T row threshold k ∨
+          ∃ l : ℕ, k = l + 1 ∧ threshold < x.val ∧
+            CompressedBumpChain T row x.val l := by
+  induction tr with
+  | done A =>
+      rename_i T₀ row₀ x₀
+      intro threshold k hchain
+      simp only [RowInsertionTrace.result] at hchain
+      have hlower :
+          ∀ {start value length : ℕ}, row₀ + 1 ≤ start →
+            CompressedBumpChain A.result.tableau start value length →
+              CompressedBumpChain T₀ start value length := by
+        intro start value length hstart hchain
+        apply CompressedBumpChain.of_rows_equiv
+            (T := A.result.tableau) (S := T₀)
+        · intro i j hi
+          constructor
+          · intro hcell
+            rcases (A.result.shape_mem_iff (i, j)).1 hcell with hold | hnew
+            · exact hold
+            · have hirow : i = row₀ := by
+                simpa [A.newCell_eq] using congrArg Prod.fst hnew
+              omega
+          · intro hcell
+            exact A.result.old_subset (i, j) hcell
+        · intro i j hi
+          exact (A.unchanged_of_row_ne (by omega)).symm
+        · exact hchain
+      cases k with
+      | zero => exact Or.inl trivial
+      | succ k =>
+          rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+          rcases (A.result.shape_mem_iff (i, j)).1 hcell with hold | hnew
+          · have hentry : A.result.tableau.T i j = T₀.T i j :=
+              A.unchanged_on_old_shape hold
+            have htailT := hlower (by omega) htail
+            left
+            refine ⟨i, j, hi, hold, ?_, ?_⟩
+            · simpa only [hentry] using hgt
+            · simpa only [hentry] using htailT
+          · have hirow : i = row₀ := by
+              simpa [A.newCell_eq] using congrArg Prod.fst hnew
+            have hjcol : j = A.result.newCell.2 := by
+              exact congrArg Prod.snd hnew
+            subst i
+            subst j
+            have hentry :
+                A.result.tableau.T row₀ A.result.newCell.2 = x₀.val := by
+              rw [A.result_newCell_col]
+              exact A.inserted_entry
+            have htailT := hlower (by omega) htail
+            right
+            refine ⟨k, rfl, ?_, ?_⟩
+            · simpa only [hentry] using hgt
+            · apply CompressedBumpChain.weaken_start (Nat.le_succ row₀)
+              simpa only [hentry] using htailT
+  | bump B tail ih =>
+      rename_i T₀ row₀ x₀
+      intro threshold k hchain
+      simp only [RowInsertionTrace.result] at hchain
+      have hlower :
+          ∀ {start value length : ℕ}, row₀ + 1 ≤ start →
+            CompressedBumpChain B.tableau start value length →
+              CompressedBumpChain T₀ start value length := by
+        intro start value length hstart hchain
+        apply CompressedBumpChain.of_rows_equiv
+            (T := B.tableau) (S := T₀)
+        · intro i j hi
+          exact Iff.rfl
+        · intro i j hi
+          exact (B.unchanged_of_row_ne (by omega)).symm
+        · exact hchain
+      have htop_old :
+          ∀ {j : ℕ}, (row₀, j) ∈ tail.result.shape → (row₀, j) ∈ μ := by
+        intro j hcell
+        rcases (tail.result.shape_mem_iff (row₀, j)).1 hcell with hold | hnew
+        · exact hold
+        · have hrow : row₀ = tail.result.newCell.1 :=
+            congrArg Prod.fst hnew
+          have hge := tail.result_newCell_row_ge
+          omega
+      cases k with
+      | zero => exact Or.inl trivial
+      | succ k =>
+          rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+          by_cases hirow : i = row₀
+          · subst i
+            have hcell_old : (row₀, j) ∈ μ := htop_old hcell
+            have hentry :
+                tail.result.tableau.T row₀ j = B.tableau.T row₀ j :=
+              tail.result_tableau_eq_of_row_lt (by omega) hcell_old
+            have htail' :
+                CompressedBumpChain tail.result.tableau (row₀ + 1)
+                  (B.tableau.T row₀ j) k := by
+              simpa only [hentry] using htail
+            rcases ih htail' with htail_old | ⟨l, hk, hbumped, htail_bumped⟩
+            · by_cases hj : j = B.col
+              · subst j
+                have htailT := hlower (by omega) htail_old
+                right
+                refine ⟨k, rfl, ?_, ?_⟩
+                · simpa only [hentry, B.replaced_entry] using hgt
+                · apply CompressedBumpChain.weaken_start (Nat.le_succ row₀)
+                  simpa only [B.replaced_entry] using htailT
+              · have hentry_old : B.tableau.T row₀ j = T₀.T row₀ j :=
+                  B.unchanged_of_col_ne hj
+                have htailT := hlower (by omega) htail_old
+                left
+                refine ⟨row₀, j, le_rfl, hcell_old, ?_, ?_⟩
+                · simpa only [hentry, hentry_old] using hgt
+                · simpa only [hentry_old] using htailT
+            · subst k
+              have hthreshold_x : threshold < x₀.val := by
+                have hthreshold_current : threshold < B.tableau.T row₀ j := by
+                  simpa only [hentry] using hgt
+                by_cases hj : j = B.col
+                · subst j
+                  simpa only [B.replaced_entry] using hthreshold_current
+                · have hjlt : j < B.col := by
+                    by_contra hnot
+                    have hcol_le : B.col ≤ j := Nat.le_of_not_gt hnot
+                    have hbumped_le_current :
+                        B.bumped.val ≤ B.tableau.T row₀ j := by
+                      calc
+                        B.bumped.val = T₀.T row₀ B.col := B.bumped_eq.symm
+                        _ ≤ T₀.T row₀ j :=
+                          T₀.T.row_weak_of_le hcol_le hcell_old
+                        _ = B.tableau.T row₀ j :=
+                          (B.unchanged_of_col_ne hj).symm
+                    exact (not_lt_of_ge hbumped_le_current) hbumped
+                  have hcurrent_le : B.tableau.T row₀ j ≤ x₀.val := by
+                    calc
+                      B.tableau.T row₀ j = T₀.T row₀ j :=
+                        B.unchanged_of_col_ne hj
+                      _ ≤ x₀.val := B.left_le hjlt hcell_old
+                  exact lt_of_lt_of_le hthreshold_current hcurrent_le
+              have htailT := hlower (by omega) htail_bumped
+              have htailT' :
+                  CompressedBumpChain T₀ (row₀ + 1) (T₀.T row₀ B.col) l := by
+                simpa only [B.bumped_eq] using htailT
+              right
+              refine ⟨l + 1, rfl, hthreshold_x, ?_⟩
+              exact ⟨row₀, B.col, le_rfl, B.cell_mem, B.entry_gt, htailT'⟩
+          · have hi' : row₀ + 1 ≤ i := by omega
+            have hchain_lower :
+                CompressedBumpChain tail.result.tableau (row₀ + 1)
+                  threshold (k + 1) :=
+              ⟨i, j, hi', hcell, hgt, htail⟩
+            rcases ih hchain_lower with hchain_old | ⟨l, hk, hbumped, htail_bumped⟩
+            · left
+              exact CompressedBumpChain.weaken_start (Nat.le_succ row₀)
+                (hlower (by omega) hchain_old)
+            · have hl : l = k := by omega
+              subst l
+              have htailT := hlower (by omega) htail_bumped
+              have htailT' :
+                  CompressedBumpChain T₀ (row₀ + 1) (T₀.T row₀ B.col) k := by
+                simpa only [B.bumped_eq] using htailT
+              left
+              exact ⟨row₀, B.col, le_rfl, B.cell_mem,
+                by simpa only [B.bumped_eq] using hbumped, htailT'⟩
+
+/-- The actual bumping route is itself a compressed ancestry. -/
+private theorem RowInsertionTrace.exists_compressedBumpChain_length_eq_newCell_row
+    {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (tr : RowInsertionTrace N T row x) :
+    ∃ k : ℕ, tr.result.newCell.1 = row + k ∧
+      CompressedBumpChain T row x.val k := by
+  induction tr with
+  | done A =>
+      exact ⟨0, by simpa [RowInsertionTrace.result] using A.result_newCell_row, trivial⟩
+  | bump B tail ih =>
+      rename_i T₀ row₀ x₀
+      rcases ih with ⟨k, hkrow, hchain⟩
+      have htail :
+          CompressedBumpChain T₀ (row₀ + 1) B.bumped.val k := by
+        apply CompressedBumpChain.of_rows_equiv
+            (T := B.tableau) (S := T₀)
+        · intro i j hi
+          exact Iff.rfl
+        · intro i j hi
+          exact (B.unchanged_of_row_ne (by omega)).symm
+        · exact hchain
+      have htail' :
+          CompressedBumpChain T₀ (row₀ + 1) (T₀.T row₀ B.col) k := by
+        simpa only [B.bumped_eq] using htail
+      refine ⟨k + 1, ?_, ⟨row₀, B.col, le_rfl, B.cell_mem, B.entry_gt, htail'⟩⟩
+      simpa [RowInsertionTrace.result, Nat.add_assoc, Nat.add_comm,
+        Nat.add_left_comm] using hkrow
+
+private lemma firstColumnHeight_mono {μ ν : YoungDiagram}
+    (hsub : μ ≤ ν) :
+    firstColumnHeight μ ≤ firstColumnHeight ν := by
+  apply le_of_not_gt
+  intro hgt
+  have hcellμ : (ν.colLen 0, 0) ∈ μ := by
+    rw [YoungDiagram.mem_iff_lt_colLen]
+    exact hgt
+  have hcellν : (ν.colLen 0, 0) ∈ ν := hsub hcellμ
+  have hlt : ν.colLen 0 < ν.colLen 0 := by
+    rwa [YoungDiagram.mem_iff_lt_colLen] at hcellν
+  exact Nat.lt_irrefl _ hlt
+
+/-- A compressed ancestry of length `k` forces insertion to reach at least row
+`row + k`. -/
+private theorem RowInsertionTrace.compressedBumpChain_length_succ_le_result_firstColumnHeight
+    {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N} {row : ℕ} {x : Fin N}
+    (tr : RowInsertionTrace N T row x) {k : ℕ}
+    (hchain : CompressedBumpChain T row x.val k) :
+    row + k + 1 ≤ firstColumnHeight tr.result.shape := by
+  induction tr generalizing k with
+  | done A =>
+      rename_i T₀ row₀ x₀
+      cases k with
+      | zero =>
+          have hcell : (row₀, 0) ∈ A.result.shape :=
+            A.result.shape.up_left_mem le_rfl (Nat.zero_le _)
+              (by simpa only [← A.result_newCell_row] using A.result.newCell_mem)
+          dsimp [firstColumnHeight]
+          rw [YoungDiagram.mem_iff_lt_colLen] at hcell
+          simpa only [RowInsertionTrace.result] using hcell
+      | succ k =>
+          rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+          have hi_ne : i ≠ row₀ := by
+            intro heq
+            subst i
+            have hj : j < μ.rowLen row₀ := by
+              rwa [YoungDiagram.mem_iff_lt_rowLen] at hcell
+            exact (not_lt_of_ge (A.location.row_entries_le hj)) hgt
+          have hi_height : i + 1 ≤ firstColumnHeight μ := by
+            dsimp [firstColumnHeight]
+            have hi_lt : i < μ.colLen j := by
+              rwa [YoungDiagram.mem_iff_lt_colLen] at hcell
+            have hcol := μ.colLen_anti 0 j (Nat.zero_le j)
+            omega
+          have htail_bound :=
+            CompressedBumpChain.length_le_firstColumnHeight_of_start_le
+              hi_height htail
+          have hmono : firstColumnHeight μ ≤ firstColumnHeight A.result.shape :=
+            firstColumnHeight_mono A.result.old_subset
+          change row₀ + (k + 1) + 1 ≤
+            firstColumnHeight (RowInsertionTrace.done A).result.shape
+          simp only [RowInsertionTrace.result]
+          omega
+  | bump B tail ih =>
+      rename_i T₀ row₀ x₀
+      have hlower :
+          ∀ {start threshold length : ℕ}, row₀ + 1 ≤ start →
+            CompressedBumpChain T₀ start threshold length →
+              CompressedBumpChain B.tableau start threshold length := by
+        intro start threshold length hstart hchain
+        exact CompressedBumpChain.of_old_subset_entry_eq
+          (fun _ hcell => hcell)
+          (fun _ _ => B.unchanged_of_row_ne (by omega))
+          hchain
+      cases k with
+      | zero =>
+          have hrow_ge : row₀ + 1 ≤ tail.result.newCell.1 :=
+            tail.result_newCell_row_ge
+          have hcell : (tail.result.newCell.1, 0) ∈ tail.result.shape :=
+            tail.result.shape.up_left_mem le_rfl (Nat.zero_le _)
+              tail.result.newCell_mem
+          dsimp [firstColumnHeight]
+          rw [YoungDiagram.mem_iff_lt_colLen] at hcell
+          change row₀ + 0 + 1 ≤
+            firstColumnHeight (RowInsertionTrace.bump B tail).result.shape
+          simp only [RowInsertionTrace.result]
+          dsimp [firstColumnHeight]
+          omega
+      | succ k =>
+          rcases hchain with ⟨i, j, hi, hcell, hgt, htail⟩
+          by_cases hirow : i = row₀
+          · subst i
+            have hbumped_le : B.bumped.val ≤ T₀.T row₀ j :=
+              B.bumped_le_entry_of_entry_gt hcell hgt
+            have htailB := hlower (by omega) htail
+            have htailB' :
+                CompressedBumpChain B.tableau (row₀ + 1) B.bumped.val k :=
+              CompressedBumpChain.mono_threshold hbumped_le htailB
+            have hbound := ih htailB'
+            change row₀ + (k + 1) + 1 ≤
+              firstColumnHeight (RowInsertionTrace.bump B tail).result.shape
+            simp only [RowInsertionTrace.result]
+            omega
+          · have hi' : row₀ + 1 ≤ i := by omega
+            have hchainB :
+                CompressedBumpChain B.tableau (row₀ + 1) x₀.val (k + 1) := by
+              refine ⟨i, j, hi', hcell, ?_, ?_⟩
+              · simpa [B.unchanged_of_row_ne hirow] using hgt
+              · have htailB := hlower (by omega) htail
+                have hentry : B.tableau.T i j = T₀.T i j :=
+                  B.unchanged_of_row_ne hirow
+                simpa only [hentry] using htailB
+            have hstart : row₀ + 1 ≤ firstColumnHeight μ := by
+              dsimp [firstColumnHeight]
+              have hi_lt : i < μ.colLen j := by
+                rwa [YoungDiagram.mem_iff_lt_colLen] at hcell
+              have hcol := μ.colLen_anti 0 j (Nat.zero_le j)
+              omega
+            have hbound :=
+              CompressedBumpChain.length_le_firstColumnHeight_of_start_le
+                hstart hchainB
+            have hmono :
+                firstColumnHeight μ ≤
+                  firstColumnHeight tail.result.shape :=
+              firstColumnHeight_mono tail.result.old_subset
+            change row₀ + (k + 1) + 1 ≤
+              firstColumnHeight (RowInsertionTrace.bump B tail).result.shape
+            simp only [RowInsertionTrace.result]
+            omega
+
+private lemma firstColumnHeight_extendsByCell_le_succ {μ ν : YoungDiagram}
+    {c : ℕ × ℕ} (hext : ExtendsByCell μ ν c) :
+    firstColumnHeight ν ≤ firstColumnHeight μ + 1 := by
+  apply le_of_not_gt
+  intro hgt
+  have hrow_gt : firstColumnHeight μ + 1 < firstColumnHeight ν := hgt
+  have hcellν : (firstColumnHeight μ + 1, 0) ∈ ν := by
+    rw [YoungDiagram.mem_iff_lt_colLen]
+    exact hrow_gt
+  rcases (hext (firstColumnHeight μ + 1, 0)).1 hcellν with hcellμ | hnew
+  · have hlt : firstColumnHeight μ + 1 < firstColumnHeight μ := by
+      rwa [YoungDiagram.mem_iff_lt_colLen] at hcellμ
+    omega
+  · have hc_row : c.1 = firstColumnHeight μ + 1 := by
+      exact (congrArg Prod.fst hnew).symm
+    have hc_col : c.2 = 0 := by
+      exact (congrArg Prod.snd hnew).symm
+    have hbelowν : (firstColumnHeight μ, 0) ∈ ν := by
+      exact ν.up_left_mem (by omega) le_rfl hcellν
+    rcases (hext (firstColumnHeight μ, 0)).1 hbelowν with hbelowμ | hbelow_new
+    · have hlt : firstColumnHeight μ < firstColumnHeight μ := by
+        rwa [YoungDiagram.mem_iff_lt_colLen] at hbelowμ
+      exact Nat.lt_irrefl _ hlt
+    · have hrow_eq : firstColumnHeight μ = firstColumnHeight μ + 1 := by
+        calc
+          firstColumnHeight μ = c.1 := congrArg Prod.fst hbelow_new
+          _ = firstColumnHeight μ + 1 := hc_row
+      omega
+
+private lemma firstColumnHeight_extendsByCell_eq_of_newCell_col_ne_zero
+    {μ ν : YoungDiagram} {c : ℕ × ℕ}
+    (hext : ExtendsByCell μ ν c) (hc : c.2 ≠ 0) :
+    firstColumnHeight ν = firstColumnHeight μ := by
+  simpa [firstColumnHeight] using ExtendsByCell.colLen_eq_of_ne hext (Ne.symm hc)
+
+private lemma firstColumnHeight_extendsByCell_eq_succ_of_newCell_col_zero
+    {μ ν : YoungDiagram} {c : ℕ × ℕ}
+    (hext : ExtendsByCell μ ν c) (hnot : c ∉ μ) (hc : c.2 = 0) :
+    firstColumnHeight ν = firstColumnHeight μ + 1 := by
+  simpa [firstColumnHeight, hc] using ExtendsByCell.colLen_at_newCell hext hnot
+
+private lemma rowInsert_firstColumnHeight_le_succ {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) (x : Fin N) :
+    firstColumnHeight (rowInsert T x).shape ≤ firstColumnHeight μ + 1 := by
+  exact firstColumnHeight_extendsByCell_le_succ (rowInsert T x).extendsByCell
+
+private lemma rowInsert_firstColumnHeight_old_le {N : ℕ} {μ : YoungDiagram}
+    (T : BoundedSSYT μ N) (x : Fin N) :
+    firstColumnHeight μ ≤ firstColumnHeight (rowInsert T x).shape := by
+  exact firstColumnHeight_mono (rowInsert T x).old_subset
+
+private lemma rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero {N : ℕ}
+    {μ : YoungDiagram} (T : BoundedSSYT μ N) (x : Fin N)
+    (hc : (rowInsert T x).newCell.2 ≠ 0) :
+    firstColumnHeight (rowInsert T x).shape = firstColumnHeight μ := by
+  exact firstColumnHeight_extendsByCell_eq_of_newCell_col_ne_zero
+    (rowInsert T x).extendsByCell hc
+
+private lemma rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero {N : ℕ}
+    {μ : YoungDiagram} (T : BoundedSSYT μ N) (x : Fin N)
+    (hc : (rowInsert T x).newCell.2 = 0) :
+    firstColumnHeight (rowInsert T x).shape = firstColumnHeight μ + 1 := by
+  exact firstColumnHeight_extendsByCell_eq_succ_of_newCell_col_zero
+    (rowInsert T x).extendsByCell (rowInsert T x).newCell_not_mem_old hc
+
+private lemma rowInsert_newCell_row_succ_le_firstColumnHeight_of_newCell_col_ne_zero
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) (x : Fin N)
+    (hc : (rowInsert T x).newCell.2 ≠ 0) :
+    (rowInsert T x).newCell.1 + 1 ≤ firstColumnHeight μ := by
+  let R := rowInsert T x
+  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hc
+  have hleft_shape : (R.newCell.1, k) ∈ R.shape := by
+    have hnew : R.newCell ∈ R.shape := R.newCell_mem
+    have hnew' : (R.newCell.1, k + 1) ∈ R.shape := by
+      have hcell : (R.newCell.1, k + 1) = R.newCell := by
+        apply Prod.ext
+        · rfl
+        · simpa [R] using hk.symm
+      simpa [hcell] using hnew
+    exact R.shape.up_left_mem le_rfl (Nat.le_succ k) hnew'
+  have hleft_ne : ((R.newCell.1, k) : ℕ × ℕ) ≠ R.newCell := by
+    intro h
+    have hk_succ : k = k + 1 := by
+      simpa [R, hk] using congrArg Prod.snd h
+    omega
+  have hleft_old : (R.newCell.1, k) ∈ μ := by
+    rcases (R.shape_mem_iff (R.newCell.1, k)).1 hleft_shape with hold | hnew
+    · exact hold
+    · exact False.elim (hleft_ne hnew)
+  have hrow_lt : R.newCell.1 < μ.colLen k := by
+    rwa [YoungDiagram.mem_iff_lt_colLen] at hleft_old
+  have hcol_le : μ.colLen k ≤ μ.colLen 0 :=
+    μ.colLen_anti 0 k (Nat.zero_le k)
+  have hrow_lt' : (rowInsert T x).newCell.1 < μ.colLen k := by
+    simpa [R] using hrow_lt
+  dsimp [firstColumnHeight]
+  omega
+
+private lemma rowInsert_newCell_row_succ_le_firstColumnHeight
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) (x : Fin N) :
+    (rowInsert T x).newCell.1 + 1 ≤
+      firstColumnHeight (rowInsert T x).shape := by
+  let R := rowInsert T x
+  have hcell : (R.newCell.1, 0) ∈ R.shape :=
+    R.shape.up_left_mem le_rfl (Nat.zero_le _) R.newCell_mem
+  rw [YoungDiagram.mem_iff_lt_colLen] at hcell
+  simpa [R, firstColumnHeight] using hcell
+
+/-- Once insertion of `y` grows the first column, immediately inserting a smaller
+letter grows the first column once more.  The strict successive-path comparator is
+the essential input: the second new cell lies below the first one. -/
+private lemma rowInsert_firstColumnHeight_eq_succ_after_gt_of_newCell_col_zero
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) {y z : Fin N}
+    (hyz : z < y) (hycol : (rowInsert T y).newCell.2 = 0) :
+    firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape =
+      firstColumnHeight (rowInsert T y).shape + 1 := by
+  have hyrow :
+      (rowInsert T y).newCell.1 = firstColumnHeight μ := by
+    have hold := (rowInsert T y).old_colLen_at_newCell
+    simpa [firstColumnHeight, hycol] using hold.symm
+  have hyheight :
+      firstColumnHeight (rowInsert T y).shape = firstColumnHeight μ + 1 :=
+    rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T y hycol
+  have hrow_lt :
+      (rowInsert T y).newCell.1 <
+        (rowInsert (rowInsert T y).tableau z).newCell.1 :=
+    rowBumping_newBox_row_lt_after_gt T hyz
+  have hrow_le :
+      (rowInsert (rowInsert T y).tableau z).newCell.1 + 1 ≤
+        firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape :=
+    rowInsert_newCell_row_succ_le_firstColumnHeight (rowInsert T y).tableau z
+  have hheight_le :
+      firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape ≤
+        firstColumnHeight (rowInsert T y).shape + 1 :=
+    rowInsert_firstColumnHeight_le_succ (rowInsert T y).tableau z
+  omega
+
+/-- If direct insertion of a smaller letter grows the first column, inserting a larger
+letter immediately before it does not hide that growth. -/
+private lemma rowInsert_firstColumnHeight_eq_succ_after_gt_of_direct_newCell_col_zero
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) {y z : Fin N}
+    (hyz : z < y) (hzcol : (rowInsert T z).newCell.2 = 0) :
+    firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape =
+      firstColumnHeight (rowInsert T y).shape + 1 := by
+  by_cases hycol : (rowInsert T y).newCell.2 = 0
+  · exact rowInsert_firstColumnHeight_eq_succ_after_gt_of_newCell_col_zero
+      T hyz hycol
+  · have haftercol :
+        (rowInsert (rowInsert T y).tableau z).newCell.2 = 0 :=
+      rowInsertionTrace_newCell_col_zero_after_prior_of_le T
+        (le_of_lt hyz) hzcol hycol
+    exact rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero
+      (rowInsert T y).tableau z haftercol
+
+private lemma rowInsert_firstColumnHeight_le_after_prior_insert_of_le
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) {y z : Fin N}
+    (hyz : y ≤ z) :
+    firstColumnHeight (rowInsert T z).shape ≤
+      firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape := by
+  by_cases hzcol : (rowInsert T z).newCell.2 = 0
+  · have hycol : (rowInsert T y).newCell.2 = 0 := by
+      have hle_col : (rowInsert T y).newCell.2 ≤ (rowInsert T z).newCell.2 :=
+        rowBumping_newBox_col_le_of_le T hyz
+      omega
+    have hzheight :
+        firstColumnHeight (rowInsert T z).shape = firstColumnHeight μ + 1 :=
+      rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T z hzcol
+    have hyheight :
+        firstColumnHeight (rowInsert T y).shape = firstColumnHeight μ + 1 :=
+      rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T y hycol
+    have hle_after :
+        firstColumnHeight (rowInsert T y).shape ≤
+          firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape :=
+      rowInsert_firstColumnHeight_old_le (rowInsert T y).tableau z
+    omega
+  · have hzheight :
+        firstColumnHeight (rowInsert T z).shape = firstColumnHeight μ :=
+      rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero T z hzcol
+    have hle_after :
+        firstColumnHeight μ ≤
+          firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape := by
+      exact le_trans (rowInsert_firstColumnHeight_old_le T y)
+        (rowInsert_firstColumnHeight_old_le (rowInsert T y).tableau z)
+    omega
+
+private lemma rowInsert_firstColumnHeight_le_after_prior_insert
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) (y z : Fin N) :
+    firstColumnHeight (rowInsert T z).shape ≤
+      firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape := by
+  by_cases hyz : y ≤ z
+  · exact rowInsert_firstColumnHeight_le_after_prior_insert_of_le T hyz
+  · have hzy : z < y := lt_of_not_ge hyz
+    by_cases hzcol : (rowInsert T z).newCell.2 = 0
+    · by_cases hycol : (rowInsert T y).newCell.2 = 0
+      · have hzheight :
+            firstColumnHeight (rowInsert T z).shape = firstColumnHeight μ + 1 :=
+          rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T z hzcol
+        have hyheight :
+            firstColumnHeight (rowInsert T y).shape = firstColumnHeight μ + 1 :=
+          rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T y hycol
+        have hle_after :
+            firstColumnHeight (rowInsert T y).shape ≤
+              firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape :=
+          rowInsert_firstColumnHeight_old_le (rowInsert T y).tableau z
+        omega
+      · have haftercol :
+            (rowInsert (rowInsert T y).tableau z).newCell.2 = 0 := by
+          exact rowInsertionTrace_newCell_col_zero_after_prior_of_le T
+            (le_of_lt hzy) hzcol hycol
+        have hzheight :
+            firstColumnHeight (rowInsert T z).shape = firstColumnHeight μ + 1 :=
+          rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero T z hzcol
+        have hafterheight :
+            firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape =
+              firstColumnHeight (rowInsert T y).shape + 1 :=
+          rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero
+            (rowInsert T y).tableau z haftercol
+        have hyold :
+            firstColumnHeight μ ≤ firstColumnHeight (rowInsert T y).shape :=
+          rowInsert_firstColumnHeight_old_le T y
+        omega
+    · have hzheight :
+          firstColumnHeight (rowInsert T z).shape = firstColumnHeight μ :=
+        rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero T z hzcol
+      have hle_after :
+          firstColumnHeight μ ≤
+            firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape := by
+        exact le_trans (rowInsert_firstColumnHeight_old_le T y)
+          (rowInsert_firstColumnHeight_old_le (rowInsert T y).tableau z)
+      omega
+
+/-- Adding an earlier insertion can only hide a direct terminal row if that row is
+already covered by the intermediate first column. -/
+private lemma rowInsert_newCell_row_lt_firstColumnHeight_or_le_after_prior_insert
+    {N : ℕ} {μ : YoungDiagram} (T : BoundedSSYT μ N) (y z : Fin N) :
+    (rowInsert T z).newCell.1 < firstColumnHeight (rowInsert T y).shape ∨
+      (rowInsert T z).newCell.1 ≤
+        (rowInsert (rowInsert T y).tableau z).newCell.1 := by
+  by_cases hrow :
+      (rowInsert T z).newCell.1 < firstColumnHeight (rowInsert T y).shape
+  · exact Or.inl hrow
+  · right
+    have hdirect :
+        (rowInsert T z).newCell.1 + 1 ≤
+          firstColumnHeight (rowInsert T z).shape :=
+      rowInsert_newCell_row_succ_le_firstColumnHeight T z
+    have hmono :
+        firstColumnHeight (rowInsert T z).shape ≤
+          firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape :=
+      rowInsert_firstColumnHeight_le_after_prior_insert T y z
+    have hstep :
+        firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape ≤
+          firstColumnHeight (rowInsert T y).shape + 1 :=
+      rowInsert_firstColumnHeight_le_succ (rowInsert T y).tableau z
+    have hheight :
+        firstColumnHeight (rowInsert (rowInsert T y).tableau z).shape =
+          firstColumnHeight (rowInsert T y).shape + 1 := by
+      omega
+    have hcol :
+        (rowInsert (rowInsert T y).tableau z).newCell.2 = 0 := by
+      by_contra hne
+      have heq :=
+        rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero
+          (rowInsert T y).tableau z hne
+      omega
+    have hafter_row :
+        (rowInsert (rowInsert T y).tableau z).newCell.1 =
+          firstColumnHeight (rowInsert T y).shape := by
+      have hold :=
+        (rowInsert (rowInsert T y).tableau z).old_colLen_at_newCell
+      simpa [firstColumnHeight, hcol] using hold.symm
+    omega
+
+/-- A decreasing sublist of the processed lower word is represented by a compressed
+bump ancestry in the current insertion tableau. -/
+private lemma krsForwardRun_descending_sublist_compressedBumpChain
+    {m n : ℕ} {w : List (Fin m × Fin n)} {S : KRSForwardState m n}
+    (hrun : KRSForwardRun w S) (z : Fin n) {t : List (Fin n)}
+    (ht_sub : List.Sublist t (generalizedPermutation.lowerWord w))
+    (ht_pair : (t ++ [z]).Pairwise (fun a b => a > b)) :
+    CompressedBumpChain S.P 0 z.val t.length := by
+  induction hrun generalizing z t with
+  | nil =>
+      have ht_nil : t = [] := by
+        simpa [generalizedPermutation.lowerWord, generalizedPermutation_nil] using ht_sub
+      subst t
+      trivial
+  | @snoc w S y hrun hsorted hrec hsame_next ih =>
+      have ht_sub' :
+          List.Sublist t (generalizedPermutation.lowerWord w ++ [y.2]) := by
+        simpa [lowerWord_append_singleton_of_sorted hsorted] using ht_sub
+      rcases sublist_append_singleton_cases ht_sub' with ht_old | ⟨u, hu_sub, rfl⟩
+      · have hchain := ih z ht_old ht_pair
+        have hpreserve :=
+          ((rowInsertionTrace S.P y.2).compressedBumpChain_ops).1 z.val _ hchain
+        simpa [krsForwardStep, rowInsert] using hpreserve
+      · have hyz_pair : (u ++ [y.2, z]).Pairwise (fun a b => a > b) := by
+          simpa [List.append_assoc] using ht_pair
+        have huy_pair : (u ++ [y.2]).Pairwise (fun a b => a > b) := by
+          have hsub : List.Sublist (u ++ [y.2]) (u ++ [y.2, z]) := by
+            simp
+          exact hyz_pair.sublist hsub
+        have hyz : z.val < y.2.val := by
+          have htail : [y.2, z].Pairwise (fun a b => a > b) :=
+            (List.pairwise_append.mp hyz_pair).2.1
+          simpa using htail
+        have hchain := ih y.2 hu_sub huy_pair
+        have hextend :=
+          ((rowInsertionTrace S.P y.2).compressedBumpChain_ops).2 z.val hyz _ hchain
+        simpa [krsForwardStep, rowInsert] using hextend
+
+/-- Conversely, every compressed ancestry in a reachable insertion tableau is
+realized by a decreasing sublist of the processed lower word. -/
+private lemma krsForwardRun_compressedBumpChain_exists_descending_sublist
+    {m n : ℕ} {w : List (Fin m × Fin n)} {S : KRSForwardState m n}
+    (hrun : KRSForwardRun w S) {z : Fin n} {k : ℕ}
+    (hchain : CompressedBumpChain S.P 0 z.val k) :
+    ∃ t : List (Fin n),
+      List.Sublist t (generalizedPermutation.lowerWord w) ∧
+      t.length = k ∧ (t ++ [z]).Pairwise (fun a b => a > b) := by
+  induction hrun generalizing z k with
+  | nil =>
+      have hk : k = 0 := by
+        have hle := CompressedBumpChain.length_le_firstColumnHeight hchain
+        simpa [KRSForwardState.empty, firstColumnHeight_bot] using hle
+      subst k
+      exact ⟨[], by simp [generalizedPermutation.lowerWord, generalizedPermutation_nil],
+        rfl, by simp⟩
+  | @snoc w S y hrun hsorted hrec hsame_next ih =>
+      have hcases :
+          CompressedBumpChain S.P 0 z.val k ∨
+            ∃ l : ℕ, k = l + 1 ∧ z.val < y.2.val ∧
+              CompressedBumpChain S.P 0 y.2.val l := by
+        apply (rowInsertionTrace S.P y.2).compressedBumpChain_cases
+        simpa [krsForwardStep, rowInsert] using hchain
+      rcases hcases with hold | ⟨l, rfl, hzy, hchain_y⟩
+      · rcases ih hold with ⟨t, ht_sub, ht_len, ht_pair⟩
+        refine ⟨t, ?_, ht_len, ht_pair⟩
+        rw [lowerWord_append_singleton_of_sorted hsorted]
+        exact ht_sub.trans (List.sublist_append_left _ _)
+      · rcases ih hchain_y with ⟨t, ht_sub, ht_len, ht_pair⟩
+        refine ⟨t ++ [y.2], ?_, by simp [ht_len], ?_⟩
+        · rw [lowerWord_append_singleton_of_sorted hsorted]
+          exact ht_sub.append (List.Sublist.refl [y.2])
+        · apply List.pairwise_append.mpr
+          refine ⟨ht_pair, by simp, ?_⟩
+          intro a ha b hb
+          simp only [List.mem_singleton] at hb
+          subst b
+          rcases List.mem_append.mp ha with hat | hay
+          · have hay_gt : a > y.2 :=
+              (List.pairwise_append.mp ht_pair).2.2 a hat y.2 (by simp)
+            exact lt_trans hzy hay_gt
+          · simp only [List.mem_singleton] at hay
+            subst a
+            exact hzy
+
+private lemma krsForwardRun_descending_suffix_length_le_rowInsert_firstColumnHeight
+    {m n : ℕ} {w : List (Fin m × Fin n)} {S : KRSForwardState m n}
+    (hrun : KRSForwardRun w S) (z : Fin m × Fin n)
+    {t : List (Fin n)}
+    (ht_sub : List.Sublist t (generalizedPermutation.lowerWord w))
+    (ht_pair : (t ++ [z.2]).Pairwise (fun a b => a > b)) :
+    t.length + 1 ≤ firstColumnHeight (rowInsert S.P z.2).shape := by
+  have hchain :=
+    krsForwardRun_descending_sublist_compressedBumpChain hrun z.2 ht_sub ht_pair
+  simpa [rowInsert] using
+    (rowInsertionTrace S.P z.2).compressedBumpChain_length_succ_le_result_firstColumnHeight
+      hchain
+
 /-- Schensted's theorem for the lower word: LDS equals first-column height. -/
 theorem schensted_lds_eq_firstColumnHeight {m n : ℕ} (W : Biword m n) :
     generalizedPermutation.width W.1 =
@@ -7842,30 +9990,105 @@ theorem schensted_lds_eq_firstColumnHeight {m n : ℕ} (W : Biword m n) :
   Every strictly decreasing subsequence of the processed lower word
   is controlled by the rows created in the insertion tableau.
   -/
+  have hboth :
+      ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
+        KRSForwardRun w S →
+          generalizedPermutation.width w ≤ firstColumnHeight S.shape ∧
+          firstColumnHeight S.shape ≤ generalizedPermutation.width w := by
+    intro w S hrun
+    induction hrun with
+    | nil =>
+        simp [KRSForwardState.empty, width_nil, firstColumnHeight_bot]
+    | @snoc w S z hrun hsorted hrec hsame_next ih =>
+        let R := rowInsert S.P z.2
+        constructor
+        · change generalizedPermutation.width (w ++ [z]) ≤
+            firstColumnHeight R.shape
+          by_cases hcol : R.newCell.2 = 0
+          · have hwidth :
+                generalizedPermutation.width (w ++ [z]) ≤
+                  generalizedPermutation.width w + 1 :=
+              width_append_singleton_le_succ_width_of_sorted hsorted
+            have hheight : firstColumnHeight R.shape =
+                firstColumnHeight S.shape + 1 := by
+              simpa [R] using
+                rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero S.P z.2 hcol
+            omega
+          · have hwidth_no_growth :
+                generalizedPermutation.width (w ++ [z]) ≤
+                  generalizedPermutation.width w := by
+              apply width_append_singleton_le_of_ending_subseq_bound hsorted
+              intro t ht_sub ht_pair
+              have hshape_bound :
+                  t.length + 1 ≤ firstColumnHeight R.shape := by
+                simpa [R] using
+                  krsForwardRun_descending_suffix_length_le_rowInsert_firstColumnHeight
+                    hrun z ht_sub ht_pair
+              have hheight' : firstColumnHeight R.shape = firstColumnHeight S.shape := by
+                simpa [R] using
+                  rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero S.P z.2 hcol
+              exact le_trans (by simpa [hheight'] using hshape_bound) ih.2
+            have hheight : firstColumnHeight R.shape =
+                firstColumnHeight S.shape := by
+              simpa [R] using
+                rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero S.P z.2 hcol
+            omega
+        · change firstColumnHeight R.shape ≤
+            generalizedPermutation.width (w ++ [z])
+          by_cases hcol : R.newCell.2 = 0
+          · have hheight : firstColumnHeight R.shape =
+                firstColumnHeight S.shape + 1 := by
+              simpa [R] using
+                rowInsert_firstColumnHeight_eq_succ_of_newCell_col_zero S.P z.2 hcol
+            have hwidth_growth :
+                generalizedPermutation.width w + 1 ≤
+                  generalizedPermutation.width (w ++ [z]) := by
+              let tr := rowInsertionTrace S.P z.2
+              rcases tr.exists_compressedBumpChain_length_eq_newCell_row with
+                ⟨k, hkrow, hchain⟩
+              have hkrow' : R.newCell.1 = k := by
+                simpa [R, tr] using hkrow
+              have hkheight : k = firstColumnHeight S.shape := by
+                have hold := R.old_colLen_at_newCell
+                rw [hcol] at hold
+                dsimp [firstColumnHeight]
+                omega
+              rcases krsForwardRun_compressedBumpChain_exists_descending_sublist
+                  hrun hchain with ⟨t, ht_sub, ht_len, ht_pair⟩
+              have ht_sub_append :
+                  List.Sublist (t ++ [z.2])
+                    (generalizedPermutation.lowerWord (w ++ [z])) := by
+                rw [lowerWord_append_singleton_of_sorted hsorted]
+                exact ht_sub.append (List.Sublist.refl [z.2])
+              have hlen :
+                  (t ++ [z.2]).length ≤
+                    generalizedPermutation.width (w ++ [z]) :=
+                length_le_width_of_lowerWord_sublist_pairwise_gt
+                  ht_sub_append ht_pair
+              simp only [List.length_append, List.length_singleton] at hlen
+              omega
+            omega
+          · have hheight : firstColumnHeight R.shape =
+                firstColumnHeight S.shape := by
+              simpa [R] using
+                rowInsert_firstColumnHeight_eq_of_newCell_col_ne_zero S.P z.2 hcol
+            have hwidth_mono :
+                generalizedPermutation.width w ≤
+                  generalizedPermutation.width (w ++ [z]) :=
+              width_le_width_append_singleton_of_sorted hsorted
+            omega
   have hwidth_le_height :
       ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
         KRSForwardRun w S →
           generalizedPermutation.width w ≤ firstColumnHeight S.shape := by
     intro w S hrun
-    induction hrun with
-    | nil =>
-        sorry
-    | @snoc w S z hrun hsorted hrec hsame_next ih =>
-        sorry
-  /-
-  The first column of the insertion tableau witnesses a strictly decreasing
-  subsequence of the processed lower word of the same length.
-  -/
+    exact (hboth hrun).1
   have hheight_le_width :
       ∀ {w : List (Fin m × Fin n)} {S : KRSForwardState m n},
         KRSForwardRun w S →
           firstColumnHeight S.shape ≤ generalizedPermutation.width w := by
     intro w S hrun
-    induction hrun with
-    | nil =>
-        sorry
-    | @snoc w S z hrun hsorted hrec hsame_next ih =>
-        sorry
+    exact (hboth hrun).2
   have hEq :
       generalizedPermutation.width W.1 =
         firstColumnHeight
@@ -8817,7 +11040,7 @@ theorem natCard_standardBitableau_lengthLE_degree_eq_monomial_widthLE
   rcases exists_krsEquiv_of_degree_widthLE m n r d with ⟨κ, _⟩
   exact (Nat.card_congr κ).symm
 
-/-
+
 /--
 Proposition 3: straightening law for Young bitableaux.
 
@@ -11119,6 +13342,6 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
   have hstrict_self : Nat.card CountedMonomials < Nat.card CountedMonomials := by
     simp [CountedMonomials] at hstrict_hilbert
   exact (lt_irrefl _ hstrict_self)
--/
+
 
 end Determinantal
