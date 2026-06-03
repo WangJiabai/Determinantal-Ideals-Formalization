@@ -11,6 +11,252 @@ namespace Determinantal
 
 attribute [local instance] MvPolynomial.gradedAlgebra
 
+structure YoungBitableau (m n : ℕ) where
+  v : ℕ
+  size : Fin v → ℕ
+  size_pos : ∀ a : Fin v, 0 < size a
+  minorindex : ∀ a : Fin v, MinorIndex m n (size a)
+  shape_antitone :
+    ∀ a b : Fin v, a ≤ b → size b ≤ size a
+
+namespace YoungBitableau
+
+/-- The empty bitableau. Its associated polynomial is `1`. -/
+noncomputable def empty (m n : ℕ) : YoungBitableau m n where
+  v := 0
+  size := Fin.elim0
+  size_pos := by
+    intro a
+    exact Fin.elim0 a
+  minorindex := fun a => Fin.elim0 a
+  shape_antitone := by
+    intro a
+    exact Fin.elim0 a
+
+/-- The `1 × 1` minor selecting the matrix entry indexed by `p`. -/
+def oneByOneMinorIndex {m n : ℕ} (p : Fin m × Fin n) : MinorIndex m n 1 where
+  row :=
+    OrderEmbedding.ofStrictMono
+      (fun _ : Fin 1 => p.1)
+      (by
+        intro i j h
+        fin_cases i
+        fin_cases j
+        simp at h)
+  col :=
+    OrderEmbedding.ofStrictMono
+      (fun _ : Fin 1 => p.2)
+      (by
+        intro i j h
+        fin_cases i
+        fin_cases j
+        simp at h)
+
+@[simp] lemma oneByOneMinorIndex_row_zero {m n : ℕ} (p : Fin m × Fin n) :
+    (oneByOneMinorIndex p).row 0 = p.1 := by
+  rfl
+
+@[simp] lemma oneByOneMinorIndex_col_zero {m n : ℕ} (p : Fin m × Fin n) :
+    (oneByOneMinorIndex p).col 0 = p.2 := by
+  rfl
+
+noncomputable def toPolynomial {m n}
+    {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) :
+    MvPolynomial (Fin m × Fin n) k :=
+  ∏ a : Fin B.v, genericMinor (B.minorindex a)
+
+@[simp] lemma toPolynomial_empty {m n : ℕ}
+    {k : Type*} [CommRing k] :
+    toPolynomial (k := k) (empty m n) = 1 := by
+  simp [empty, toPolynomial]
+
+@[simp] lemma genericMinor_oneByOneMinorIndex {m n : ℕ}
+    {k : Type*} [CommRing k] (p : Fin m × Fin n) :
+    genericMinor (k := k) (oneByOneMinorIndex p) = MvPolynomial.X p := by
+  simp [genericMinor, oneByOneMinorIndex]
+
+@[simp] lemma genericMinor_cast_congrArg {m n t u : ℕ}
+    {k : Type*} [CommRing k]
+    (h : t = u) (I : MinorIndex m n t) :
+    genericMinor (k := k)
+        (cast (congrArg (MinorIndex m n) h) I : MinorIndex m n u) =
+      genericMinor (k := k) I := by
+  cases h
+  rfl
+
+def length
+    {m n : ℕ}
+    (B : YoungBitableau m n) : ℕ := Finset.univ.sup B.size
+
+lemma size_le_length {m n : ℕ} (B : YoungBitableau m n) :
+  ∀ a : Fin B.v, B.size a ≤ B.length := by
+  intro a
+  unfold length
+  exact Finset.le_sup (Finset.mem_univ a)
+
+theorem length_eq_size_zero
+    {m n : ℕ}
+    (B : YoungBitableau m n)
+    (hv : 0 < B.v) :
+    length B = B.size ⟨0, hv⟩ := by
+  apply le_antisymm
+  · unfold length
+    apply Finset.sup_le
+    intro a ha
+    exact B.shape_antitone ⟨0, hv⟩ a (left_eq_inf.mp rfl)
+  · exact size_le_length B ⟨0, hv⟩
+
+def degree
+    {m n : ℕ}
+    (B : YoungBitableau m n) : ℕ :=
+  ∑ a : Fin B.v, B.size a
+
+lemma toPolynomial_isHomogeneous
+    {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) :
+    (toPolynomial (k := k) B).IsHomogeneous B.degree := by
+  rw [toPolynomial, degree]
+  convert MvPolynomial.IsHomogeneous.prod
+      (Finset.univ : Finset (Fin B.v))
+      (fun a => genericMinor (k := k) (B.minorindex a))
+      B.size
+      (fun a _ => genericMinor_isHomogeneous (k := k) (B.minorindex a)) using 1
+
+def IsStandard
+    {m n : ℕ}
+    (B : YoungBitableau m n) : Prop :=
+  ∀ (a b : Fin B.v) (hnext : a.val + 1 = b.val),
+    ∀ (j : Fin (B.size b)),
+      (B.minorindex a).row
+          ⟨j.val,
+            lt_of_lt_of_le j.isLt
+              (B.shape_antitone a b (by grind))⟩
+        ≤ (B.minorindex b).row j
+      ∧
+      (B.minorindex a).col
+          ⟨j.val,
+            lt_of_lt_of_le j.isLt
+              (B.shape_antitone a b (by grind))⟩
+        ≤ (B.minorindex b).col j
+
+/-- A bitableau whose factors are all `1 × 1` minors. -/
+def oneMinorVec {m n : ℕ} (v : ℕ) (f : Fin v → Fin m × Fin n) :
+    YoungBitableau m n where
+  v := v
+  size := fun _ => 1
+  size_pos := by
+    intro a
+    decide
+  minorindex := fun a => oneByOneMinorIndex (f a)
+  shape_antitone := by
+    intro a b h
+    simp
+
+@[simp] lemma toPolynomial_oneMinorVec {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (v : ℕ) (f : Fin v → Fin m × Fin n) :
+    toPolynomial (k := k) (oneMinorVec v f) =
+      ∏ a : Fin v, MvPolynomial.X (f a) := by
+  simp [oneMinorVec, toPolynomial]
+
+lemma toPolynomial_oneMinorVec_snoc {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (v : ℕ) (f : Fin v → Fin m × Fin n) (p : Fin m × Fin n) :
+    toPolynomial (k := k)
+        (oneMinorVec (v + 1) (Fin.snoc f p)) =
+      toPolynomial (k := k) (oneMinorVec v f) * MvPolynomial.X p := by
+  rw [toPolynomial_oneMinorVec, toPolynomial_oneMinorVec]
+  rw [Fin.prod_univ_castSucc]
+  simp [Fin.snoc_castSucc, Fin.snoc_last]
+
+/-- Append a `1 × 1` minor at the end of a bitableau. -/
+noncomputable def snocOneMinor {m n : ℕ}
+    (B : YoungBitableau m n) (p : Fin m × Fin n) :
+    YoungBitableau m n where
+  v := B.v + 1
+  size := Fin.snoc (fun a : Fin B.v => B.size a) 1
+  size_pos := by
+    intro a
+    cases a using Fin.lastCases with
+    | last => simp [Fin.snoc_last]
+    | cast a => simpa [Fin.snoc_castSucc] using B.size_pos a
+  minorindex :=
+    fun a => by
+      cases a using Fin.lastCases with
+      | last =>
+        simpa [Fin.snoc_last] using oneByOneMinorIndex p
+      | cast a =>
+        simpa [Fin.snoc_castSucc] using B.minorindex a
+  shape_antitone := by
+    intro a b h
+    cases b using Fin.lastCases with
+    | last =>
+      cases a using Fin.lastCases with
+      | last => simp [Fin.snoc_last]
+      | cast a => simpa [Fin.snoc_castSucc, Fin.snoc_last] using B.size_pos a
+    | cast b =>
+      cases a using Fin.lastCases with
+      | last =>
+        have hval : (Fin.last B.v).val ≤ (Fin.castSucc b).val := h
+        exact False.elim ((not_le_of_gt b.isLt) hval)
+      | cast a =>
+        have hab : a ≤ b := h
+        simpa [Fin.snoc_castSucc] using B.shape_antitone a b hab
+
+@[simp] lemma toPolynomial_snocOneMinor {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) (p : Fin m × Fin n) :
+    toPolynomial (k := k) (snocOneMinor B p) =
+      toPolynomial (k := k) B * MvPolynomial.X p := by
+  rw [toPolynomial]
+  change
+    (∏ a : Fin (B.v + 1),
+        genericMinor ((snocOneMinor B p).minorindex a)) =
+      toPolynomial (k := k) B * MvPolynomial.X p
+  rw [Fin.prod_univ_castSucc]
+  simp [snocOneMinor, toPolynomial]
+
+lemma length_le_length_snocOneMinor {m n : ℕ}
+    (B : YoungBitableau m n) (p : Fin m × Fin n) :
+    B.length ≤ (snocOneMinor B p).length := by
+  unfold length
+  apply Finset.sup_le
+  intro a _ha
+  have h := size_le_length (snocOneMinor B p) (Fin.castSucc a)
+  simpa [snocOneMinor, Fin.snoc_castSucc] using h
+
+/-- A bitableau consisting of a single minor. -/
+noncomputable def oneMinor {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t) :
+    YoungBitableau m n where
+  v := 1
+  size := fun _ => t
+  size_pos := by
+    intro _
+    exact ht
+  minorindex := fun _ => I
+  shape_antitone := by
+    intro a b h
+    fin_cases a
+    fin_cases b
+    rfl
+
+@[simp] lemma toPolynomial_oneMinor {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (ht : 0 < t) (I : MinorIndex m n t) :
+    toPolynomial (k := k) (oneMinor ht I) =
+      genericMinor (k := k) I := by
+  simp [oneMinor, toPolynomial]
+
+@[simp] lemma length_oneMinor {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t) :
+    length (oneMinor ht I) = t := by
+  simp [length, oneMinor]
+
+end YoungBitableau
+
 namespace generalizedPermutation
 
 /-- The `1 × 1`-minor bitableau attached to a monomial exponent vector. -/
@@ -114,14 +360,6 @@ lemma width_indicesOfMonomialExp_eq_one_iff_bitableauOfMonomialExp_isStandard
     simpa [bitableauOfMonomialExp, xs, w, lowerWord, a, b, List.get_eq_getElem] using hcol
 
 end generalizedPermutation
-
-/-- Standard Young bitableaux, as used in Proposition 2 and the straightening law. -/
-abbrev StandardYoungBitableau (m n : ℕ) :=
-  { B : YoungBitableau m n // YoungBitableau.IsStandard B }
-
-/-- Standard Young bitableaux of length at most `r`. -/
-abbrev StandardYoungBitableauOfLengthLE (m n r : ℕ) :=
-  { B : StandardYoungBitableau m n // YoungBitableau.length B.1 ≤ r }
 
 namespace MinorIndex
 
@@ -283,419 +521,15 @@ lemma incomparable_pairLE_cases {m n p q : ℕ}
            J.col ⟨i.val, lt_of_lt_of_le i.isLt hqp⟩ ≤ I.col i)) := by
   exact ⟨not_pairLE_or_violation hIJ, not_pairLE_or_violation hJI⟩
 
-/-- Row-index content of a minor: the multiplicity vector of its selected rows. -/
-noncomputable def rowContent {m n t : ℕ} (I : MinorIndex m n t) : Fin m →₀ ℕ :=
-  ∑ a : Fin t, Finsupp.single (I.row a) 1
-
-/-- Total row-content multiplicity of a `t × t` minor is `t`. -/
-lemma rowContent_total {m n t : ℕ} (I : MinorIndex m n t) :
-    (∑ i : Fin m, MinorIndex.rowContent I i) = t := by
-  classical
-  simp only [rowContent, Finsupp.coe_finset_sum, Finset.sum_apply]
-  rw [Finset.sum_comm]
-  simp
-
-/-- Column-index content of a minor: the multiplicity vector of its selected columns. -/
-noncomputable def colContent {m n t : ℕ} (I : MinorIndex m n t) : Fin n →₀ ℕ :=
-  ∑ a : Fin t, Finsupp.single (I.col a) 1
-
-/-- Total column-content multiplicity of a `t × t` minor is `t`. -/
-lemma colContent_total {m n t : ℕ} (I : MinorIndex m n t) :
-    (∑ j : Fin n, MinorIndex.colContent I j) = t := by
-  classical
-  simp only [colContent, Finsupp.coe_finset_sum, Finset.sum_apply]
-  rw [Finset.sum_comm]
-  simp
-
-lemma mem_rowContent_support_iff {m n t : ℕ}
-    (I : MinorIndex m n t) (a : Fin m) :
-    a ∈ (MinorIndex.rowContent I).support ↔ ∃ i : Fin t, I.row i = a := by
-  classical
-  simp only [rowContent, Finsupp.mem_support_iff, Finsupp.coe_finset_sum, Finset.sum_apply, ne_eq,
-    Finset.sum_eq_zero_iff, Finset.mem_univ, forall_const, not_forall]
-  constructor
-  · rintro ⟨i, hi⟩
-    by_contra h
-    have hne : I.row i ≠ a := by
-      intro hia
-      exact h ⟨i, hia⟩
-    simp [hne] at hi
-  · rintro ⟨i, rfl⟩
-    exact ⟨i, by simp⟩
-
-lemma mem_colContent_support_iff {m n t : ℕ}
-    (I : MinorIndex m n t) (a : Fin n) :
-    a ∈ (MinorIndex.colContent I).support ↔ ∃ i : Fin t, I.col i = a := by
-  classical
-  simp only [colContent, Finsupp.mem_support_iff, Finsupp.coe_finset_sum, Finset.sum_apply, ne_eq,
-    Finset.sum_eq_zero_iff, Finset.mem_univ, forall_const, not_forall]
-  constructor
-  · rintro ⟨i, hi⟩
-    by_contra h
-    have hne : I.col i ≠ a := by
-      intro hia
-      exact h ⟨i, hia⟩
-    simp [hne] at hi
-  · rintro ⟨i, rfl⟩
-    exact ⟨i, by simp⟩
-
-lemma rowContent_support_eq_image {m n t : ℕ}
-    (I : MinorIndex m n t) :
-    (MinorIndex.rowContent I).support =
-      Finset.univ.map I.row.toEmbedding := by
-  classical
-  ext a
-  rw [MinorIndex.mem_rowContent_support_iff]
-  simp
-
-lemma colContent_support_eq_image {m n t : ℕ}
-    (I : MinorIndex m n t) :
-    (MinorIndex.colContent I).support =
-      Finset.univ.map I.col.toEmbedding := by
-  classical
-  ext a
-  rw [MinorIndex.mem_colContent_support_iff]
-  simp
-
-lemma eq_of_rowContent_eq_colContent {m n t : ℕ}
-    {I J : MinorIndex m n t}
-    (hrow : MinorIndex.rowContent I = MinorIndex.rowContent J)
-    (hcol : MinorIndex.colContent I = MinorIndex.colContent J) :
-    I = J := by
-  classical
-  have hrowSet :
-      Finset.univ.map I.row.toEmbedding =
-        Finset.univ.map J.row.toEmbedding := by
-    rw [← I.rowContent_support_eq_image,
-      ← J.rowContent_support_eq_image, hrow]
-  have hcolSet :
-      Finset.univ.map I.col.toEmbedding =
-        Finset.univ.map J.col.toEmbedding := by
-    rw [← I.colContent_support_eq_image,
-      ← J.colContent_support_eq_image, hcol]
-  have hrowEmb : I.row = J.row := by
-    have hIcard :
-        (Finset.univ.map I.row.toEmbedding).card = t := by simp
-    have hImem :
-        ∀ i : Fin t, I.row i ∈ Finset.univ.map I.row.toEmbedding := by
-      intro i
-      simp
-    have hJmem :
-        ∀ i : Fin t, J.row i ∈ Finset.univ.map I.row.toEmbedding := by
-      intro i
-      rw [hrowSet]
-      simp
-    have hI :
-        (fun i => I.row i) =
-          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-        (s := Finset.univ.map I.row.toEmbedding)
-        (h := hIcard) hImem I.row.strictMono
-    have hJ :
-        (fun i => J.row i) =
-          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-      (s := Finset.univ.map I.row.toEmbedding)
-      (h := hIcard) hJmem J.row.strictMono
-    ext i
-    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
-  have hcolEmb : I.col = J.col := by
-    have hIcard :
-        (Finset.univ.map I.col.toEmbedding).card = t := by simp
-    have hImem :
-        ∀ i : Fin t, I.col i ∈ Finset.univ.map I.col.toEmbedding := by
-      intro i
-      simp
-    have hJmem :
-        ∀ i : Fin t, J.col i ∈ Finset.univ.map I.col.toEmbedding := by
-      intro i
-      rw [hcolSet]
-      simp
-    have hI :
-        (fun i => I.col i) =
-          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-        (s := Finset.univ.map I.col.toEmbedding)
-        (h := hIcard) hImem I.col.strictMono
-    have hJ :
-        (fun i => J.col i) =
-          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-      (s := Finset.univ.map I.col.toEmbedding)
-      (h := hIcard) hJmem J.col.strictMono
-    ext i
-    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
-  cases I
-  cases J
-  simp_all
-
-lemma genericMinor_eq_sum_delete_row_zero {m n s : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n (s + 1)) :
-    genericMinor (k := k) I =
-      ∑ j : Fin (s + 1),
-        (-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
-          MvPolynomial.X (I.row 0, I.col j) *
-            genericMinor (k := k) (I.delete 0 j) := by
-  rw [genericMinor, Matrix.det_succ_row_zero]
-  apply Finset.sum_congr rfl
-  intro j _hj
-  rw [genericMinor_delete_eq_det_submatrix]
-  simp [Matrix.submatrix_apply, genericMatrix]
-
-lemma genericMinor_eq_sum_delete_col_zero {m n s : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n (s + 1)) :
-    genericMinor (k := k) I =
-      ∑ i : Fin (s + 1),
-        (-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
-          MvPolynomial.X (I.row i, I.col 0) *
-            genericMinor (k := k) (I.delete i 0) := by
-  rw [genericMinor, Matrix.det_succ_column_zero]
-  apply Finset.sum_congr rfl
-  intro i _hi
-  rw [genericMinor_delete_eq_det_submatrix]
-  simp [Matrix.submatrix_apply, genericMatrix]
-
-lemma genericMinor_mul_eq_sum_delete_row_zero_left {m n s t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n (s + 1)) (J : MinorIndex m n t) :
-    genericMinor (k := k) I * genericMinor (k := k) J =
-      ∑ j : Fin (s + 1),
-        ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
-          MvPolynomial.X (I.row 0, I.col j) *
-            genericMinor (k := k) (I.delete 0 j)) *
-          genericMinor (k := k) J := by
-  rw [genericMinor_eq_sum_delete_row_zero I, Finset.sum_mul]
-
-lemma genericMinor_mul_eq_sum_delete_row_zero_right {m n s t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n t) (J : MinorIndex m n (s + 1)) :
-    genericMinor (k := k) I * genericMinor (k := k) J =
-      ∑ j : Fin (s + 1),
-        genericMinor (k := k) I *
-          ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
-            MvPolynomial.X (J.row 0, J.col j) *
-              genericMinor (k := k) (J.delete 0 j)) := by
-  rw [genericMinor_eq_sum_delete_row_zero J, Finset.mul_sum]
-
-lemma genericMinor_mul_eq_sum_delete_col_zero_left {m n s t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n (s + 1)) (J : MinorIndex m n t) :
-    genericMinor (k := k) I * genericMinor (k := k) J =
-      ∑ i : Fin (s + 1),
-        ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
-          MvPolynomial.X (I.row i, I.col 0) *
-            genericMinor (k := k) (I.delete i 0)) *
-          genericMinor (k := k) J := by
-  rw [genericMinor_eq_sum_delete_col_zero I, Finset.sum_mul]
-
-lemma genericMinor_mul_eq_sum_delete_col_zero_right {m n s t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n t) (J : MinorIndex m n (s + 1)) :
-    genericMinor (k := k) I * genericMinor (k := k) J =
-      ∑ i : Fin (s + 1),
-        genericMinor (k := k) I *
-          ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
-            MvPolynomial.X (J.row i, J.col 0) *
-              genericMinor (k := k) (J.delete i 0)) := by
-  rw [genericMinor_eq_sum_delete_col_zero J, Finset.mul_sum]
-
 end MinorIndex
 
-/-- If `s ⊆ t`, the `i`-th element of the larger sorted finset occurs no
-later than the `i`-th element of the smaller sorted finset. -/
-lemma Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset
-    {α : Type*} [LinearOrder α] {s t : Finset α}
-    (hst : s ⊆ t) (i : Fin s.card) :
-    t.orderEmbOfFin rfl
-        ⟨i, lt_of_lt_of_le i.isLt (Finset.card_le_card hst)⟩ ≤
-      s.orderEmbOfFin rfl i := by
-  have hp : List.Subperm s.sort t.sort := by
-    exact (s.sort_nodup (· ≤ ·)).subperm (by
-      intro x hx
-      simpa only [Finset.mem_sort] using hst (by
-        simpa only [Finset.mem_sort] using hx))
-  have hsub : List.Sublist s.sort t.sort :=
-    List.sublist_of_subperm_of_sortedLE hp
-      s.sortedLT_sort.sortedLE t.sortedLT_sort.sortedLE
-  rcases List.sublist_iff_exists_fin_orderEmbedding_get_eq.mp hsub with ⟨f, hf⟩
-  let si : Fin s.sort.length := Fin.cast (by simp) i
-  let ti : Fin t.sort.length :=
-    Fin.cast (by simp) ⟨i, lt_of_lt_of_le i.isLt (Finset.card_le_card hst)⟩
-  have hfval : ∀ (n : ℕ) (hn : n < s.sort.length),
-      n ≤ (f ⟨n, hn⟩).val := by
-    intro n
-    induction n with
-    | zero =>
-        intro _hn
-        omega
-    | succ n ih =>
-        intro hn
-        have hn' : n < s.sort.length := lt_trans (Nat.lt_succ_self n) hn
-        have hlt : f ⟨n, hn'⟩ < f ⟨n + 1, hn⟩ :=
-          f.strictMono (Fin.mk_lt_mk.mpr (Nat.lt_succ_self n))
-        have ih' := ih hn'
-        change n ≤ (f ⟨n, hn'⟩).val at ih'
-        change (f ⟨n, hn'⟩).val < (f ⟨n + 1, hn⟩).val at hlt
-        omega
-  have hfi : ti ≤ f si := by
-    change i.val ≤ (f si).val
-    simpa [si] using hfval i.val (by simp)
-  rw [Finset.orderEmbOfFin_apply, Finset.orderEmbOfFin_apply]
-  change t.sort.get ti ≤ s.sort.get si
-  rw [hf si]
-  exact t.sortedLT_sort.sortedLE.monotone_get hfi
+/-- Standard Young bitableaux, as used in Proposition 2 and the straightening law. -/
+abbrev StandardYoungBitableau (m n : ℕ) :=
+  { B : YoungBitableau m n // YoungBitableau.IsStandard B }
 
-namespace Finset
-
-lemma sum_powerset_neg_one_pow_card_sdiff
-    {α R : Type*} [DecidableEq α] [CommRing R]
-    (s : Finset α) (hs : s.Nonempty) :
-    (∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card) = 0 := by
-  classical
-  induction s using Finset.induction_on with
-  | empty =>
-      simp at hs
-  | insert a s ha ih =>
-      rw [_root_.Finset.powerset_insert s a]
-      have hdisj : Disjoint (s.powerset) (s.powerset.image (insert a)) := by
-        rw [Finset.disjoint_left]
-        intro t ht hti
-        rcases Finset.mem_image.mp hti with ⟨u, hu, rfl⟩
-        exact ha ((Finset.mem_powerset.mp ht) (by simp))
-      rw [_root_.Finset.sum_union hdisj]
-      rw [_root_.Finset.sum_image]
-      · have hpair :
-            (∑ t ∈ s.powerset, (-1 : R) ^ ((insert a s) \ t).card) =
-              - ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
-          rw [← Finset.sum_neg_distrib]
-          apply Finset.sum_congr rfl
-          intro t ht
-          have hat : a ∉ t := fun h => ha ((Finset.mem_powerset.mp ht) h)
-          have hsdiff :
-              ((insert a s) \ t) = insert a (s \ t) := by
-            ext x
-            by_cases hxa : x = a
-            · subst x
-              simp [hat]
-            · simp [hxa]
-          rw [hsdiff, Finset.card_insert_of_notMem]
-          · simp [pow_succ]
-          · intro has
-            exact False.elim (ha ((Finset.mem_sdiff.mp has).1))
-        have hpair' :
-            (∑ t ∈ s.powerset, (-1 : R) ^ ((insert a s) \ insert a t).card) =
-              ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
-          apply Finset.sum_congr rfl
-          intro t ht
-          have hsdiff : ((insert a s) \ insert a t) = s \ t := by
-            ext x
-            by_cases hxa : x = a
-            · subst x
-              simp [ha]
-            · simp [hxa]
-          rw [hsdiff]
-        rw [hpair, hpair']
-        simp
-      · intro x hx y hy hxy
-        have hax : a ∉ x := fun h => ha ((Finset.mem_powerset.mp hx) h)
-        have hay : a ∉ y := fun h => ha ((Finset.mem_powerset.mp hy) h)
-        exact Finset.Subset.antisymm
-          ((Finset.insert_subset_insert_iff (s := x) (t := y) hax).mp (by
-            rw [hxy]))
-          ((Finset.insert_subset_insert_iff (s := y) (t := x) hay).mp (by
-            rw [← hxy]))
-
-lemma sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
-    {α R : Type*} [CommRing R]
-    (s : Finset α) (hs : s.Nonempty) :
-    (∑ t ∈ s.powerset, (-1 : R) ^ t.card) = 0 := by
-  classical
-  have hreindex :
-      (∑ t ∈ s.powerset, (-1 : R) ^ t.card) =
-        ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
-    refine Finset.sum_nbij'
-      (fun t => s \ t) (fun t => s \ t) ?_ ?_ ?_ ?_ ?_
-    · intro t ht
-      exact Finset.mem_powerset.mpr Finset.sdiff_subset
-    · intro t ht
-      exact Finset.mem_powerset.mpr Finset.sdiff_subset
-    · intro t ht
-      exact Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)
-    · intro t ht
-      exact Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)
-    · intro t ht
-      rw [Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)]
-  rw [hreindex]
-  exact sum_powerset_neg_one_pow_card_sdiff s hs
-
-lemma sum_Icc_neg_one_pow_card_compl_eq_zero
-    {α R : Type*} [Fintype α] [DecidableEq α] [CommRing R]
-    (s : Finset α) (hs : s ≠ Finset.univ) :
-    (∑ t ∈ Finset.Icc s Finset.univ, (-1 : R) ^ tᶜ.card) = 0 := by
-  classical
-  let d : Finset α := Finset.univ \ s
-  have hd : d.Nonempty := by
-    rw [Finset.nonempty_iff_ne_empty]
-    intro hdempty
-    apply hs
-    apply Finset.eq_univ_of_forall
-    intro x
-    by_contra hxs
-    have hx : x ∈ d := by
-      simp [d, hxs]
-    simp [d, hdempty] at hx
-  rw [Finset.Icc_eq_image_powerset (Finset.subset_univ s)]
-  rw [Finset.sum_image]
-  · have hcard :
-        ∀ u ∈ d.powerset, ((s ∪ u)ᶜ : Finset α).card = (d \ u).card := by
-      intro u hu
-      congr
-      ext x
-      have hu' : u ⊆ d := Finset.mem_powerset.mp hu
-      by_cases hxs : x ∈ s
-      · have hxud : x ∉ u := fun hxu =>
-          (Finset.mem_sdiff.mp (hu' hxu)).2 hxs
-        simp [d, hxs, hxud]
-      · simp [d, hxs]
-    calc
-      (∑ x ∈ d.powerset, (-1 : R) ^ (s ∪ x)ᶜ.card)
-          = ∑ x ∈ d.powerset, (-1 : R) ^ (d \ x).card := by
-            apply Finset.sum_congr rfl
-            intro x hx
-            rw [hcard x hx]
-      _ = 0 := sum_powerset_neg_one_pow_card_sdiff d hd
-  · intro u hu v hv huv
-    have hu' : u ⊆ d := Finset.mem_powerset.mp hu
-    have hv' : v ⊆ d := Finset.mem_powerset.mp hv
-    apply Finset.Subset.antisymm
-    · intro x hx
-      have hxsu : x ∈ s ∪ u := by
-        exact Finset.mem_union_right s hx
-      have hxsv : x ∈ s ∪ v := by
-        change x ∈ (fun y => s ∪ y) v
-        change x ∈ (fun y => s ∪ y) u at hxsu
-        rwa [huv] at hxsu
-      rcases Finset.mem_union.mp hxsu with hxs | hxu
-      · exact False.elim ((Finset.mem_sdiff.mp (hu' hx)).2 hxs)
-      · rcases Finset.mem_union.mp hxsv with hxs | hxv
-        · exact False.elim ((Finset.mem_sdiff.mp (hu' hx)).2 hxs)
-        · exact hxv
-    · intro x hx
-      have hxsv : x ∈ s ∪ v := by
-        exact Finset.mem_union_right s hx
-      have hxsu : x ∈ s ∪ u := by
-        change x ∈ (fun y => s ∪ y) u
-        change x ∈ (fun y => s ∪ y) v at hxsv
-        rwa [← huv] at hxsv
-      rcases Finset.mem_union.mp hxsv with hxs | hxv
-      · exact False.elim ((Finset.mem_sdiff.mp (hv' hx)).2 hxs)
-      · rcases Finset.mem_union.mp hxsu with hxs | hxu
-        · exact False.elim ((Finset.mem_sdiff.mp (hv' hx)).2 hxs)
-        · exact hxu
-
-end Finset
+/-- Standard Young bitableaux of length at most `r`. -/
+abbrev StandardYoungBitableauOfLengthLE (m n r : ℕ) :=
+  { B : StandardYoungBitableau m n // YoungBitableau.length B.1 ≤ r }
 
 namespace SwanLaplace
 
@@ -10369,8 +10203,7 @@ decreasing_by
 
 /-- The actual row-insertion trace starting in row `0`.
 
-This is the remaining constructive core of row insertion: it must be built by iterating the
-single-row search step until the first append. -/
+It is built by iterating the single-row search step until the first append. -/
 theorem exists_rowInsertionTrace {N : ℕ} {μ : YoungDiagram}
     (T : BoundedSSYT μ N) (x : Fin N) : Nonempty (RowInsertionTrace N T 0 x) := by
   exact exists_rowInsertionTraceFromInvariant T 0 (μ.rowLen 0) x
@@ -13482,8 +13315,8 @@ theorem reverseRowInsert_value_le_after_left_corner_of_current_top' {N : ℕ} {�
 
 /-- Core non-top/non-top path geometry for two reverse row-insertion paths.
 
-This is the remaining hard part after the top-row second-corner case has been
-discharged by the certified lower-cap invariant. -/
+The proof separates the top-row second-corner case, handled by the lower-cap
+invariant, from the non-top path comparison formalized here. -/
 theorem reverseRowInsert_second_topCol_le_first_topCol_nonTop_core {N : ℕ}
     {μ : YoungDiagram}
     (T : BoundedSSYT μ N) {c d : ℕ × ℕ}
@@ -15102,8 +14935,8 @@ theorem sorted {m n : ℕ} {w : List (Fin m × Fin n)}
   | snoc z hrun hsorted hrec hsame_next ih =>
       exact hsorted
 
-/-- Source invariant for recording entries.  This should be proved by the same run
-induction that constructs the recording tableau. -/
+/-- Source invariant for recording entries, proved by the same run induction that
+constructs the recording tableau. -/
 theorem qEntriesFromPrefix {m n : ℕ} {w : List (Fin m × Fin n)}
     {S : KRSForwardState m n} (hrun : KRSForwardRun w S) :
     QEntriesFromPrefix (w := w) S := by
@@ -15177,11 +15010,9 @@ end KRSForwardRun
 
 /-- Sorted-prefix KRS induction supplies the local recording inequalities.
 
-This is the correct replacement for the former unconditional
-`krsForwardStep_recordingHyp`: the hypotheses now say that the state was produced
-from the preceding sorted prefix and that appending `z` preserves sortedness.  The
-eventual proof should combine the source-cell invariant for the recording tableau
-with `rowBumping_newBox_right_of_le` for equal upper letters. -/
+The hypotheses say that the state was produced from the preceding sorted prefix and
+that appending `z` preserves sortedness.  The proof combines the source-cell invariant
+for the recording tableau with the same-upper row-bumping comparison. -/
 theorem krsForwardStep_recordingHyp_of_run {m n : ℕ}
     {w : List (Fin m × Fin n)} {S : KRSForwardState m n}
     (_hrun : KRSForwardRun w S) (z : Fin m × Fin n)
@@ -15207,9 +15038,9 @@ theorem krsForwardStep_recordingHyp_of_run {m n : ℕ}
 
 /-- Stability of the same-upper/right-moving invariant after one certified KRS step.
 
-This is the remaining row-bumping comparison needed to construct certified forward
-runs.  The proof splits an old cell of the new state into either an old cell of `S`
-or the newly-created `z` cell.  In the new-cell case it uses
+This is the row-bumping comparison needed to construct certified forward runs.  The
+proof splits an old cell of the new state into either an old cell of `S` or the
+newly-created `z` cell.  In the new-cell case it uses
 `rowBumping_newBox_right_of_le`; in the old-cell case the sortedness hypotheses and
 the source invariant rule out a later upper letter unless the intervening `z` has the
 same upper letter, reducing again to the certified invariant for `z` followed by the
@@ -16180,8 +16011,8 @@ theorem pairwise_append_singleton_of_pairwise_of_forall {α : Type*}
 
 /-- The recursive sorting skeleton for reverse KRS.
 
-All list-level and upper-letter work is handled here.  The only remaining mathematical
-input is the same-upper lower-letter comparison for the current reverse step. -/
+All list-level and upper-letter work is handled here, parameterized by the
+same-upper lower-letter comparison for the current reverse step. -/
 theorem reverseKrsListAux_sorted_of_lower_bound {m n : ℕ}
     (hlower :
       ∀ (fuel : ℕ) (T : TableauPair m n) (h : T.shape.card ≠ 0)
@@ -18863,7 +18694,7 @@ theorem youngBitableauToTableauPair_tableauPairToYoungBitableau_Q_entry
 /-- The tableau-pair to bitableau conversion is left-inverse to the reconstruction.
 
 This packages the shape and entrywise bridge lemmas above into the dependent structure equality.
-The remaining work here is cast management for `BoundedSSYT` over equal `YoungDiagram`s. -/
+The proof is mostly cast management for `BoundedSSYT` over equal `YoungDiagram`s. -/
 theorem youngBitableauToTableauPair_tableauPairToYoungBitableau
     {m n : ℕ} :
     Function.LeftInverse
@@ -19651,23 +19482,6 @@ lemma mvPolynomial_coeff_ne_zero_degree_of_isHomogeneous
   exact hp_mem (by
     simpa [MvPolynomial.mem_support_iff] using hcoeff)
 
-/-- If the KRS inverse monomial of `S` occurs in the polynomial expansion of
-`T`, then `S` and `T` have the same total degree. -/
-lemma standardBitableau_krsCoeff_degree_eq
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (S T : StandardYoungBitableau m n)
-    (hcoeff :
-      MvPolynomial.coeff (KRS.inverse S)
-        (YoungBitableau.toPolynomial (k := k) T.1) ≠ 0) :
-    YoungBitableau.degree S.1 = YoungBitableau.degree T.1 := by
-  have hterm :
-      Finsupp.degree (KRS.inverse (m := m) (n := n) S) =
-        YoungBitableau.degree T.1 :=
-    mvPolynomial_coeff_ne_zero_degree_of_isHomogeneous
-      (YoungBitableau.toPolynomial_isHomogeneous (k := k) T.1) hcoeff
-  exact (KRS.inverse_degree (m := m) (n := n) S).symm.trans hterm
-
 /-- Every nonzero coefficient of a generic minor comes from one Leibniz
 permutation term. -/
 lemma genericMinor_coeff_ne_zero_exists_permExp
@@ -19979,186 +19793,9 @@ lemma toPolynomial_coeff_permChoiceExp_ne_zero_of_forall_size_eq_one
 
 end YoungBitableau
 
-/-- If the KRS inverse monomial of `S` occurs in the polynomial expansion of
-`T`, then it is one of the Leibniz permutation-choice exponents of `T`. -/
-lemma standardBitableau_krsCoeff_exists_permChoiceExp
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (S T : StandardYoungBitableau m n)
-    (hcoeff :
-      MvPolynomial.coeff (KRS.inverse S)
-        (YoungBitableau.toPolynomial (k := k) T.1) ≠ 0) :
-    ∃ π : (∀ a : Fin T.1.v, Equiv.Perm (Fin (T.1.size a))),
-      KRS.inverse S = YoungBitableau.permChoiceExp T.1 π := by
-  exact YoungBitableau.toPolynomial_coeff_ne_zero_exists_permChoiceExp
-    (k := k) T.1 hcoeff
-
-/-- Fixed-degree subtype version of
-`standardBitableau_krsCoeff_exists_permChoiceExp`, matching the hypotheses in
-`standardBitableau_degree_krsCoeff_triangular`. -/
-lemma standardBitableau_degree_krsCoeff_exists_permChoiceExp
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    {d : ℕ}
-    (S T : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d })
-    (hcoeff :
-      MvPolynomial.coeff (KRS.inverse S.1)
-        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0) :
-    ∃ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
-      KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π := by
-  exact standardBitableau_krsCoeff_exists_permChoiceExp
-    (k := k) S.1 T.1 hcoeff
-
-/-- In the fixed-degree setting, a nonzero KRS coefficient gives both the
-permutation-choice representation of the exponent and the expected degree
-equality. -/
-lemma standardBitableau_degree_krsCoeff_data
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    {d : ℕ}
-    (S T : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d })
-    (hcoeff :
-      MvPolynomial.coeff (KRS.inverse S.1)
-        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0) :
-    (∃ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
-      KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π)
-    ∧ YoungBitableau.degree S.1.1 = YoungBitableau.degree T.1.1 := by
-  exact ⟨standardBitableau_degree_krsCoeff_exists_permChoiceExp
-      (k := k) S T hcoeff,
-    standardBitableau_krsCoeff_degree_eq (k := k) S.1 T.1 hcoeff⟩
-
-/-- A KRS inverse coefficient is nonzero once the KRS inverse exponent is known
-to be a uniquely produced bitableau permutation-choice exponent.  This is the
-diagonal-coefficient reduction needed before proving the actual KRS/Swan
-uniqueness statement. -/
-lemma standardBitableau_krsCoeff_ne_zero_of_unique_permChoice
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (S : StandardYoungBitableau m n)
-    (π : ∀ a : Fin S.1.v, Equiv.Perm (Fin (S.1.size a)))
-    (hKRS : KRS.inverse S = YoungBitableau.permChoiceExp S.1 π)
-    (huniq : ∀ τ : (∀ a : Fin S.1.v, Equiv.Perm (Fin (S.1.size a))),
-      YoungBitableau.permChoiceExp S.1 τ =
-        YoungBitableau.permChoiceExp S.1 π → τ = π) :
-    MvPolynomial.coeff (KRS.inverse S)
-      (YoungBitableau.toPolynomial (k := k) S.1) ≠ 0 := by
-  rw [hKRS]
-  exact YoungBitableau.toPolynomial_coeff_permChoiceExp_ne_zero_of_unique
-    (k := k) S.1 π huniq
-
-/-- Fixed-degree subtype version of
-`standardBitableau_krsCoeff_ne_zero_of_unique_permChoice`. -/
-lemma standardBitableau_degree_krsCoeff_ne_zero_of_unique_permChoice
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    {d : ℕ}
-    (S : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d })
-    (π : ∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a)))
-    (hKRS : KRS.inverse S.1 = YoungBitableau.permChoiceExp S.1.1 π)
-    (huniq : ∀ τ : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
-      YoungBitableau.permChoiceExp S.1.1 τ =
-        YoungBitableau.permChoiceExp S.1.1 π → τ = π) :
-    MvPolynomial.coeff (KRS.inverse S.1)
-      (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0 := by
-  exact standardBitableau_krsCoeff_ne_zero_of_unique_permChoice
-    (k := k) S.1 π hKRS huniq
-
-/-- Reduction of the fixed-degree KRS coefficient triangularity statement to
-two concrete permutation-choice facts:
-
-* the diagonal KRS exponent is a uniquely produced permutation-choice exponent;
-* any permutation-choice representation of a cross KRS coefficient is
-  triangular in row-major order.
-
-This is intentionally weaker than the final theorem's mathematical content:
-the two hypotheses are exactly the remaining Swan/KRS combinatorial work. -/
-theorem standardBitableau_degree_krsCoeff_triangular_of_permChoice
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (d : ℕ)
-    (hdiagChoice :
-      ∀ S : { S : StandardYoungBitableau m n //
-          YoungBitableau.degree S.1 = d },
-        ∃ π : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
-          KRS.inverse S.1 = YoungBitableau.permChoiceExp S.1.1 π ∧
-          ∀ τ : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
-            YoungBitableau.permChoiceExp S.1.1 τ =
-              YoungBitableau.permChoiceExp S.1.1 π → τ = π)
-    (hcrossTri :
-      ∀ S T : { S : StandardYoungBitableau m n //
-          YoungBitableau.degree S.1 = d },
-        ∀ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
-          KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π →
-          (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
-            (rowMajorLex m n).toSyn (KRS.inverse T.1)) :
-    (∀ S : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d },
-      MvPolynomial.coeff (KRS.inverse S.1)
-        (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0)
-    ∧
-    (∀ S T : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d },
-      MvPolynomial.coeff (KRS.inverse S.1)
-        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0 →
-      (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
-        (rowMajorLex m n).toSyn (KRS.inverse T.1)) := by
-  constructor
-  · intro S
-    rcases hdiagChoice S with ⟨π, hKRS, huniq⟩
-    exact standardBitableau_degree_krsCoeff_ne_zero_of_unique_permChoice
-      (k := k) S π hKRS huniq
-  · intro S T hcoeff
-    rcases standardBitableau_degree_krsCoeff_exists_permChoiceExp
-        (k := k) S T hcoeff with ⟨π, hπ⟩
-    exact hcrossTri S T π hπ
-
-/-- Fixed-degree standard bitableaux are linearly independent once the KRS monomial is known
-to be coefficient-triangular for their polynomial expansions. -/
-theorem standardBitableau_degree_linearIndependent_of_krsCoeff_triangular
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (d : ℕ)
-    (hdiag :
-      ∀ S : { S : StandardYoungBitableau m n //
-          YoungBitableau.degree S.1 = d },
-        MvPolynomial.coeff (KRS.inverse S.1)
-          (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0)
-    (htri :
-      ∀ S T : { S : StandardYoungBitableau m n //
-          YoungBitableau.degree S.1 = d },
-        MvPolynomial.coeff (KRS.inverse S.1)
-          (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0 →
-        (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
-          (rowMajorLex m n).toSyn (KRS.inverse T.1)) :
-    LinearIndependent k
-      (fun S : { S : StandardYoungBitableau m n //
-          YoungBitableau.degree S.1 = d } =>
-        YoungBitableau.toPolynomial (k := k) S.1.1) := by
-  classical
-  apply mvPolynomial_linearIndependent_of_coeff_triangular
-    (key := fun S : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d } => KRS.inverse S.1)
-    (rank := fun S : { S : StandardYoungBitableau m n //
-        YoungBitableau.degree S.1 = d } =>
-      (rowMajorLex m n).toSyn (KRS.inverse S.1))
-  · intro S T hST
-    apply Subtype.ext
-    have hinv : KRS.inverse S.1 = KRS.inverse T.1 := by
-      exact (rowMajorLex m n).toSyn.injective hST
-    calc
-      S.1 = KRS.forward (KRS.inverse S.1) :=
-        (KRS.krs_right_inverse (m := m) (n := n) S.1).symm
-      _ = KRS.forward (KRS.inverse T.1) := by rw [hinv]
-      _ = T.1 := KRS.krs_right_inverse (m := m) (n := n) T.1
-  · exact hdiag
-  · exact htri
-
 /-- Monomials are spanned, already in the polynomial ring, by products of
-`1 × 1` minors, hence by Young bitableaux.  This earlier copy is used by the
-filtered-existence route to fixed-degree spanning. -/
+`1 × 1` minors, hence by Young bitableaux.  This feeds the filtered-existence
+route to fixed-degree spanning. -/
 theorem monomial_mem_span_youngBitableau_toPolynomial_aux
     {m n : ℕ}
     {k : Type*} [Field k]
@@ -22779,8 +22416,7 @@ lemma firstLT_of_componentColLaplaceSupport {m n p q : ℕ}
         (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
         (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx := by
   classical
-  -- The weak comparison with the old first factor is already formalized above.
-  -- The remaining content is the component-branch promotion: non-pivot Hodge
+  -- Promote the weak comparison with the old first factor: non-pivot Hodge
   -- column terms force a strict drop at the first bad column.
   have hfirstLEOld :
       MinorIndex.PairLE
@@ -25153,7 +24789,7 @@ theorem swan_corollary2_7_size_pivot_laplace_identity
             MvPolynomial.C (coeffOpt x) *
               MinorWord.toPolynomial (k := k)
                 (termOpt x).toWord) = 0 := by
-      /- Core remaining determinant step: expand Swan's alternating Laplace
+      /- Core determinant step: expand Swan's alternating Laplace
          relation for the size defect `T.F.t < T.G.t`, then discard zero terms.
          The surviving nonzero terms are exactly the promotable
          `BiReshuffleSupport`s.  The algebra below removes the common
@@ -25883,12 +25519,11 @@ theorem swan_square_laplace_product_straightening
       (fun x => swan_lemma4_3_first_factor_strict
         (k := k) I J hnot hJI E x)
 
-/-- Rectangular lifting step in Swan Theorem 4.1.
+/-- Swan Theorem 4.1 in the current `MinorIndex` encoding.
 
-Given the square Laplace-product straightening theorem for the auxiliary
-matrix `Y`, this transports the terms through the order-preserving row and
-column maps of Lemma 4.2, removes zero terms where the maps are not injective,
-and records Remark 4.4 as row/column content preservation. -/
+The square Laplace-product straightening theorem above has already been stated in
+the `MinorIndex m n` setting, so this bridge is now just the public theorem-4.1
+interface used by the local straightening argument. -/
 theorem swan_rectangular_lift_from_square_laplace
     {m n p q : ℕ}
     {k : Type*} [Field k]
@@ -25903,8 +25538,6 @@ theorem swan_rectangular_lift_from_square_laplace
           MvPolynomial.C (coeff x) *
             MinorWord.toPolynomial (k := k)
               (SwanTwoMinorTerm.toWord (term x)) := by
-  -- TODO: prove Swan Lemma 4.2 and Lemma 4.3 in the current `MinorIndex`
-  -- encoding, then transport `swan_square_laplace_product_straightening`.
   exact swan_square_laplace_product_straightening
     (m := m) (n := n) (p := p) (q := q) (k := k) hp hq I J hnot
 
@@ -25912,8 +25545,7 @@ theorem swan_rectangular_lift_from_square_laplace
 
 This is the determinant/Hodge part of the local straightening argument.  It is
 kept unbundled so the downstream packaging theorem
-`exists_swan_two_minor_expansion` has a small proof and the remaining
-mathematical obligation is exactly the finite sum displayed in Swan's theorem. -/
+`exists_swan_two_minor_expansion` has a small proof. -/
 theorem swan_theorem4_1_finite_sum
     {m n p q : ℕ}
     {k : Type*} [Field k]
@@ -25954,9 +25586,8 @@ theorem exists_swan_two_minor_expansion
 
 /-- Raw local Swan two-minor straightening relation.
 
-This is the remaining determinant-theoretic input: Swan Theorem 4.1 supplies a
-finite linear combination of replacement pairs satisfying the support data
-recorded in `SwanTwoMinorTerm`. -/
+Swan Theorem 4.1 supplies a finite linear combination of replacement pairs
+satisfying the support data recorded in `SwanTwoMinorTerm`. -/
 theorem swan_two_minor_straightening_relation_raw
     {m n p q : ℕ}
     {k : Type*} [Field k]
@@ -27323,8 +26954,8 @@ decreasing_by
 
 /-- Filtered insertion of a positive head factor into a standard minor word.
 
-This is the filtered part of Swan Corollary 5.1.  It should be proved by
-well-founded induction on `H` using `MinorFactor.pairLT_wellFounded`; the
+This is the filtered part of Swan Corollary 5.1.  It is proved by
+well-founded induction on the head factor and the tail length; the
 nonordered branch applies `swan_two_minor_straightening_relation` to the head
 and the first factor of the standard tail, erases any zero-size unit factors,
 and recurses on the new first factor supplied by `MinorIndex.PairLT`. -/
@@ -27470,7 +27101,7 @@ theorem minorWord_straightening_exists_degree
             have hfac' : factors = F :: G :: rest := hfac
             subst factors
             simpa using hdeg
-    · -- TODO: apply the two-minor straightening relation to `F * G`, then
+    · -- Apply the two-minor straightening relation to `F * G`, then
       -- recursively straighten each appended local word.
       have hFpos_or_zero : F.t = 0 ∨ 0 < F.t := Nat.eq_zero_or_pos F.t
       rcases hFpos_or_zero with hFzero | hFpos
@@ -28599,9 +28230,9 @@ theorem exists_standardBitableau_basis_determinantalRing_of_monomials_span
       hli
 
 /--
-After the monomial-spanning step, the remaining inputs for the standard
-bitableau basis are exactly the determinantal vanishing of larger minors and
-linear independence of the short standard bitableaux in the quotient.
+After the monomial-spanning step, the standard-bitableau basis follows from
+determinantal vanishing of larger minors and linear independence of the short
+standard bitableaux in the quotient.
 -/
 theorem exists_standardBitableau_basis_determinantalRing_of_large_minors_and_linearIndependent
     {m n : ℕ}
@@ -29125,11 +28756,11 @@ theorem exists_long_standardBitableau_expansion_of_mem_Jr
     simpa [d] using Finsupp.embDomain_notin_range emb e B hnot_range
 
 /--
-The remaining coefficient-vanishing statement for linear independence:
-an element of `J_r` written in standard bitableaux has no coefficients on
-standard bitableaux of length at most `r`.
+Coefficient vanishing for linear independence: an element of `J_r` written in
+standard bitableaux has no coefficients on standard bitableaux of length at
+most `r`.
 
-This is the part that should be proved from the uniqueness clause in
+This is proved from the uniqueness clause in
 `straightening_law`, after rewriting elements of `J_r` as sums of bitableaux
 containing an `(r + 1)`-minor.
 -/
@@ -29204,8 +28835,8 @@ theorem exists_standardBitableau_basis_determinantalRing
     simpa [Jr] using
       genericMinor_mem_detIdeal_of_le
         (m := m) (n := n) (k := k) hrt I
-  -- The remaining straightening-basis input is linear independence of the
-  -- standard bitableaux whose length is at most `r`.
+  -- Use linear independence of the standard bitableaux whose length is at most
+  -- `r` in the determinantal quotient.
   have hli :
       LinearIndependent k
         (fun B : StandardYoungBitableauOfLengthLE m n r =>
