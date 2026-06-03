@@ -117,6 +117,14 @@ def oneByOneMinorIndex {m n : ℕ} (p : Fin m × Fin n) : MinorIndex m n 1 where
         fin_cases j
         simp at h)
 
+@[simp] lemma oneByOneMinorIndex_row_zero {m n : ℕ} (p : Fin m × Fin n) :
+    (oneByOneMinorIndex p).row 0 = p.1 := by
+  rfl
+
+@[simp] lemma oneByOneMinorIndex_col_zero {m n : ℕ} (p : Fin m × Fin n) :
+    (oneByOneMinorIndex p).col 0 = p.2 := by
+  rfl
+
 noncomputable def toPolynomial {m n}
     {k : Type*} [CommRing k]
     (B : YoungBitableau m n) :
@@ -1229,5 +1237,3 @@ lemma exists_basis_eq_of_linearIndependent_span
   exact Module.Basis.mk_apply hli (by simpa using hspan.ge) i
 
 end Determinantal
-
-

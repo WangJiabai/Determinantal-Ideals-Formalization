@@ -45,6 +45,15 @@ noncomputable def genericMinor {m n t : ℕ} (I : MinorIndex m n t) :
     MvPolynomial (Fin m × Fin n) k :=
   Matrix.det <| Matrix.submatrix (genericMatrix m n k) I.row I.col
 
+@[simp] lemma genericMinor_zero {m n : ℕ} (I : MinorIndex m n 0) :
+    genericMinor (k := k) I = 1 := by
+  rw [genericMinor, Matrix.det_isEmpty]
+
+@[simp] lemma genericMinor_one {m n : ℕ} (I : MinorIndex m n 1) :
+    genericMinor (k := k) I = MvPolynomial.X (I.row 0, I.col 0) := by
+  rw [genericMinor, Matrix.det_fin_one]
+  rfl
+
 /-- The set of all `t × t` minors of the generic `m × n` matrix. -/
 def minorSet {m n : ℕ} (t : ℕ) : Set (MvPolynomial (Fin m × Fin n) k) :=
   Set.range (genericMinor (t := t))
@@ -54,6 +63,35 @@ def minorSet {m n : ℕ} (t : ℕ) : Set (MvPolynomial (Fin m × Fin n) k) :=
 
 lemma minor_mem_minorSet {m n t : ℕ} (I : MinorIndex m n t) :
     genericMinor I ∈ minorSet (k := k) t := ⟨I, rfl⟩
+
+lemma mem_minorSet_one_iff {m n : ℕ}
+    {f : MvPolynomial (Fin m × Fin n) k} :
+    f ∈ minorSet (k := k) (m := m) (n := n) 1
+      ↔ ∃ i : Fin m, ∃ j : Fin n, f = MvPolynomial.X (i, j) := by
+  constructor
+  · rintro ⟨I, hI⟩
+    refine ⟨I.row 0, I.col 0, ?_⟩
+    calc
+      f = genericMinor (k := k) I := hI.symm
+      _ = MvPolynomial.X (I.row 0, I.col 0) := by rw [genericMinor_one]
+  · rintro ⟨i, j, rfl⟩
+    let row : Fin 1 ↪o Fin m :=
+      OrderEmbedding.ofStrictMono (fun _ : Fin 1 => i) (by
+        intro a b h
+        have hnot : ¬ a < b := by
+          rw [Fin.eq_zero a, Fin.eq_zero b]
+          exact lt_irrefl 0
+        exact False.elim (hnot h))
+    let col : Fin 1 ↪o Fin n :=
+      OrderEmbedding.ofStrictMono (fun _ : Fin 1 => j) (by
+        intro a b h
+        have hnot : ¬ a < b := by
+          rw [Fin.eq_zero a, Fin.eq_zero b]
+          exact lt_irrefl 0
+        exact False.elim (hnot h))
+    refine ⟨⟨row, col⟩, ?_⟩
+    rw [genericMinor_one]
+    rfl
 
 end CommRing
 

@@ -3,6 +3,7 @@ import MyProject.Determinantalideals.Basic
 import MyProject.Determinantalideals.MinorTerms
 import MyProject.Determinantalideals.Ideal
 import MyProject.Determinantalideals.DiagonalOrder
+import MyProject.Determinantalideals.Finite
 import Groebner.Groebner
 import MyProject.Determinantalideals.Sturmfels_lemma
 
@@ -121,6 +122,8249 @@ abbrev StandardYoungBitableau (m n : ℕ) :=
 /-- Standard Young bitableaux of length at most `r`. -/
 abbrev StandardYoungBitableauOfLengthLE (m n r : ℕ) :=
   { B : StandardYoungBitableau m n // YoungBitableau.length B.1 ≤ r }
+
+namespace MinorIndex
+
+/-- The partial order on minor indices used in the straightening law:
+`I ≤ J` means `I` has at least as many rows/columns as `J`, and its first
+`J` entries are componentwise no larger. -/
+def PairLE {m n p q : ℕ} (I : MinorIndex m n p) (J : MinorIndex m n q) : Prop :=
+  ∃ hpq : q ≤ p,
+    ∀ j : Fin q,
+      I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+      I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j
+
+/-- Strict version of the straightening-law order on minor indices. -/
+def PairLT {m n p q : ℕ} (I : MinorIndex m n p) (J : MinorIndex m n q) : Prop :=
+  PairLE I J ∧ ¬ PairLE J I
+
+lemma PairLE.of_components {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hpq : q ≤ p)
+    (h :
+      ∀ j : Fin q,
+        I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+        I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j) :
+    PairLE I J :=
+  ⟨hpq, h⟩
+
+lemma PairLE.refl {m n p : ℕ} (I : MinorIndex m n p) : PairLE I I := by
+  refine ⟨le_rfl, ?_⟩
+  intro j
+  constructor <;> rfl
+
+lemma PairLE.size_le {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : PairLE I J) : q ≤ p :=
+  h.1
+
+lemma PairLE.row_le {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : PairLE I J) (j : Fin q) :
+    I.row ⟨j.val, lt_of_lt_of_le j.isLt h.size_le⟩ ≤ J.row j :=
+  (h.2 j).1
+
+lemma PairLE.col_le {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : PairLE I J) (j : Fin q) :
+    I.col ⟨j.val, lt_of_lt_of_le j.isLt h.size_le⟩ ≤ J.col j :=
+  (h.2 j).2
+
+lemma PairLE.trans {m n p q r : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} {K : MinorIndex m n r}
+    (hIJ : PairLE I J) (hJK : PairLE J K) : PairLE I K := by
+  refine ⟨le_trans hJK.size_le hIJ.size_le, ?_⟩
+  intro x
+  have hrowIJ := hIJ.row_le ⟨x.val, lt_of_lt_of_le x.isLt hJK.size_le⟩
+  have hrowJK := hJK.row_le x
+  have hcolIJ := hIJ.col_le ⟨x.val, lt_of_lt_of_le x.isLt hJK.size_le⟩
+  have hcolJK := hJK.col_le x
+  constructor
+  · exact le_trans (by simpa using hrowIJ) hrowJK
+  · exact le_trans (by simpa using hcolIJ) hcolJK
+
+lemma PairLT.pairLE {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : PairLT I J) : PairLE I J :=
+  h.1
+
+lemma PairLT.not_pairLE_symm {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : PairLT I J) : ¬ PairLE J I :=
+  h.2
+
+lemma PairLT.of_pairLE_not_symm {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hIJ : PairLE I J) (hJI : ¬ PairLE J I) : PairLT I J :=
+  ⟨hIJ, hJI⟩
+
+lemma PairLT.irrefl {m n p : ℕ} (I : MinorIndex m n p) : ¬ PairLT I I := by
+  intro h
+  exact h.not_pairLE_symm (PairLE.refl I)
+
+lemma PairLT.trans {m n p q r : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} {K : MinorIndex m n r}
+    (hIJ : PairLT I J) (hJK : PairLT J K) : PairLT I K := by
+  refine ⟨PairLE.trans hIJ.pairLE hJK.pairLE, ?_⟩
+  intro hKI
+  exact hJK.not_pairLE_symm (PairLE.trans hKI hIJ.pairLE)
+
+lemma not_pairLE_of_size_lt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hpq : p < q) : ¬ PairLE I J := by
+  intro h
+  exact not_le_of_gt hpq h.size_le
+
+lemma not_pairLE_of_violation {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hpq : q ≤ p) (j : Fin q)
+    (hj :
+      ¬
+        (I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+         I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j)) :
+    ¬ PairLE I J := by
+  intro h
+  have hhpq : h.size_le = hpq := Subsingleton.elim _ _
+  cases hhpq
+  exact hj (h.2 j)
+
+lemma not_pairLE_iff {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    ¬ PairLE I J ↔
+      p < q ∨
+        ∃ (hpq : q ≤ p) (j : Fin q),
+          ¬
+            (I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+             I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j) := by
+  constructor
+  · intro h
+    by_cases hpq : q ≤ p
+    · right
+      by_contra hbad
+      push_neg at hbad
+      exact h ⟨hpq, hbad hpq⟩
+    · left
+      omega
+  · rintro (hpq | hbad)
+    · exact not_pairLE_of_size_lt hpq
+    · rcases hbad with ⟨hpq, j, hj⟩
+      exact not_pairLE_of_violation hpq j hj
+
+lemma exists_violation_of_not_pairLE_of_size_le {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hpq : q ≤ p) (h : ¬ PairLE I J) :
+    ∃ j : Fin q,
+      ¬
+        (I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+         I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j) := by
+  by_contra hbad
+  push_neg at hbad
+  exact h ⟨hpq, hbad⟩
+
+lemma not_pairLE_or_violation {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (h : ¬ PairLE I J) :
+    p < q ∨
+      ∃ (hpq : q ≤ p) (j : Fin q),
+        ¬
+          (I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+           I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j) :=
+  (not_pairLE_iff I J).mp h
+
+lemma incomparable_pairLE_cases {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hIJ : ¬ PairLE I J) (hJI : ¬ PairLE J I) :
+    (p < q ∨
+      ∃ (hpq : q ≤ p) (j : Fin q),
+        ¬
+          (I.row ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.row j ∧
+           I.col ⟨j.val, lt_of_lt_of_le j.isLt hpq⟩ ≤ J.col j))
+      ∧
+    (q < p ∨
+      ∃ (hqp : p ≤ q) (i : Fin p),
+        ¬
+          (J.row ⟨i.val, lt_of_lt_of_le i.isLt hqp⟩ ≤ I.row i ∧
+           J.col ⟨i.val, lt_of_lt_of_le i.isLt hqp⟩ ≤ I.col i)) := by
+  exact ⟨not_pairLE_or_violation hIJ, not_pairLE_or_violation hJI⟩
+
+/-- Row-index content of a minor: the multiplicity vector of its selected rows. -/
+noncomputable def rowContent {m n t : ℕ} (I : MinorIndex m n t) : Fin m →₀ ℕ :=
+  ∑ a : Fin t, Finsupp.single (I.row a) 1
+
+/-- Total row-content multiplicity of a `t × t` minor is `t`. -/
+lemma rowContent_total {m n t : ℕ} (I : MinorIndex m n t) :
+    (∑ i : Fin m, MinorIndex.rowContent I i) = t := by
+  classical
+  simp only [rowContent, Finsupp.coe_finset_sum, Finset.sum_apply]
+  rw [Finset.sum_comm]
+  simp
+
+/-- Column-index content of a minor: the multiplicity vector of its selected columns. -/
+noncomputable def colContent {m n t : ℕ} (I : MinorIndex m n t) : Fin n →₀ ℕ :=
+  ∑ a : Fin t, Finsupp.single (I.col a) 1
+
+/-- Total column-content multiplicity of a `t × t` minor is `t`. -/
+lemma colContent_total {m n t : ℕ} (I : MinorIndex m n t) :
+    (∑ j : Fin n, MinorIndex.colContent I j) = t := by
+  classical
+  simp only [colContent, Finsupp.coe_finset_sum, Finset.sum_apply]
+  rw [Finset.sum_comm]
+  simp
+
+lemma mem_rowContent_support_iff {m n t : ℕ}
+    (I : MinorIndex m n t) (a : Fin m) :
+    a ∈ (MinorIndex.rowContent I).support ↔ ∃ i : Fin t, I.row i = a := by
+  classical
+  simp only [rowContent, Finsupp.mem_support_iff, Finsupp.coe_finset_sum, Finset.sum_apply, ne_eq,
+    Finset.sum_eq_zero_iff, Finset.mem_univ, forall_const, not_forall]
+  constructor
+  · rintro ⟨i, hi⟩
+    by_contra h
+    have hne : I.row i ≠ a := by
+      intro hia
+      exact h ⟨i, hia⟩
+    simp [hne] at hi
+  · rintro ⟨i, rfl⟩
+    exact ⟨i, by simp⟩
+
+lemma mem_colContent_support_iff {m n t : ℕ}
+    (I : MinorIndex m n t) (a : Fin n) :
+    a ∈ (MinorIndex.colContent I).support ↔ ∃ i : Fin t, I.col i = a := by
+  classical
+  simp only [colContent, Finsupp.mem_support_iff, Finsupp.coe_finset_sum, Finset.sum_apply, ne_eq,
+    Finset.sum_eq_zero_iff, Finset.mem_univ, forall_const, not_forall]
+  constructor
+  · rintro ⟨i, hi⟩
+    by_contra h
+    have hne : I.col i ≠ a := by
+      intro hia
+      exact h ⟨i, hia⟩
+    simp [hne] at hi
+  · rintro ⟨i, rfl⟩
+    exact ⟨i, by simp⟩
+
+lemma rowContent_support_eq_image {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (MinorIndex.rowContent I).support =
+      Finset.univ.map I.row.toEmbedding := by
+  classical
+  ext a
+  rw [MinorIndex.mem_rowContent_support_iff]
+  simp
+
+lemma colContent_support_eq_image {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (MinorIndex.colContent I).support =
+      Finset.univ.map I.col.toEmbedding := by
+  classical
+  ext a
+  rw [MinorIndex.mem_colContent_support_iff]
+  simp
+
+lemma eq_of_rowContent_eq_colContent {m n t : ℕ}
+    {I J : MinorIndex m n t}
+    (hrow : MinorIndex.rowContent I = MinorIndex.rowContent J)
+    (hcol : MinorIndex.colContent I = MinorIndex.colContent J) :
+    I = J := by
+  classical
+  have hrowSet :
+      Finset.univ.map I.row.toEmbedding =
+        Finset.univ.map J.row.toEmbedding := by
+    rw [← I.rowContent_support_eq_image,
+      ← J.rowContent_support_eq_image, hrow]
+  have hcolSet :
+      Finset.univ.map I.col.toEmbedding =
+        Finset.univ.map J.col.toEmbedding := by
+    rw [← I.colContent_support_eq_image,
+      ← J.colContent_support_eq_image, hcol]
+  have hrowEmb : I.row = J.row := by
+    have hIcard :
+        (Finset.univ.map I.row.toEmbedding).card = t := by simp
+    have hImem :
+        ∀ i : Fin t, I.row i ∈ Finset.univ.map I.row.toEmbedding := by
+      intro i
+      simp
+    have hJmem :
+        ∀ i : Fin t, J.row i ∈ Finset.univ.map I.row.toEmbedding := by
+      intro i
+      rw [hrowSet]
+      simp
+    have hI :
+        (fun i => I.row i) =
+          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
+      Finset.orderEmbOfFin_unique
+        (s := Finset.univ.map I.row.toEmbedding)
+        (h := hIcard) hImem I.row.strictMono
+    have hJ :
+        (fun i => J.row i) =
+          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
+      Finset.orderEmbOfFin_unique
+      (s := Finset.univ.map I.row.toEmbedding)
+      (h := hIcard) hJmem J.row.strictMono
+    ext i
+    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
+  have hcolEmb : I.col = J.col := by
+    have hIcard :
+        (Finset.univ.map I.col.toEmbedding).card = t := by simp
+    have hImem :
+        ∀ i : Fin t, I.col i ∈ Finset.univ.map I.col.toEmbedding := by
+      intro i
+      simp
+    have hJmem :
+        ∀ i : Fin t, J.col i ∈ Finset.univ.map I.col.toEmbedding := by
+      intro i
+      rw [hcolSet]
+      simp
+    have hI :
+        (fun i => I.col i) =
+          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
+      Finset.orderEmbOfFin_unique
+        (s := Finset.univ.map I.col.toEmbedding)
+        (h := hIcard) hImem I.col.strictMono
+    have hJ :
+        (fun i => J.col i) =
+          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
+      Finset.orderEmbOfFin_unique
+      (s := Finset.univ.map I.col.toEmbedding)
+      (h := hIcard) hJmem J.col.strictMono
+    ext i
+    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
+  cases I
+  cases J
+  simp_all
+
+lemma genericMinor_eq_sum_delete_row_zero {m n s : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n (s + 1)) :
+    genericMinor (k := k) I =
+      ∑ j : Fin (s + 1),
+        (-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
+          MvPolynomial.X (I.row 0, I.col j) *
+            genericMinor (k := k) (I.delete 0 j) := by
+  rw [genericMinor, Matrix.det_succ_row_zero]
+  apply Finset.sum_congr rfl
+  intro j _hj
+  rw [genericMinor_delete_eq_det_submatrix]
+  simp [Matrix.submatrix_apply, genericMatrix]
+
+lemma genericMinor_eq_sum_delete_col_zero {m n s : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n (s + 1)) :
+    genericMinor (k := k) I =
+      ∑ i : Fin (s + 1),
+        (-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
+          MvPolynomial.X (I.row i, I.col 0) *
+            genericMinor (k := k) (I.delete i 0) := by
+  rw [genericMinor, Matrix.det_succ_column_zero]
+  apply Finset.sum_congr rfl
+  intro i _hi
+  rw [genericMinor_delete_eq_det_submatrix]
+  simp [Matrix.submatrix_apply, genericMatrix]
+
+lemma genericMinor_mul_eq_sum_delete_row_zero_left {m n s t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n (s + 1)) (J : MinorIndex m n t) :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ j : Fin (s + 1),
+        ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
+          MvPolynomial.X (I.row 0, I.col j) *
+            genericMinor (k := k) (I.delete 0 j)) *
+          genericMinor (k := k) J := by
+  rw [genericMinor_eq_sum_delete_row_zero I, Finset.sum_mul]
+
+lemma genericMinor_mul_eq_sum_delete_row_zero_right {m n s t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n t) (J : MinorIndex m n (s + 1)) :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ j : Fin (s + 1),
+        genericMinor (k := k) I *
+          ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (j : ℕ) *
+            MvPolynomial.X (J.row 0, J.col j) *
+              genericMinor (k := k) (J.delete 0 j)) := by
+  rw [genericMinor_eq_sum_delete_row_zero J, Finset.mul_sum]
+
+lemma genericMinor_mul_eq_sum_delete_col_zero_left {m n s t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n (s + 1)) (J : MinorIndex m n t) :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ i : Fin (s + 1),
+        ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
+          MvPolynomial.X (I.row i, I.col 0) *
+            genericMinor (k := k) (I.delete i 0)) *
+          genericMinor (k := k) J := by
+  rw [genericMinor_eq_sum_delete_col_zero I, Finset.sum_mul]
+
+lemma genericMinor_mul_eq_sum_delete_col_zero_right {m n s t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n t) (J : MinorIndex m n (s + 1)) :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ i : Fin (s + 1),
+        genericMinor (k := k) I *
+          ((-1 : MvPolynomial (Fin m × Fin n) k) ^ (i : ℕ) *
+            MvPolynomial.X (J.row i, J.col 0) *
+              genericMinor (k := k) (J.delete i 0)) := by
+  rw [genericMinor_eq_sum_delete_col_zero J, Finset.mul_sum]
+
+end MinorIndex
+
+/-- If `s ⊆ t`, the `i`-th element of the larger sorted finset occurs no
+later than the `i`-th element of the smaller sorted finset. -/
+lemma Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset
+    {α : Type*} [LinearOrder α] {s t : Finset α}
+    (hst : s ⊆ t) (i : Fin s.card) :
+    t.orderEmbOfFin rfl
+        ⟨i, lt_of_lt_of_le i.isLt (Finset.card_le_card hst)⟩ ≤
+      s.orderEmbOfFin rfl i := by
+  have hp : List.Subperm s.sort t.sort := by
+    exact (s.sort_nodup (· ≤ ·)).subperm (by
+      intro x hx
+      simpa only [Finset.mem_sort] using hst (by
+        simpa only [Finset.mem_sort] using hx))
+  have hsub : List.Sublist s.sort t.sort :=
+    List.sublist_of_subperm_of_sortedLE hp
+      s.sortedLT_sort.sortedLE t.sortedLT_sort.sortedLE
+  rcases List.sublist_iff_exists_fin_orderEmbedding_get_eq.mp hsub with ⟨f, hf⟩
+  let si : Fin s.sort.length := Fin.cast (by simp) i
+  let ti : Fin t.sort.length :=
+    Fin.cast (by simp) ⟨i, lt_of_lt_of_le i.isLt (Finset.card_le_card hst)⟩
+  have hfval : ∀ (n : ℕ) (hn : n < s.sort.length),
+      n ≤ (f ⟨n, hn⟩).val := by
+    intro n
+    induction n with
+    | zero =>
+        intro _hn
+        omega
+    | succ n ih =>
+        intro hn
+        have hn' : n < s.sort.length := lt_trans (Nat.lt_succ_self n) hn
+        have hlt : f ⟨n, hn'⟩ < f ⟨n + 1, hn⟩ :=
+          f.strictMono (Fin.mk_lt_mk.mpr (Nat.lt_succ_self n))
+        have ih' := ih hn'
+        change n ≤ (f ⟨n, hn'⟩).val at ih'
+        change (f ⟨n, hn'⟩).val < (f ⟨n + 1, hn⟩).val at hlt
+        omega
+  have hfi : ti ≤ f si := by
+    change i.val ≤ (f si).val
+    simpa [si] using hfval i.val (by simp)
+  rw [Finset.orderEmbOfFin_apply, Finset.orderEmbOfFin_apply]
+  change t.sort.get ti ≤ s.sort.get si
+  rw [hf si]
+  exact t.sortedLT_sort.sortedLE.monotone_get hfi
+
+namespace Finset
+
+lemma sum_powerset_neg_one_pow_card_sdiff
+    {α R : Type*} [DecidableEq α] [CommRing R]
+    (s : Finset α) (hs : s.Nonempty) :
+    (∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card) = 0 := by
+  classical
+  induction s using Finset.induction_on with
+  | empty =>
+      simp at hs
+  | insert a s ha ih =>
+      rw [_root_.Finset.powerset_insert s a]
+      have hdisj : Disjoint (s.powerset) (s.powerset.image (insert a)) := by
+        rw [Finset.disjoint_left]
+        intro t ht hti
+        rcases Finset.mem_image.mp hti with ⟨u, hu, rfl⟩
+        exact ha ((Finset.mem_powerset.mp ht) (by simp))
+      rw [_root_.Finset.sum_union hdisj]
+      rw [_root_.Finset.sum_image]
+      · have hpair :
+            (∑ t ∈ s.powerset, (-1 : R) ^ ((insert a s) \ t).card) =
+              - ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
+          rw [← Finset.sum_neg_distrib]
+          apply Finset.sum_congr rfl
+          intro t ht
+          have hat : a ∉ t := fun h => ha ((Finset.mem_powerset.mp ht) h)
+          have hsdiff :
+              ((insert a s) \ t) = insert a (s \ t) := by
+            ext x
+            by_cases hxa : x = a
+            · subst x
+              simp [hat]
+            · simp [hxa]
+          rw [hsdiff, Finset.card_insert_of_notMem]
+          · simp [pow_succ]
+          · intro has
+            exact False.elim (ha ((Finset.mem_sdiff.mp has).1))
+        have hpair' :
+            (∑ t ∈ s.powerset, (-1 : R) ^ ((insert a s) \ insert a t).card) =
+              ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
+          apply Finset.sum_congr rfl
+          intro t ht
+          have hsdiff : ((insert a s) \ insert a t) = s \ t := by
+            ext x
+            by_cases hxa : x = a
+            · subst x
+              simp [ha]
+            · simp [hxa]
+          rw [hsdiff]
+        rw [hpair, hpair']
+        simp
+      · intro x hx y hy hxy
+        have hax : a ∉ x := fun h => ha ((Finset.mem_powerset.mp hx) h)
+        have hay : a ∉ y := fun h => ha ((Finset.mem_powerset.mp hy) h)
+        exact Finset.Subset.antisymm
+          ((Finset.insert_subset_insert_iff (s := x) (t := y) hax).mp (by
+            rw [hxy]))
+          ((Finset.insert_subset_insert_iff (s := y) (t := x) hay).mp (by
+            rw [← hxy]))
+
+lemma sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
+    {α R : Type*} [CommRing R]
+    (s : Finset α) (hs : s.Nonempty) :
+    (∑ t ∈ s.powerset, (-1 : R) ^ t.card) = 0 := by
+  classical
+  have hreindex :
+      (∑ t ∈ s.powerset, (-1 : R) ^ t.card) =
+        ∑ t ∈ s.powerset, (-1 : R) ^ (s \ t).card := by
+    refine Finset.sum_nbij'
+      (fun t => s \ t) (fun t => s \ t) ?_ ?_ ?_ ?_ ?_
+    · intro t ht
+      exact Finset.mem_powerset.mpr Finset.sdiff_subset
+    · intro t ht
+      exact Finset.mem_powerset.mpr Finset.sdiff_subset
+    · intro t ht
+      exact Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)
+    · intro t ht
+      exact Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)
+    · intro t ht
+      rw [Finset.sdiff_sdiff_eq_self (Finset.mem_powerset.mp ht)]
+  rw [hreindex]
+  exact sum_powerset_neg_one_pow_card_sdiff s hs
+
+lemma sum_Icc_neg_one_pow_card_compl_eq_zero
+    {α R : Type*} [Fintype α] [DecidableEq α] [CommRing R]
+    (s : Finset α) (hs : s ≠ Finset.univ) :
+    (∑ t ∈ Finset.Icc s Finset.univ, (-1 : R) ^ tᶜ.card) = 0 := by
+  classical
+  let d : Finset α := Finset.univ \ s
+  have hd : d.Nonempty := by
+    rw [Finset.nonempty_iff_ne_empty]
+    intro hdempty
+    apply hs
+    apply Finset.eq_univ_of_forall
+    intro x
+    by_contra hxs
+    have hx : x ∈ d := by
+      simp [d, hxs]
+    simp [d, hdempty] at hx
+  rw [Finset.Icc_eq_image_powerset (Finset.subset_univ s)]
+  rw [Finset.sum_image]
+  · have hcard :
+        ∀ u ∈ d.powerset, ((s ∪ u)ᶜ : Finset α).card = (d \ u).card := by
+      intro u hu
+      congr
+      ext x
+      have hu' : u ⊆ d := Finset.mem_powerset.mp hu
+      by_cases hxs : x ∈ s
+      · have hxud : x ∉ u := fun hxu =>
+          (Finset.mem_sdiff.mp (hu' hxu)).2 hxs
+        simp [d, hxs, hxud]
+      · simp [d, hxs]
+    calc
+      (∑ x ∈ d.powerset, (-1 : R) ^ (s ∪ x)ᶜ.card)
+          = ∑ x ∈ d.powerset, (-1 : R) ^ (d \ x).card := by
+            apply Finset.sum_congr rfl
+            intro x hx
+            rw [hcard x hx]
+      _ = 0 := sum_powerset_neg_one_pow_card_sdiff d hd
+  · intro u hu v hv huv
+    have hu' : u ⊆ d := Finset.mem_powerset.mp hu
+    have hv' : v ⊆ d := Finset.mem_powerset.mp hv
+    apply Finset.Subset.antisymm
+    · intro x hx
+      have hxsu : x ∈ s ∪ u := by
+        exact Finset.mem_union_right s hx
+      have hxsv : x ∈ s ∪ v := by
+        change x ∈ (fun y => s ∪ y) v
+        change x ∈ (fun y => s ∪ y) u at hxsu
+        rwa [huv] at hxsu
+      rcases Finset.mem_union.mp hxsu with hxs | hxu
+      · exact False.elim ((Finset.mem_sdiff.mp (hu' hx)).2 hxs)
+      · rcases Finset.mem_union.mp hxsv with hxs | hxv
+        · exact False.elim ((Finset.mem_sdiff.mp (hu' hx)).2 hxs)
+        · exact hxv
+    · intro x hx
+      have hxsv : x ∈ s ∪ v := by
+        exact Finset.mem_union_right s hx
+      have hxsu : x ∈ s ∪ u := by
+        change x ∈ (fun y => s ∪ y) u
+        change x ∈ (fun y => s ∪ y) v at hxsv
+        rwa [← huv] at hxsv
+      rcases Finset.mem_union.mp hxsv with hxs | hxv
+      · exact False.elim ((Finset.mem_sdiff.mp (hv' hx)).2 hxs)
+      · rcases Finset.mem_union.mp hxsu with hxs | hxu
+        · exact False.elim ((Finset.mem_sdiff.mp (hv' hx)).2 hxs)
+        · exact hxu
+
+end Finset
+
+namespace SwanLaplace
+
+/-- The alternating minor map obtained by restricting row vectors to an
+ordered set of column slots. -/
+noncomputable def coordinateMinorAlternating
+    {R : Type*} [CommRing R] {N r : ℕ}
+    (s : Finset (Fin N)) (hcard : s.card = r) :
+    (Fin N → R) [⋀^Fin r]→ₗ[R] R :=
+  Matrix.detRowAlternating.compLinearMap
+    (LinearMap.pi fun i : Fin r => LinearMap.proj (s.orderEmbOfFin hcard i))
+
+lemma coordinateMinorAlternating_apply
+    {R : Type*} [CommRing R] {N r : ℕ}
+    (s : Finset (Fin N)) (hcard : s.card = r)
+    (v : Fin r → Fin N → R) :
+    coordinateMinorAlternating s hcard v =
+      Matrix.det (fun i j => v i (s.orderEmbOfFin hcard j)) := by
+  rfl
+
+/-- Exterior-product form of the generalized Laplace expansion along a fixed
+set of column slots. -/
+noncomputable def coordinateLaplaceAlternating
+    {R : Type*} [CommRing R] {N r : ℕ}
+    (s : Finset (Fin N)) (hcard : s.card = r) :
+    (Fin N → R) [⋀^Sum (Fin r) (Fin (N - r))]→ₗ[R] R :=
+  (LinearMap.mul' R R).compAlternatingMap
+    ((coordinateMinorAlternating s hcard).domCoprod
+      (coordinateMinorAlternating sᶜ (by
+        rw [Finset.card_compl, Fintype.card_fin, hcard])))
+
+lemma coordinateLaplaceAlternating_apply
+    {R : Type*} [CommRing R] {N r : ℕ}
+    (s : Finset (Fin N)) (hcard : s.card = r)
+    (v : Sum (Fin r) (Fin (N - r)) → Fin N → R) :
+    coordinateLaplaceAlternating s hcard v =
+      ∑ σ : Equiv.Perm.ModSumCongr (Fin r) (Fin (N - r)),
+        (LinearMap.mul' R R)
+          (AlternatingMap.domCoprod.summand
+            (coordinateMinorAlternating s hcard)
+            (coordinateMinorAlternating sᶜ (by
+              rw [Finset.card_compl, Fintype.card_fin, hcard]))
+            σ v) := by
+  simp [coordinateLaplaceAlternating, AlternatingMap.domCoprod_apply,
+    map_sum]
+
+end SwanLaplace
+
+/-- A square minor with arbitrary row and column maps.
+
+Unlike `MinorIndex`, the maps are not required to be strictly increasing.
+This is the right workspace for Laplace relations: exchange terms may have
+repeated rows or columns, in which case the determinant is zero.  Nonzero
+terms can later be promoted back to honest `MinorIndex` terms after proving
+the row and column maps are injective. -/
+structure RawMinorIndex (m n t : ℕ) where
+  row : Fin t → Fin m
+  col : Fin t → Fin n
+
+namespace RawMinorIndex
+
+noncomputable def toPolynomial {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t) : MvPolynomial (Fin m × Fin n) k :=
+  Matrix.det <| Matrix.submatrix (genericMatrix m n k) R.row R.col
+
+def ofMinorIndex {m n t : ℕ} (I : MinorIndex m n t) :
+    RawMinorIndex m n t where
+  row := I.row
+  col := I.col
+
+@[simp] lemma toPolynomial_ofMinorIndex {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n t) :
+    RawMinorIndex.toPolynomial (k := k) (RawMinorIndex.ofMinorIndex I) =
+      genericMinor (k := k) I := by
+  rfl
+
+noncomputable def rowContent {m n t : ℕ}
+    (R : RawMinorIndex m n t) : Fin m →₀ ℕ :=
+  ∑ a : Fin t, Finsupp.single (R.row a) 1
+
+noncomputable def colContent {m n t : ℕ}
+    (R : RawMinorIndex m n t) : Fin n →₀ ℕ :=
+  ∑ a : Fin t, Finsupp.single (R.col a) 1
+
+@[simp] lemma rowContent_ofMinorIndex {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    RawMinorIndex.rowContent (RawMinorIndex.ofMinorIndex I) =
+      MinorIndex.rowContent I := by
+  rfl
+
+@[simp] lemma colContent_ofMinorIndex {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    RawMinorIndex.colContent (RawMinorIndex.ofMinorIndex I) =
+      MinorIndex.colContent I := by
+  rfl
+
+lemma heq_of_cast_apply_eq {m n t u : ℕ} (h : t = u)
+    {R : RawMinorIndex m n t} {S : RawMinorIndex m n u}
+    (hrow : ∀ a : Fin u, R.row (Fin.cast h.symm a) = S.row a)
+    (hcol : ∀ a : Fin u, R.col (Fin.cast h.symm a) = S.col a) :
+    HEq R S := by
+  cases h
+  apply heq_of_eq
+  cases R with
+  | mk Rrow Rcol =>
+      cases S with
+      | mk Srow Scol =>
+          simp only [Fin.cast_eq_self] at hrow hcol
+          cases funext hrow
+          cases funext hcol
+          rfl
+
+lemma rowContent_total {m n t : ℕ} (R : RawMinorIndex m n t) :
+    (∑ i : Fin m, RawMinorIndex.rowContent R i) = t := by
+  classical
+  simp only [rowContent, Finsupp.coe_finset_sum, Finset.sum_apply]
+  rw [Finset.sum_comm]
+  simp
+
+lemma colContent_total {m n t : ℕ} (R : RawMinorIndex m n t) :
+    (∑ j : Fin n, RawMinorIndex.colContent R j) = t := by
+  classical
+  simp only [colContent, Finsupp.coe_finset_sum, Finset.sum_apply]
+  rw [Finset.sum_comm]
+  simp
+
+lemma toPolynomial_eq_zero_of_row_eq {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t) {a b : Fin t}
+    (hab : a ≠ b) (hrow : R.row a = R.row b) :
+    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+  classical
+  unfold RawMinorIndex.toPolynomial
+  exact Matrix.det_zero_of_row_eq hab (by
+    ext c
+    simp [Matrix.submatrix_apply, hrow])
+
+lemma toPolynomial_eq_zero_of_col_eq {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t) {a b : Fin t}
+    (hab : a ≠ b) (hcol : R.col a = R.col b) :
+    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+  classical
+  unfold RawMinorIndex.toPolynomial
+  exact Matrix.det_zero_of_column_eq hab (by
+    intro r
+    simp [Matrix.submatrix_apply, hcol])
+
+lemma toPolynomial_eq_zero_of_not_injective_row {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t)
+    (hrow : ¬ Function.Injective R.row) :
+    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+  classical
+  rw [Function.Injective] at hrow
+  push_neg at hrow
+  rcases hrow with ⟨a, b, heq, hne⟩
+  exact R.toPolynomial_eq_zero_of_row_eq hne heq
+
+lemma toPolynomial_eq_zero_of_not_injective_col {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t)
+    (hcol : ¬ Function.Injective R.col) :
+    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+  classical
+  rw [Function.Injective] at hcol
+  push_neg at hcol
+  rcases hcol with ⟨a, b, heq, hne⟩
+  exact R.toPolynomial_eq_zero_of_col_eq hne heq
+
+/-- Promote a raw minor whose row and column maps are already strictly
+increasing to an honest `MinorIndex`.  This is the no-sign bridge; a later
+sorting bridge can reduce arbitrary injective raw minors to this case. -/
+def toMinorIndexOfStrictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
+    MinorIndex m n t where
+  row := OrderEmbedding.ofStrictMono R.row hrow
+  col := OrderEmbedding.ofStrictMono R.col hcol
+
+@[simp] lemma toMinorIndexOfStrictMono_row {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col)
+    (i : Fin t) :
+    (R.toMinorIndexOfStrictMono hrow hcol).row i = R.row i := rfl
+
+@[simp] lemma toMinorIndexOfStrictMono_col {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col)
+    (i : Fin t) :
+    (R.toMinorIndexOfStrictMono hrow hcol).col i = R.col i := rfl
+
+@[simp] lemma of_toMinorIndexOfStrictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
+    RawMinorIndex.ofMinorIndex (R.toMinorIndexOfStrictMono hrow hcol) = R := by
+  cases R
+  rfl
+
+lemma toPolynomial_toMinorIndexOfStrictMono {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
+    genericMinor (k := k) (R.toMinorIndexOfStrictMono hrow hcol) =
+      RawMinorIndex.toPolynomial (k := k) R := by
+  rfl
+
+@[simp] lemma rowContent_toMinorIndexOfStrictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
+    MinorIndex.rowContent (R.toMinorIndexOfStrictMono hrow hcol) =
+      RawMinorIndex.rowContent R := by
+  rfl
+
+@[simp] lemma colContent_toMinorIndexOfStrictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t)
+    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
+    MinorIndex.colContent (R.toMinorIndexOfStrictMono hrow hcol) =
+      RawMinorIndex.colContent R := by
+  rfl
+
+def permute {m n t : ℕ} (R : RawMinorIndex m n t)
+    (ρ κ : Equiv.Perm (Fin t)) : RawMinorIndex m n t where
+  row := R.row ∘ ρ
+  col := R.col ∘ κ
+
+@[simp] lemma permute_row {m n t : ℕ} (R : RawMinorIndex m n t)
+    (ρ κ : Equiv.Perm (Fin t)) (i : Fin t) :
+    (R.permute ρ κ).row i = R.row (ρ i) := rfl
+
+@[simp] lemma permute_col {m n t : ℕ} (R : RawMinorIndex m n t)
+    (ρ κ : Equiv.Perm (Fin t)) (i : Fin t) :
+    (R.permute ρ κ).col i = R.col (κ i) := rfl
+
+lemma toPolynomial_permute {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t)
+    (ρ κ : Equiv.Perm (Fin t)) :
+    RawMinorIndex.toPolynomial (k := k) (R.permute ρ κ) =
+      (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
+        (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
+        RawMinorIndex.toPolynomial (k := k) R := by
+  classical
+  unfold RawMinorIndex.toPolynomial RawMinorIndex.permute
+  change Matrix.det
+      ((Matrix.submatrix (genericMatrix m n k) R.row R.col).submatrix ρ κ) =
+    (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
+      (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
+      Matrix.det (Matrix.submatrix (genericMatrix m n k) R.row R.col)
+  let M : Matrix (Fin t) (Fin t) (MvPolynomial (Fin m × Fin n) k) :=
+    Matrix.submatrix (genericMatrix m n k) R.row R.col
+  have hsub :
+      M.submatrix ρ κ = (M.submatrix ρ id).submatrix id κ := by
+    ext i j
+    rfl
+  calc
+    Matrix.det (M.submatrix ρ κ)
+        = Matrix.det ((M.submatrix ρ id).submatrix id κ) := by rw [hsub]
+    _ = (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
+          Matrix.det (M.submatrix ρ id) := by
+          rw [Matrix.det_permute']
+    _ = (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
+          ((Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
+            Matrix.det M) := by
+          rw [Matrix.det_permute]
+    _ = (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
+          (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
+            Matrix.det M := by
+          ring
+
+lemma rowContent_permute {m n t : ℕ}
+    (R : RawMinorIndex m n t) (ρ κ : Equiv.Perm (Fin t)) :
+    RawMinorIndex.rowContent (R.permute ρ κ) =
+      RawMinorIndex.rowContent R := by
+  classical
+  unfold RawMinorIndex.rowContent RawMinorIndex.permute
+  simpa [Function.comp_apply] using
+    (Fintype.sum_equiv ρ
+      (fun i : Fin t => Finsupp.single (R.row (ρ i)) 1)
+      (fun i : Fin t => Finsupp.single (R.row i) 1)
+      (by intro i; rfl))
+
+lemma colContent_permute {m n t : ℕ}
+    (R : RawMinorIndex m n t) (ρ κ : Equiv.Perm (Fin t)) :
+    RawMinorIndex.colContent (R.permute ρ κ) =
+      RawMinorIndex.colContent R := by
+  classical
+  unfold RawMinorIndex.colContent RawMinorIndex.permute
+  simpa [Function.comp_apply] using
+    (Fintype.sum_equiv κ
+      (fun i : Fin t => Finsupp.single (R.col (κ i)) 1)
+      (fun i : Fin t => Finsupp.single (R.col i) 1)
+      (by intro i; rfl))
+
+lemma strictMono_comp_tupleSort_of_injective {t u : ℕ}
+    (f : Fin t → Fin u) (hf : Function.Injective f) :
+    StrictMono (f ∘ Tuple.sort f) := by
+  have hmono : Monotone (f ∘ Tuple.sort f) := Tuple.monotone_sort f
+  exact hmono.strictMono_iff_injective.mpr
+    (hf.comp (Equiv.injective (Tuple.sort f)))
+
+noncomputable def sorted {m n t : ℕ}
+    (R : RawMinorIndex m n t) : RawMinorIndex m n t :=
+  R.permute (Tuple.sort R.row) (Tuple.sort R.col)
+
+lemma sorted_row_strictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t) (hrow : Function.Injective R.row) :
+    StrictMono R.sorted.row := by
+  simpa [sorted, permute] using
+    strictMono_comp_tupleSort_of_injective R.row hrow
+
+lemma sorted_col_strictMono {m n t : ℕ}
+    (R : RawMinorIndex m n t) (hcol : Function.Injective R.col) :
+    StrictMono R.sorted.col := by
+  simpa [sorted, permute] using
+    strictMono_comp_tupleSort_of_injective R.col hcol
+
+lemma sorted_row_eq_orderEmbOfFin_image {m n t : ℕ}
+    (R : RawMinorIndex m n t) (hrow : Function.Injective R.row) :
+    R.sorted.row =
+      (Finset.univ.image R.row).orderEmbOfFin (by
+        rw [Finset.card_image_of_injective _ hrow]
+        simp) := by
+  apply Finset.orderEmbOfFin_unique
+  · intro i
+    simp [sorted, permute]
+  · exact R.sorted_row_strictMono hrow
+
+lemma sorted_col_eq_orderEmbOfFin_image {m n t : ℕ}
+    (R : RawMinorIndex m n t) (hcol : Function.Injective R.col) :
+    R.sorted.col =
+      (Finset.univ.image R.col).orderEmbOfFin (by
+        rw [Finset.card_image_of_injective _ hcol]
+        simp) := by
+  apply Finset.orderEmbOfFin_unique
+  · intro i
+    simp [sorted, permute]
+  · exact R.sorted_col_strictMono hcol
+
+lemma sorted_row_le_of_image_subset {m n r s : ℕ}
+    (R : RawMinorIndex m n r) (S : RawMinorIndex m n s)
+    (hR : Function.Injective R.row) (hS : Function.Injective S.row)
+    (hsub : Finset.univ.image R.row ⊆ Finset.univ.image S.row)
+    (i : Fin r) :
+    S.sorted.row
+        ⟨i, lt_of_lt_of_le i.isLt (by
+          simpa [Finset.card_image_of_injective _ hR,
+            Finset.card_image_of_injective _ hS] using
+              Finset.card_le_card hsub)⟩ ≤
+      R.sorted.row i := by
+  have hcardR : (Finset.univ.image R.row).card = r := by
+    rw [Finset.card_image_of_injective _ hR]
+    simp
+  rw [R.sorted_row_eq_orderEmbOfFin_image hR,
+    S.sorted_row_eq_orderEmbOfFin_image hS]
+  simpa using Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset hsub
+    (Fin.cast hcardR.symm i)
+
+lemma sorted_col_le_of_image_subset {m n r s : ℕ}
+    (R : RawMinorIndex m n r) (S : RawMinorIndex m n s)
+    (hR : Function.Injective R.col) (hS : Function.Injective S.col)
+    (hsub : Finset.univ.image R.col ⊆ Finset.univ.image S.col)
+    (i : Fin r) :
+    S.sorted.col
+        ⟨i, lt_of_lt_of_le i.isLt (by
+          simpa [Finset.card_image_of_injective _ hR,
+            Finset.card_image_of_injective _ hS] using
+              Finset.card_le_card hsub)⟩ ≤
+      R.sorted.col i := by
+  have hcardR : (Finset.univ.image R.col).card = r := by
+    rw [Finset.card_image_of_injective _ hR]
+    simp
+  rw [R.sorted_col_eq_orderEmbOfFin_image hR,
+    S.sorted_col_eq_orderEmbOfFin_image hS]
+  simpa using Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset hsub
+    (Fin.cast hcardR.symm i)
+
+lemma sorted_row_le_of_card_filter_le {m n t : ℕ}
+    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin m)
+    (hcount :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.row a ≤ x).card) :
+    R.sorted.row i ≤ x := by
+  classical
+  have hcard :
+      (Finset.univ.filter fun a : Fin t => R.sorted.row a ≤ x).card =
+        (Finset.univ.filter fun a : Fin t => R.row a ≤ x).card := by
+    refine Finset.card_bijective (Tuple.sort R.row) (Tuple.sort R.row).bijective ?_
+    intro a
+    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
+  have hcount' :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.row a ≤ x).card := by
+    simpa [hcard] using hcount
+  have hmono : Monotone R.sorted.row := by
+    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
+      Tuple.monotone_sort R.row
+  exact (Tuple.lt_card_le_iff_apply_le_of_monotone (f := R.sorted.row) hmono).mp hcount'
+
+lemma sorted_col_le_of_card_filter_le {m n t : ℕ}
+    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin n)
+    (hcount :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.col a ≤ x).card) :
+    R.sorted.col i ≤ x := by
+  classical
+  have hcard :
+      (Finset.univ.filter fun a : Fin t => R.sorted.col a ≤ x).card =
+        (Finset.univ.filter fun a : Fin t => R.col a ≤ x).card := by
+    refine Finset.card_bijective (Tuple.sort R.col) (Tuple.sort R.col).bijective ?_
+    intro a
+    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
+  have hcount' :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.col a ≤ x).card := by
+    simpa [hcard] using hcount
+  have hmono : Monotone R.sorted.col := by
+    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
+      Tuple.monotone_sort R.col
+  exact (Tuple.lt_card_le_iff_apply_le_of_monotone (f := R.sorted.col) hmono).mp hcount'
+
+lemma sorted_row_lt_of_card_filter_lt {m n t : ℕ}
+    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin m)
+    (hcount :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.row a < x).card) :
+    R.sorted.row i < x := by
+  classical
+  have hcard :
+      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card =
+        (Finset.univ.filter fun a : Fin t => R.row a < x).card := by
+    refine Finset.card_bijective (Tuple.sort R.row) (Tuple.sort R.row).bijective ?_
+    intro a
+    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
+  have hcount' :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card := by
+    simpa [hcard] using hcount
+  have hmono : Monotone R.sorted.row := by
+    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
+      Tuple.monotone_sort R.row
+  by_contra hnot
+  have hxi : x ≤ R.sorted.row i := le_of_not_gt hnot
+  have hsub :
+      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x) ⊆
+        Finset.Iio i := by
+    intro a ha
+    rw [Finset.mem_filter] at ha
+    rw [Finset.mem_Iio]
+    by_contra hai
+    have hia : i ≤ a := le_of_not_gt hai
+    exact not_lt_of_ge (le_trans hxi (hmono hia)) ha.2
+  have hcard_le :
+      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card ≤ i.val := by
+    calc
+      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card
+          ≤ (Finset.Iio i).card := Finset.card_le_card hsub
+      _ = i.val := by simp
+  omega
+
+lemma sorted_col_lt_of_card_filter_lt {m n t : ℕ}
+    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin n)
+    (hcount :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.col a < x).card) :
+    R.sorted.col i < x := by
+  classical
+  have hcard :
+      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card =
+        (Finset.univ.filter fun a : Fin t => R.col a < x).card := by
+    refine Finset.card_bijective (Tuple.sort R.col) (Tuple.sort R.col).bijective ?_
+    intro a
+    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
+  have hcount' :
+      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card := by
+    simpa [hcard] using hcount
+  have hmono : Monotone R.sorted.col := by
+    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
+      Tuple.monotone_sort R.col
+  by_contra hnot
+  have hxi : x ≤ R.sorted.col i := le_of_not_gt hnot
+  have hsub :
+      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x) ⊆
+        Finset.Iio i := by
+    intro a ha
+    rw [Finset.mem_filter] at ha
+    rw [Finset.mem_Iio]
+    by_contra hai
+    have hia : i ≤ a := le_of_not_gt hai
+    exact not_lt_of_ge (le_trans hxi (hmono hia)) ha.2
+  have hcard_le :
+      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card ≤ i.val := by
+    calc
+      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card
+          ≤ (Finset.Iio i).card := Finset.card_le_card hsub
+      _ = i.val := by simp
+  omega
+
+lemma toPolynomial_sorted {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (R : RawMinorIndex m n t) :
+    RawMinorIndex.toPolynomial (k := k) R.sorted =
+      (Equiv.Perm.sign (Tuple.sort R.row) : MvPolynomial (Fin m × Fin n) k) *
+        (Equiv.Perm.sign (Tuple.sort R.col) : MvPolynomial (Fin m × Fin n) k) *
+          RawMinorIndex.toPolynomial (k := k) R := by
+  exact R.toPolynomial_permute (Tuple.sort R.row) (Tuple.sort R.col)
+
+lemma rowContent_sorted {m n t : ℕ}
+    (R : RawMinorIndex m n t) :
+    RawMinorIndex.rowContent R.sorted = RawMinorIndex.rowContent R := by
+  exact R.rowContent_permute (Tuple.sort R.row) (Tuple.sort R.col)
+
+lemma colContent_sorted {m n t : ℕ}
+    (R : RawMinorIndex m n t) :
+    RawMinorIndex.colContent R.sorted = RawMinorIndex.colContent R := by
+  exact R.colContent_permute (Tuple.sort R.row) (Tuple.sort R.col)
+
+end RawMinorIndex
+
+/-- A two-factor raw minor product.  This is the local object produced by
+Laplace exchange before zero terms have been discarded and before injective
+row/column maps have been promoted to `MinorIndex`. -/
+structure RawMinorPair (m n : ℕ) where
+  p : ℕ
+  q : ℕ
+  left : RawMinorIndex m n p
+  right : RawMinorIndex m n q
+
+namespace RawMinorPair
+
+noncomputable def toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n) : MvPolynomial (Fin m × Fin n) k :=
+  RawMinorIndex.toPolynomial (k := k) P.left *
+    RawMinorIndex.toPolynomial (k := k) P.right
+
+noncomputable def rowContent {m n : ℕ}
+    (P : RawMinorPair m n) : Fin m →₀ ℕ :=
+  RawMinorIndex.rowContent P.left + RawMinorIndex.rowContent P.right
+
+noncomputable def colContent {m n : ℕ}
+    (P : RawMinorPair m n) : Fin n →₀ ℕ :=
+  RawMinorIndex.colContent P.left + RawMinorIndex.colContent P.right
+
+def rowIndexSum {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
+  (∑ i : Fin P.p, (P.left.row i).val) +
+    ∑ j : Fin P.q, (P.right.row j).val
+
+def colIndexSum {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
+  (∑ i : Fin P.p, (P.left.col i).val) +
+    ∑ j : Fin P.q, (P.right.col j).val
+
+def laplaceSignExponent {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
+  P.rowIndexSum + P.colIndexSum
+
+noncomputable def laplaceCoeff {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
+  (-1 : k) ^ P.laplaceSignExponent
+
+noncomputable def laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.C (P.laplaceCoeff (k := k)) *
+    RawMinorPair.toPolynomial (k := k) P
+
+noncomputable def sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair m n where
+  p := P.p
+  q := P.q
+  left := P.left.sorted
+  right := P.right.sorted
+
+noncomputable def sortSign {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    MvPolynomial (Fin m × Fin n) k :=
+  (Equiv.Perm.sign (Tuple.sort P.left.row) : MvPolynomial (Fin m × Fin n) k) *
+    (Equiv.Perm.sign (Tuple.sort P.left.col) : MvPolynomial (Fin m × Fin n) k) *
+    (Equiv.Perm.sign (Tuple.sort P.right.row) : MvPolynomial (Fin m × Fin n) k) *
+    (Equiv.Perm.sign (Tuple.sort P.right.col) : MvPolynomial (Fin m × Fin n) k)
+
+noncomputable def sortSignCoeff {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
+  (Equiv.Perm.sign (Tuple.sort P.left.row) : k) *
+    (Equiv.Perm.sign (Tuple.sort P.left.col) : k) *
+    (Equiv.Perm.sign (Tuple.sort P.right.row) : k) *
+    (Equiv.Perm.sign (Tuple.sort P.right.col) : k)
+
+lemma sortSign_eq_C {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    P.sortSign (k := k) = MvPolynomial.C (P.sortSignCoeff (k := k)) := by
+  simp [RawMinorPair.sortSign, RawMinorPair.sortSignCoeff, MvPolynomial.C_mul]
+
+lemma sortSign_mul_self {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    P.sortSign (k := k) * P.sortSign (k := k) = 1 := by
+  let sρL : MvPolynomial (Fin m × Fin n) k :=
+    (Equiv.Perm.sign (Tuple.sort P.left.row) :
+      MvPolynomial (Fin m × Fin n) k)
+  let sκL : MvPolynomial (Fin m × Fin n) k :=
+    (Equiv.Perm.sign (Tuple.sort P.left.col) :
+      MvPolynomial (Fin m × Fin n) k)
+  let sρR : MvPolynomial (Fin m × Fin n) k :=
+    (Equiv.Perm.sign (Tuple.sort P.right.row) :
+      MvPolynomial (Fin m × Fin n) k)
+  let sκR : MvPolynomial (Fin m × Fin n) k :=
+    (Equiv.Perm.sign (Tuple.sort P.right.col) :
+      MvPolynomial (Fin m × Fin n) k)
+  have hρL : sρL * sρL = 1 := by
+    simp [sρL, ← Int.cast_mul]
+  have hκL : sκL * sκL = 1 := by
+    simp [sκL, ← Int.cast_mul]
+  have hρR : sρR * sρR = 1 := by
+    simp [sρR, ← Int.cast_mul]
+  have hκR : sκR * sκR = 1 := by
+    simp [sκR, ← Int.cast_mul]
+  change (sρL * sκL * sρR * sκR) *
+      (sρL * sκL * sρR * sκR) = 1
+  calc
+    (sρL * sκL * sρR * sκR) * (sρL * sκL * sρR * sκR)
+        = (sρL * sρL) * (sκL * sκL) * (sρR * sρR) * (sκR * sκR) := by
+          ring
+    _ = 1 := by
+          rw [hρL, hκL, hρR, hκR]
+          ring
+
+def permute {m n : ℕ} (P : RawMinorPair m n)
+    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
+    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
+    RawMinorPair m n where
+  p := P.p
+  q := P.q
+  left := P.left.permute ρL κL
+  right := P.right.permute ρR κR
+
+lemma toPolynomial_permute {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
+    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
+    RawMinorPair.toPolynomial (k := k) (P.permute ρL κL ρR κR) =
+      (Equiv.Perm.sign ρL : MvPolynomial (Fin m × Fin n) k) *
+        (Equiv.Perm.sign κL : MvPolynomial (Fin m × Fin n) k) *
+        (Equiv.Perm.sign ρR : MvPolynomial (Fin m × Fin n) k) *
+        (Equiv.Perm.sign κR : MvPolynomial (Fin m × Fin n) k) *
+        RawMinorPair.toPolynomial (k := k) P := by
+  classical
+  rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
+    RawMinorPair.permute, RawMinorIndex.toPolynomial_permute,
+    RawMinorIndex.toPolynomial_permute]
+  ring
+
+lemma rowContent_permute {m n : ℕ} (P : RawMinorPair m n)
+    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
+    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
+    RawMinorPair.rowContent (P.permute ρL κL ρR κR) =
+      RawMinorPair.rowContent P := by
+  simp [RawMinorPair.rowContent, RawMinorPair.permute,
+    RawMinorIndex.rowContent_permute]
+
+lemma colContent_permute {m n : ℕ} (P : RawMinorPair m n)
+    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
+    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
+    RawMinorPair.colContent (P.permute ρL κL ρR κR) =
+      RawMinorPair.colContent P := by
+  simp [RawMinorPair.colContent, RawMinorPair.permute,
+    RawMinorIndex.colContent_permute]
+
+lemma sorted_left_row_strictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hrow : Function.Injective P.left.row) :
+    StrictMono P.sorted.left.row := by
+  simpa [RawMinorPair.sorted] using
+    RawMinorIndex.sorted_row_strictMono P.left hrow
+
+lemma sorted_left_col_strictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hcol : Function.Injective P.left.col) :
+    StrictMono P.sorted.left.col := by
+  simpa [RawMinorPair.sorted] using
+    RawMinorIndex.sorted_col_strictMono P.left hcol
+
+lemma sorted_right_row_strictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hrow : Function.Injective P.right.row) :
+    StrictMono P.sorted.right.row := by
+  simpa [RawMinorPair.sorted] using
+    RawMinorIndex.sorted_row_strictMono P.right hrow
+
+lemma sorted_right_col_strictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hcol : Function.Injective P.right.col) :
+    StrictMono P.sorted.right.col := by
+  simpa [RawMinorPair.sorted] using
+    RawMinorIndex.sorted_col_strictMono P.right hcol
+
+lemma toPolynomial_sorted {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.toPolynomial (k := k) P.sorted =
+      P.sortSign (k := k) * RawMinorPair.toPolynomial (k := k) P := by
+  classical
+  rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
+    RawMinorPair.sorted, RawMinorIndex.toPolynomial_sorted,
+    RawMinorIndex.toPolynomial_sorted]
+  simp [RawMinorPair.sortSign]
+  ring
+
+lemma rowContent_sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.rowContent P.sorted = RawMinorPair.rowContent P := by
+  simp [RawMinorPair.rowContent, RawMinorPair.sorted,
+    RawMinorIndex.rowContent_sorted]
+
+lemma colContent_sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.colContent P.sorted = RawMinorPair.colContent P := by
+  simp [RawMinorPair.colContent, RawMinorPair.sorted,
+    RawMinorIndex.colContent_sorted]
+
+lemma rowIndexSum_sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.rowIndexSum P.sorted = RawMinorPair.rowIndexSum P := by
+  classical
+  have hleft :
+      (∑ i : Fin P.p,
+          (P.left.row ((Tuple.sort P.left.row) i)).val) =
+        ∑ i : Fin P.p, (P.left.row i).val := by
+    simpa using
+      (Fintype.sum_equiv (Tuple.sort P.left.row)
+        (fun i : Fin P.p => (P.left.row ((Tuple.sort P.left.row) i)).val)
+        (fun i : Fin P.p => (P.left.row i).val)
+        (by intro i; rfl))
+  have hright :
+      (∑ i : Fin P.q,
+          (P.right.row ((Tuple.sort P.right.row) i)).val) =
+        ∑ i : Fin P.q, (P.right.row i).val := by
+    simpa using
+      (Fintype.sum_equiv (Tuple.sort P.right.row)
+        (fun i : Fin P.q => (P.right.row ((Tuple.sort P.right.row) i)).val)
+        (fun i : Fin P.q => (P.right.row i).val)
+        (by intro i; rfl))
+  simp [RawMinorPair.rowIndexSum, RawMinorPair.sorted,
+    RawMinorIndex.sorted, RawMinorIndex.permute, hleft, hright]
+
+lemma colIndexSum_sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.colIndexSum P.sorted = RawMinorPair.colIndexSum P := by
+  classical
+  have hleft :
+      (∑ i : Fin P.p,
+          (P.left.col ((Tuple.sort P.left.col) i)).val) =
+        ∑ i : Fin P.p, (P.left.col i).val := by
+    simpa using
+      (Fintype.sum_equiv (Tuple.sort P.left.col)
+        (fun i : Fin P.p => (P.left.col ((Tuple.sort P.left.col) i)).val)
+        (fun i : Fin P.p => (P.left.col i).val)
+        (by intro i; rfl))
+  have hright :
+      (∑ i : Fin P.q,
+          (P.right.col ((Tuple.sort P.right.col) i)).val) =
+        ∑ i : Fin P.q, (P.right.col i).val := by
+    simpa using
+      (Fintype.sum_equiv (Tuple.sort P.right.col)
+        (fun i : Fin P.q => (P.right.col ((Tuple.sort P.right.col) i)).val)
+        (fun i : Fin P.q => (P.right.col i).val)
+        (by intro i; rfl))
+  simp [RawMinorPair.colIndexSum, RawMinorPair.sorted,
+    RawMinorIndex.sorted, RawMinorIndex.permute, hleft, hright]
+
+lemma laplaceSignExponent_sorted {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.laplaceSignExponent P.sorted =
+      RawMinorPair.laplaceSignExponent P := by
+  simp [RawMinorPair.laplaceSignExponent, RawMinorPair.rowIndexSum_sorted,
+    RawMinorPair.colIndexSum_sorted]
+
+lemma laplaceCoeff_sorted {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplaceCoeff (k := k) P.sorted =
+      RawMinorPair.laplaceCoeff (k := k) P := by
+  simp [RawMinorPair.laplaceCoeff, RawMinorPair.laplaceSignExponent_sorted]
+
+lemma laplacePolynomial_sorted {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplacePolynomial (k := k) P.sorted =
+      P.sortSign (k := k) * RawMinorPair.laplacePolynomial (k := k) P := by
+  rw [RawMinorPair.laplacePolynomial, RawMinorPair.laplacePolynomial,
+    RawMinorPair.laplaceCoeff_sorted, RawMinorPair.toPolynomial_sorted]
+  ring
+
+lemma laplacePolynomial_eq_sortSign_mul_sorted {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplacePolynomial (k := k) P =
+      P.sortSign (k := k) *
+        RawMinorPair.laplacePolynomial (k := k) P.sorted := by
+  rw [RawMinorPair.laplacePolynomial_sorted]
+  have hsign := RawMinorPair.sortSign_mul_self (k := k) P
+  calc
+    RawMinorPair.laplacePolynomial (k := k) P
+        = (P.sortSign (k := k) * P.sortSign (k := k)) *
+            RawMinorPair.laplacePolynomial (k := k) P := by
+          rw [hsign]
+          simp
+    _ = P.sortSign (k := k) *
+          (P.sortSign (k := k) *
+            RawMinorPair.laplacePolynomial (k := k) P) := by
+          ring
+
+def slotRow {m n : ℕ} (P : RawMinorPair m n) :
+    Sum (Fin P.p) (Fin P.q) → Fin m
+  | Sum.inl i => P.left.row i
+  | Sum.inr j => P.right.row j
+
+def slotCol {m n : ℕ} (P : RawMinorPair m n) :
+    Sum (Fin P.p) (Fin P.q) → Fin n
+  | Sum.inl i => P.left.col i
+  | Sum.inr j => P.right.col j
+
+lemma rowContent_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.rowContent P =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotRow s) 1 := by
+  classical
+  cases P with
+  | mk p q left right =>
+      simp [RawMinorPair.rowContent, RawMinorPair.slotRow,
+        RawMinorIndex.rowContent, Fintype.sum_sum_type]
+
+lemma colContent_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
+    RawMinorPair.colContent P =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotCol s) 1 := by
+  classical
+  cases P with
+  | mk p q left right =>
+      simp [RawMinorPair.colContent, RawMinorPair.slotCol,
+        RawMinorIndex.colContent, Fintype.sum_sum_type]
+
+lemma rowIndexSum_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
+    P.rowIndexSum =
+      ∑ s : Sum (Fin P.p) (Fin P.q), (P.slotRow s).val := by
+  classical
+  cases P with
+  | mk p q left right =>
+      simp [RawMinorPair.rowIndexSum, RawMinorPair.slotRow,
+        Fintype.sum_sum_type]
+
+lemma colIndexSum_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
+    P.colIndexSum =
+      ∑ s : Sum (Fin P.p) (Fin P.q), (P.slotCol s).val := by
+  classical
+  cases P with
+  | mk p q left right =>
+      simp [RawMinorPair.colIndexSum, RawMinorPair.slotCol,
+        Fintype.sum_sum_type]
+
+/-- A redistribution of all row/column slots of a raw two-minor product into
+new left/right factors.  The new left factor has size `r`; the new right factor
+has the complementary size.  The equivalence is the bookkeeping that every old
+slot is used exactly once. -/
+structure Reshuffle {m n : ℕ} (P : RawMinorPair m n) where
+  r : ℕ
+  hle : r ≤ P.p + P.q
+  equiv :
+    Sum (Fin r) (Fin (P.p + P.q - r)) ≃
+      Sum (Fin P.p) (Fin P.q)
+
+namespace Reshuffle
+
+noncomputable def id {m n : ℕ} (P : RawMinorPair m n) :
+    Reshuffle P where
+  r := P.p
+  hle := Nat.le_add_right P.p P.q
+  equiv :=
+    let h : P.p + P.q - P.p = P.q := by omega
+    Equiv.sumCongr (Equiv.refl (Fin P.p)) (Equiv.cast (by rw [h]))
+
+def toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : Reshuffle P) : RawMinorPair m n where
+  p := E.r
+  q := P.p + P.q - E.r
+  left :=
+    { row := fun i => P.slotRow (E.equiv (Sum.inl i))
+      col := fun i => P.slotCol (E.equiv (Sum.inl i)) }
+  right :=
+    { row := fun j => P.slotRow (E.equiv (Sum.inr j))
+      col := fun j => P.slotCol (E.equiv (Sum.inr j)) }
+
+lemma rowContent_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : Reshuffle P) :
+    RawMinorPair.rowContent E.toPair = RawMinorPair.rowContent P := by
+  classical
+  rw [RawMinorPair.rowContent_eq_sum_slots,
+    RawMinorPair.rowContent_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (E.toPair.slotRow s) 1) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (P.slotRow (E.equiv s)) 1 := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (E.toPair.slotRow s) 1)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (P.slotRow (E.equiv s)) 1 := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotRow s) 1 := by
+        simpa using
+          (Fintype.sum_equiv E.equiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              Finsupp.single (P.slotRow (E.equiv s)) 1)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              Finsupp.single (P.slotRow s) 1)
+            (by intro s; rfl))
+
+lemma colContent_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : Reshuffle P) :
+    RawMinorPair.colContent E.toPair = RawMinorPair.colContent P := by
+  classical
+  rw [RawMinorPair.colContent_eq_sum_slots,
+    RawMinorPair.colContent_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (E.toPair.slotCol s) 1) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (P.slotCol (E.equiv s)) 1 := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (E.toPair.slotCol s) 1)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (P.slotCol (E.equiv s)) 1 := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotCol s) 1 := by
+        simpa using
+          (Fintype.sum_equiv E.equiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              Finsupp.single (P.slotCol (E.equiv s)) 1)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              Finsupp.single (P.slotCol s) 1)
+            (by intro s; rfl))
+
+lemma id_toPair_left_row {m n : ℕ} (P : RawMinorPair m n) :
+    (Reshuffle.id P).toPair.left.row = P.left.row := by
+  funext i
+  rfl
+
+lemma id_toPair_left_col {m n : ℕ} (P : RawMinorPair m n) :
+    (Reshuffle.id P).toPair.left.col = P.left.col := by
+  funext i
+  rfl
+
+noncomputable def code {m n : ℕ} {P : RawMinorPair m n}
+    (E : Reshuffle P) :
+    Sigma (fun r : Fin (P.p + P.q + 1) =>
+      Sum (Fin r.1) (Fin (P.p + P.q - r.1)) ≃
+        Sum (Fin P.p) (Fin P.q)) :=
+  ⟨⟨E.r, Nat.lt_succ_of_le E.hle⟩, E.equiv⟩
+
+lemma code_injective {m n : ℕ} {P : RawMinorPair m n} :
+    Function.Injective (Reshuffle.code (P := P)) := by
+  intro E E' h
+  cases E with
+  | mk r hle equiv =>
+      cases E' with
+      | mk r' hle' equiv' =>
+          simp only [code, Sigma.mk.injEq, Fin.mk.injEq] at h
+          rcases h with ⟨hr, hequiv⟩
+          subst hr
+          cases hequiv
+          rfl
+
+instance instFinite {m n : ℕ} {P : RawMinorPair m n} :
+    Finite (Reshuffle P) := by
+  classical
+  exact Finite.of_injective (Reshuffle.code (P := P)) Reshuffle.code_injective
+
+noncomputable instance instFintype {m n : ℕ} {P : RawMinorPair m n} :
+    Fintype (Reshuffle P) := by
+  classical
+  exact Fintype.ofFinite (Reshuffle P)
+
+end Reshuffle
+
+/-- A two-sided redistribution of a raw two-minor product.
+
+For Swan's Laplace relations the new row split and the new column split vary
+independently.  This is why `BiReshuffle` has separate equivalences for row
+slots and column slots, unlike `Reshuffle` above. -/
+structure BiReshuffle {m n : ℕ} (P : RawMinorPair m n) where
+  r : ℕ
+  hle : r ≤ P.p + P.q
+  rowEquiv :
+    Sum (Fin r) (Fin (P.p + P.q - r)) ≃
+      Sum (Fin P.p) (Fin P.q)
+  colEquiv :
+    Sum (Fin r) (Fin (P.p + P.q - r)) ≃
+      Sum (Fin P.p) (Fin P.q)
+
+namespace BiReshuffle
+
+noncomputable def equivPermSign
+    {R : Type*} [CommRing R] {α : Type*} [Fintype α] [DecidableEq α]
+    (e : Equiv.Perm α) : R :=
+  (((Equiv.Perm.sign e : ℤˣ) : ℤ) : R)
+
+@[simp] lemma equivPermSign_one
+    {R : Type*} [CommRing R] {α : Type*} [Fintype α] [DecidableEq α] :
+    equivPermSign (R := R) (1 : Equiv.Perm α) = 1 := by
+  simp [equivPermSign]
+
+@[simp] lemma equivPermSign_trans
+    {R : Type*} [CommRing R] {α : Type*} [Fintype α] [DecidableEq α]
+    (e f : Equiv.Perm α) :
+    equivPermSign (R := R) (e.trans f) =
+      equivPermSign (R := R) f * equivPermSign (R := R) e := by
+  simp [equivPermSign, Equiv.Perm.sign_trans]
+
+@[simp] lemma equivPermSign_symm
+    {R : Type*} [CommRing R] {α : Type*} [Fintype α] [DecidableEq α]
+    (e : Equiv.Perm α) :
+    equivPermSign (R := R) e.symm = equivPermSign (R := R) e := by
+  simp [equivPermSign, Equiv.Perm.sign_symm]
+
+@[simp] lemma equivPermSign_sumCongr
+    {R : Type*} [CommRing R]
+    {α β : Type*} [Fintype α] [DecidableEq α] [Fintype β] [DecidableEq β]
+    (e : Equiv.Perm α) (f : Equiv.Perm β) :
+    equivPermSign (R := R) (e.sumCongr f) =
+      equivPermSign (R := R) e * equivPermSign (R := R) f := by
+  simp [equivPermSign, Equiv.Perm.sign_sumCongr]
+
+lemma equivPermSign_mul_self
+    {R : Type*} [CommRing R] {α : Type*} [Fintype α] [DecidableEq α]
+    (e : Equiv.Perm α) :
+    equivPermSign (R := R) e * equivPermSign (R := R) e = 1 := by
+  rcases Int.units_eq_one_or (Equiv.Perm.sign e) with h | h <;>
+    simp [equivPermSign, h]
+
+noncomputable def finSumFinEquivToTotal (N r : ℕ) (hle : r ≤ N) :
+    Fin r ⊕ Fin (N - r) ≃ Fin N :=
+  finSumFinEquiv.trans (finCongr (Nat.add_sub_of_le hle))
+
+noncomputable def id {m n : ℕ} (P : RawMinorPair m n) :
+    BiReshuffle P where
+  r := P.p
+  hle := Nat.le_add_right P.p P.q
+  rowEquiv :=
+    let h : P.p + P.q - P.p = P.q := by omega
+    Equiv.sumCongr (Equiv.refl (Fin P.p)) (Equiv.cast (by rw [h]))
+  colEquiv :=
+    let h : P.p + P.q - P.p = P.q := by omega
+    Equiv.sumCongr (Equiv.refl (Fin P.p)) (Equiv.cast (by rw [h]))
+
+/-- The canonical bi-reshuffle attached to two equally sized sets of row and
+column slots.  The selected slots form the new left factor; their complements
+form the new right factor.  Both blocks are enumerated in the ambient slot
+order, so this construction does not introduce the block-permutation
+multiplicities present in an arbitrary `BiReshuffle`. -/
+noncomputable def ofFinsets {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) :
+    BiReshuffle P where
+  r := rowSlots.card
+  hle := by
+    simpa using Finset.card_le_univ rowSlots
+  rowEquiv :=
+    (finSumEquivOfFinset rfl (by
+      rw [Finset.card_compl, Fintype.card_fin])).trans finSumFinEquiv.symm
+  colEquiv :=
+    (finSumEquivOfFinset hcard.symm (by
+      rw [Finset.card_compl, Fintype.card_fin, hcard])).trans finSumFinEquiv.symm
+
+@[simp] lemma ofFinsets_r {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) :
+    (ofFinsets P rowSlots colSlots hcard).r = rowSlots.card := rfl
+
+@[simp] lemma ofFinsets_rowEquiv_inl {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (i : Fin rowSlots.card) :
+    (ofFinsets P rowSlots colSlots hcard).rowEquiv (Sum.inl i) =
+      finSumFinEquiv.symm (rowSlots.orderEmbOfFin rfl i) := by
+  simp [ofFinsets]
+
+@[simp] lemma ofFinsets_colEquiv_inl {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (i : Fin rowSlots.card) :
+    (ofFinsets P rowSlots colSlots hcard).colEquiv (Sum.inl i) =
+      finSumFinEquiv.symm (colSlots.orderEmbOfFin hcard.symm i) := by
+  simp [ofFinsets]
+
+@[simp] lemma ofFinsets_rowEquiv_inr {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin (P.p + P.q - rowSlots.card)) :
+    (ofFinsets P rowSlots colSlots hcard).rowEquiv (Sum.inr i) =
+      finSumFinEquiv.symm
+        (rowSlotsᶜ.orderEmbOfFin (by
+          rw [Finset.card_compl, Fintype.card_fin]) i) := by
+  simp [ofFinsets]
+
+@[simp] lemma ofFinsets_colEquiv_inr {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin (P.p + P.q - rowSlots.card)) :
+    (ofFinsets P rowSlots colSlots hcard).colEquiv (Sum.inr i) =
+      finSumFinEquiv.symm
+        (colSlotsᶜ.orderEmbOfFin (by
+          rw [Finset.card_compl, Fintype.card_fin, hcard]) i) := by
+  simp [ofFinsets]
+
+/-- Slots occupied by the original left factor, viewed in the common ordered
+slot set `Fin (P.p + P.q)`. -/
+def leftSlotFinset {m n : ℕ} (P : RawMinorPair m n) :
+    Finset (Fin (P.p + P.q)) :=
+  Finset.univ.map (Fin.castAddEmb P.q)
+
+@[simp] lemma card_leftSlotFinset {m n : ℕ} (P : RawMinorPair m n) :
+    (leftSlotFinset P).card = P.p := by
+  simp [leftSlotFinset]
+
+@[simp] lemma mem_leftSlotFinset_castAdd {m n : ℕ} (P : RawMinorPair m n)
+    (i : Fin P.p) :
+    Fin.castAdd P.q i ∈ leftSlotFinset P := by
+  simp [leftSlotFinset]
+
+lemma leftSlotFinset_orderEmbOfFin {m n : ℕ} (P : RawMinorPair m n)
+    (i : Fin P.p) :
+    (leftSlotFinset P).orderEmbOfFin (card_leftSlotFinset P) i =
+      Fin.castAdd P.q i := by
+  classical
+  have h :
+      (fun i : Fin P.p => Fin.castAdd P.q i) =
+        (leftSlotFinset P).orderEmbOfFin (card_leftSlotFinset P) := by
+    refine Finset.orderEmbOfFin_unique (s := leftSlotFinset P)
+      (h := card_leftSlotFinset P) ?_ (Fin.strictMono_castAdd P.q)
+    intro i
+    exact mem_leftSlotFinset_castAdd P i
+  exact congrFun h.symm i
+
+lemma leftSlotFinset_orderEmbOfFin_cast {m n : ℕ} (P : RawMinorPair m n)
+    {r : ℕ} (hcard : (leftSlotFinset P).card = r)
+    (hr : r = P.p) (i : Fin r) :
+    (leftSlotFinset P).orderEmbOfFin hcard i =
+      Fin.castAdd P.q (Fin.cast hr i) := by
+  subst hr
+  simpa using leftSlotFinset_orderEmbOfFin P i
+
+lemma leftSlotFinset_compl_orderEmbOfFin {m n : ℕ} (P : RawMinorPair m n)
+    (hcard : (leftSlotFinset P)ᶜ.card = P.q) (j : Fin P.q) :
+    ((leftSlotFinset P)ᶜ).orderEmbOfFin hcard j =
+      Fin.natAdd P.p j := by
+  classical
+  have h :
+      (fun j : Fin P.q => Fin.natAdd P.p j) =
+        ((leftSlotFinset P)ᶜ).orderEmbOfFin hcard := by
+    refine Finset.orderEmbOfFin_unique (s := (leftSlotFinset P)ᶜ)
+      (h := hcard) ?_ (Fin.strictMono_natAdd P.p)
+    intro j
+    simp only [leftSlotFinset, Fin.natAdd, Finset.mem_compl, Finset.mem_map, Finset.mem_univ,
+      Fin.coe_castAddEmb, Fin.castAdd, Fin.ext_iff, Fin.val_castLE, true_and, not_exists]
+    intro x hx
+    have hxlt : x.val < P.p := x.isLt
+    omega
+  exact congrFun h.symm j
+
+lemma card_leftSlotFinset_compl {m n : ℕ} (P : RawMinorPair m n) :
+    (leftSlotFinset P)ᶜ.card = P.q := by
+  rw [Finset.card_compl, Fintype.card_fin, card_leftSlotFinset]
+  omega
+
+lemma leftSlotFinset_ne_univ_of_right_pos {m n : ℕ}
+    (P : RawMinorPair m n) (hq : 0 < P.q) :
+    leftSlotFinset P ≠ Finset.univ := by
+  intro h
+  have hcard := congrArg Finset.card h
+  simp [card_leftSlotFinset] at hcard
+  omega
+
+def permPreimageLeftSlotFinset {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q))) :
+    Finset (Fin (P.p + P.q)) :=
+  (leftSlotFinset P).map π.symm.toEmbedding
+
+@[simp] lemma card_permPreimageLeftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (π : Equiv.Perm (Fin (P.p + P.q))) :
+    (permPreimageLeftSlotFinset P π).card = P.p := by
+  simp [permPreimageLeftSlotFinset]
+
+lemma mem_permPreimageLeftSlotFinset_iff {m n : ℕ}
+    (P : RawMinorPair m n) (π : Equiv.Perm (Fin (P.p + P.q)))
+    (x : Fin (P.p + P.q)) :
+    x ∈ permPreimageLeftSlotFinset P π ↔ π x ∈ leftSlotFinset P := by
+  classical
+  simp [permPreimageLeftSlotFinset]
+
+lemma leftSlotFinset_union_permPreimageLeftSlotFinset_ne_univ_of_two_mul_lt
+    {m n : ℕ} (P : RawMinorPair m n)
+    (hcard : 2 * P.p < P.p + P.q)
+    (π : Equiv.Perm (Fin (P.p + P.q))) :
+    leftSlotFinset P ∪ permPreimageLeftSlotFinset P π ≠ Finset.univ := by
+  classical
+  intro h
+  have hle :
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π).card ≤ 2 * P.p := by
+    calc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π).card
+          ≤ (leftSlotFinset P).card + (permPreimageLeftSlotFinset P π).card :=
+            Finset.card_union_le _ _
+      _ = 2 * P.p := by simp [two_mul]
+  have huniv :
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π).card = P.p + P.q := by
+    simp [h]
+  omega
+
+lemma sum_Icc_leftSlotFinset_union_permPreimage_neg_one_pow_card_compl_eq_zero
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (hcard : 2 * P.p < P.p + P.q)
+    (π : Equiv.Perm (Fin (P.p + P.q))) :
+    (∑ s ∈ Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π) Finset.univ,
+      (-1 : k) ^ sᶜ.card) = 0 := by
+  exact Finset.sum_Icc_neg_one_pow_card_compl_eq_zero
+    (s := leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+    (R := k)
+    (leftSlotFinset_union_permPreimageLeftSlotFinset_ne_univ_of_two_mul_lt
+      P hcard π)
+
+lemma sum_Icc_leftSlotFinset_neg_one_pow_card_compl_eq_zero
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (P : RawMinorPair m n) (hq : 0 < P.q) :
+    (∑ s ∈ Finset.Icc (leftSlotFinset P) Finset.univ,
+      (-1 : k) ^ sᶜ.card) = 0 := by
+  exact Finset.sum_Icc_neg_one_pow_card_compl_eq_zero
+    (s := leftSlotFinset P) (R := k)
+    (leftSlotFinset_ne_univ_of_right_pos P hq)
+
+lemma leftSlotFinset_compl_orderEmbOfFin_cast {m n : ℕ} (P : RawMinorPair m n)
+    {r : ℕ} (hcard : (leftSlotFinset P)ᶜ.card = r)
+    (hr : r = P.q) (j : Fin r) :
+    ((leftSlotFinset P)ᶜ).orderEmbOfFin hcard j =
+      Fin.natAdd P.p (Fin.cast hr j) := by
+  subst hr
+  simpa using leftSlotFinset_compl_orderEmbOfFin P hcard j
+
+namespace Hodge
+
+/-- The initial segment of the original right slots up to the Hodge bad
+position.  These are Swan's `j₁,...,jν`. -/
+def rightPrefix {m n : ℕ} (P : RawMinorPair m n) (ν : Fin P.q) :
+    Finset (Fin (P.p + P.q)) :=
+  (Finset.univ.filter fun μ : Fin P.q => μ ≤ ν).map (Fin.natAddEmb P.p)
+
+/-- The final segment of the original left slots starting at the Hodge bad
+position.  These are Swan's `iν,...,ip`. -/
+def leftSuffix {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (_hνp : ν.val < P.p) :
+    Finset (Fin (P.p + P.q)) :=
+  (Finset.univ.filter fun i : Fin P.p => ν.val ≤ i.val).map (Fin.castAddEmb P.q)
+
+/-- The initial segment of the original left slots up to a fixed left
+position. -/
+def leftPrefix {m n : ℕ} (P : RawMinorPair m n) (i : Fin P.p) :
+    Finset (Fin (P.p + P.q)) :=
+  (Finset.univ.filter fun a : Fin P.p => a ≤ i).map (Fin.castAddEmb P.q)
+
+/-- The strict initial segment of the original left slots before the Hodge bad
+position. -/
+def leftBefore {m n : ℕ} (P : RawMinorPair m n) (ν : Fin P.q) :
+    Finset (Fin (P.p + P.q)) :=
+  (Finset.univ.filter fun i : Fin P.p => i.val < ν.val).map (Fin.castAddEmb P.q)
+
+/-- The strict tail of the original left slots after a fixed left position. -/
+def leftAfter {m n : ℕ} (P : RawMinorPair m n) (i : Fin P.p) :
+    Finset (Fin (P.p + P.q)) :=
+  (Finset.univ.filter fun a : Fin P.p => i < a).map (Fin.castAddEmb P.q)
+
+/-- Swan's `D = B ∪ {j₁,...,jν}` in ambient slot form. -/
+def hodgeD {m n : ℕ} (P : RawMinorPair m n) (ν : Fin P.q) :
+    Finset (Fin (P.p + P.q)) :=
+  leftSlotFinset P ∪ rightPrefix P ν
+
+/-- Swan's `C = {j₁,...,jν,iν,...,ip}` in ambient slot form. -/
+def hodgeC {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Finset (Fin (P.p + P.q)) :=
+  rightPrefix P ν ∪ leftSuffix P ν hνp
+
+lemma rightPrefix_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    rightPrefix P ν ⊆ hodgeD P ν := by
+  intro x hx
+  exact Finset.mem_union_right (leftSlotFinset P) hx
+
+lemma rightPrefix_subset_hodgeC {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    rightPrefix P ν ⊆ hodgeC P ν hνp := by
+  intro x hx
+  exact Finset.mem_union_left (leftSuffix P ν hνp) hx
+
+lemma leftSlotFinset_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    leftSlotFinset P ⊆ hodgeD P ν := by
+  intro x hx
+  exact Finset.mem_union_left (rightPrefix P ν) hx
+
+lemma rightPrefix_disjoint_leftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    Disjoint (rightPrefix P ν) (leftSlotFinset P) := by
+  classical
+  rw [Finset.disjoint_left]
+  intro x hxright hxleft
+  rcases Finset.mem_map.mp hxright with ⟨μ, _hμ, hμx⟩
+  rcases Finset.mem_map.mp hxleft with ⟨i, _hi, hix⟩
+  have hval :
+      (Fin.natAdd P.p μ).val = (Fin.castAdd P.q i).val := by
+    have hfin : Fin.natAdd P.p μ = Fin.castAdd P.q i := by
+      simpa using hμx.trans hix.symm
+    exact congrArg Fin.val hfin
+  simp [Fin.natAdd, Fin.castAdd] at hval
+  omega
+
+lemma leftSlotFinset_disjoint_rightPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    Disjoint (leftSlotFinset P) (rightPrefix P ν) :=
+  (rightPrefix_disjoint_leftSlotFinset P ν).symm
+
+lemma leftSuffix_subset_leftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    leftSuffix P ν hνp ⊆ leftSlotFinset P := by
+  classical
+  intro x hx
+  rcases Finset.mem_map.mp hx with ⟨i, _hi, hix⟩
+  exact Finset.mem_map.mpr ⟨i, Finset.mem_univ _, hix⟩
+
+@[simp] lemma card_leftPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (i : Fin P.p) :
+    (leftPrefix P i).card = i.val + 1 := by
+  classical
+  have hfilter :
+      (Finset.univ.filter fun a : Fin P.p => a ≤ i) =
+        Finset.Iic i := by
+    ext a
+    simp
+  rw [leftPrefix, hfilter]
+  simp
+
+lemma leftPrefix_subset_leftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (i : Fin P.p) :
+    leftPrefix P i ⊆ leftSlotFinset P := by
+  classical
+  intro x hx
+  rcases Finset.mem_map.mp hx with ⟨a, _ha, hax⟩
+  exact Finset.mem_map.mpr ⟨a, Finset.mem_univ _, hax⟩
+
+@[simp] lemma card_leftBefore {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (leftBefore P ν).card = ν.val := by
+  classical
+  let a : Fin P.p := ⟨ν.val, hνp⟩
+  have hfilter :
+      (Finset.univ.filter fun i : Fin P.p => i.val < ν.val) =
+        Finset.Iio a := by
+    ext i
+    simp [a, Fin.lt_def]
+  rw [leftBefore, hfilter]
+  simp [a]
+
+lemma leftBefore_subset_leftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    leftBefore P ν ⊆ leftSlotFinset P := by
+  classical
+  intro x hx
+  rcases Finset.mem_map.mp hx with ⟨a, _ha, hax⟩
+  exact Finset.mem_map.mpr ⟨a, Finset.mem_univ _, hax⟩
+
+lemma leftPrefix_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (i : Fin P.p) :
+    leftPrefix P i ⊆ hodgeD P ν := by
+  intro x hx
+  exact leftSlotFinset_subset_hodgeD P ν
+    (leftPrefix_subset_leftSlotFinset P i hx)
+
+lemma leftBefore_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    leftBefore P ν ⊆ hodgeD P ν := by
+  intro x hx
+  exact leftSlotFinset_subset_hodgeD P ν
+    (leftBefore_subset_leftSlotFinset P ν hx)
+
+lemma leftPrefix_disjoint_rightPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (i : Fin P.p) :
+    Disjoint (leftPrefix P i) (rightPrefix P ν) :=
+  (leftSlotFinset_disjoint_rightPrefix P ν).mono_left
+    (leftPrefix_subset_leftSlotFinset P i)
+
+lemma leftBefore_disjoint_rightPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    Disjoint (leftBefore P ν) (rightPrefix P ν) :=
+  (leftSlotFinset_disjoint_rightPrefix P ν).mono_left
+    (leftBefore_subset_leftSlotFinset P ν)
+
+lemma leftBefore_disjoint_leftSuffix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Disjoint (leftBefore P ν) (leftSuffix P ν hνp) := by
+  classical
+  rw [Finset.disjoint_left]
+  intro x hxBefore hxSuffix
+  rcases Finset.mem_map.mp hxBefore with ⟨a, ha, hax⟩
+  rcases Finset.mem_map.mp hxSuffix with ⟨b, hb, hbx⟩
+  have haν : a.val < ν.val := (Finset.mem_filter.mp ha).2
+  have hνb : ν.val ≤ b.val := (Finset.mem_filter.mp hb).2
+  have hab : a.val = b.val := by
+    have hfin :
+        Fin.castAdd P.q a = Fin.castAdd P.q b := by
+      exact hax.trans hbx.symm
+    simpa [Fin.castAdd] using congrArg Fin.val hfin
+  omega
+
+lemma leftBefore_disjoint_hodgeC {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Disjoint (leftBefore P ν) (hodgeC P ν hνp) := by
+  classical
+  rw [Finset.disjoint_left]
+  intro x hxBefore hxC
+  rcases Finset.mem_union.mp hxC with hxRight | hxSuffix
+  · have hdis := leftBefore_disjoint_rightPrefix P ν
+    rw [Finset.disjoint_left] at hdis
+    exact hdis hxBefore hxRight
+  · have hdis := leftBefore_disjoint_leftSuffix P ν hνp
+    rw [Finset.disjoint_left] at hdis
+    exact hdis hxBefore hxSuffix
+
+lemma leftBefore_subset_hodgeD_sdiff_W {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p)
+    {W : Finset (Fin (P.p + P.q))}
+    (hW : W ⊆ hodgeC P ν hνp) :
+    leftBefore P ν ⊆ hodgeD P ν \ W := by
+  classical
+  intro x hx
+  refine Finset.mem_sdiff.mpr ⟨leftBefore_subset_hodgeD P ν hx, ?_⟩
+  intro hxW
+  have hdis := leftBefore_disjoint_hodgeC P ν hνp
+  rw [Finset.disjoint_left] at hdis
+  exact hdis hx (hW hxW)
+
+lemma slotCol_lt_of_mem_leftBefore {m n : ℕ}
+    (P : RawMinorPair m n) (hcol : StrictMono P.left.col)
+    {ν : Fin P.q} (hνp : ν.val < P.p)
+    {x : Fin (P.p + P.q)} (hx : x ∈ leftBefore P ν) :
+    P.slotCol (finSumFinEquiv.symm x) < P.left.col ⟨ν.val, hνp⟩ := by
+  classical
+  rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+  have haν : a.val < ν.val := (Finset.mem_filter.mp ha).2
+  have hslot :
+      P.slotCol (finSumFinEquiv.symm x) = P.left.col a := by
+    rw [← hax]
+    change P.slotCol (finSumFinEquiv.symm (Fin.castAdd P.q a)) = P.left.col a
+    rw [finSumFinEquiv_symm_apply_castAdd]
+    rfl
+  rw [hslot]
+  exact hcol (by simpa [Fin.lt_def] using haν)
+
+lemma slotRow_lt_of_mem_leftBefore {m n : ℕ}
+    (P : RawMinorPair m n) (hrow : StrictMono P.left.row)
+    {ν : Fin P.q} (hνp : ν.val < P.p)
+    {x : Fin (P.p + P.q)} (hx : x ∈ leftBefore P ν) :
+    P.slotRow (finSumFinEquiv.symm x) < P.left.row ⟨ν.val, hνp⟩ := by
+  classical
+  rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+  have haν : a.val < ν.val := (Finset.mem_filter.mp ha).2
+  have hslot :
+      P.slotRow (finSumFinEquiv.symm x) = P.left.row a := by
+    rw [← hax]
+    change P.slotRow (finSumFinEquiv.symm (Fin.castAdd P.q a)) = P.left.row a
+    rw [finSumFinEquiv_symm_apply_castAdd]
+    rfl
+  rw [hslot]
+  exact hrow (by simpa [Fin.lt_def] using haν)
+
+@[simp] lemma card_leftAfter {m n : ℕ}
+    (P : RawMinorPair m n) (i : Fin P.p) :
+    (leftAfter P i).card = P.p - (i.val + 1) := by
+  classical
+  have hfilter :
+      (Finset.univ.filter fun a : Fin P.p => i < a) =
+        Finset.Ioi i := by
+    ext a
+    simp
+  rw [leftAfter, hfilter]
+  simp
+  omega
+
+lemma leftAfter_subset_leftSlotFinset {m n : ℕ}
+    (P : RawMinorPair m n) (i : Fin P.p) :
+    leftAfter P i ⊆ leftSlotFinset P := by
+  classical
+  intro x hx
+  rcases Finset.mem_map.mp hx with ⟨a, _ha, hax⟩
+  exact Finset.mem_map.mpr ⟨a, Finset.mem_univ _, hax⟩
+
+lemma leftSuffix_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    leftSuffix P ν hνp ⊆ hodgeD P ν := by
+  intro x hx
+  exact leftSlotFinset_subset_hodgeD P ν
+    (leftSuffix_subset_leftSlotFinset P ν hνp hx)
+
+lemma hodgeC_subset_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    hodgeC P ν hνp ⊆ hodgeD P ν := by
+  intro x hx
+  rcases Finset.mem_union.mp hx with hx | hx
+  · exact rightPrefix_subset_hodgeD P ν hx
+  · exact leftSuffix_subset_hodgeD P ν hνp hx
+
+lemma rightPrefix_disjoint_leftSuffix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Disjoint (rightPrefix P ν) (leftSuffix P ν hνp) := by
+  exact (rightPrefix_disjoint_leftSlotFinset P ν).mono_right
+    (leftSuffix_subset_leftSlotFinset P ν hνp)
+
+@[simp] lemma card_rightPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    (rightPrefix P ν).card = ν.val + 1 := by
+  classical
+  have hfilter :
+      (Finset.univ.filter fun μ : Fin P.q => μ ≤ ν) =
+        Finset.Iic ν := by
+    ext μ
+    simp
+  rw [rightPrefix, hfilter]
+  simp
+
+@[simp] lemma card_leftSuffix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (leftSuffix P ν hνp).card = P.p - ν.val := by
+  classical
+  let a : Fin P.p := ⟨ν.val, hνp⟩
+  have hfilter :
+      (Finset.univ.filter fun i : Fin P.p => ν.val ≤ i.val) =
+        Finset.Ici a := by
+    ext i
+    simp [a, Fin.le_def]
+  rw [leftSuffix, hfilter]
+  simp [a]
+
+@[simp] lemma card_hodgeD {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    (hodgeD P ν).card = P.p + (ν.val + 1) := by
+  classical
+  rw [hodgeD, Finset.card_union_of_disjoint
+    (leftSlotFinset_disjoint_rightPrefix P ν)]
+  simp
+
+@[simp] lemma card_hodgeC {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (hodgeC P ν hνp).card = P.p + 1 := by
+  classical
+  rw [hodgeC, Finset.card_union_of_disjoint
+    (rightPrefix_disjoint_leftSuffix P ν hνp)]
+  simp
+  omega
+
+lemma hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q))) :
+    (hodgeC P ν hνp \ permPreimageLeftSlotFinset P π).Nonempty := by
+  classical
+  rw [Finset.nonempty_iff_ne_empty]
+  intro hempty
+  have hsubset :
+      hodgeC P ν hνp ⊆ permPreimageLeftSlotFinset P π := by
+    intro x hx
+    by_contra hxpre
+    have hxsdiff : x ∈ hodgeC P ν hνp \ permPreimageLeftSlotFinset P π :=
+      Finset.mem_sdiff.mpr ⟨hx, hxpre⟩
+    simp [hempty] at hxsdiff
+  have hcard := Finset.card_le_card hsubset
+  rw [card_hodgeC, card_permPreimageLeftSlotFinset] at hcard
+  omega
+
+lemma hodgeD_sdiff_rightPrefix {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) :
+    hodgeD P ν \ rightPrefix P ν = leftSlotFinset P := by
+  classical
+  ext x
+  constructor
+  · intro hx
+    rcases Finset.mem_sdiff.mp hx with ⟨hxD, hxnot⟩
+    rcases Finset.mem_union.mp hxD with hxleft | hxright
+    · exact hxleft
+    · exact False.elim (hxnot hxright)
+  · intro hxleft
+    refine Finset.mem_sdiff.mpr ⟨?_, ?_⟩
+    · exact Finset.mem_union_left (rightPrefix P ν) hxleft
+    · intro hxright
+      have hdis := rightPrefix_disjoint_leftSlotFinset P ν
+      rw [Finset.disjoint_left] at hdis
+      exact hdis hxright hxleft
+
+lemma W_eq_rightPrefix_of_rightPrefix_subset_of_subset_hodgeC_of_card_hodgeD_sdiff
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    {W : Finset (Fin (P.p + P.q))}
+    (hright : rightPrefix P ν ⊆ W)
+    (hW : W ⊆ hodgeC P ν hνp)
+    (hcard : (hodgeD P ν \ W).card = P.p) :
+    W = rightPrefix P ν := by
+  classical
+  have hWD : W ⊆ hodgeD P ν := by
+    intro x hx
+    exact hodgeC_subset_hodgeD P ν hνp (hW hx)
+  have hsdiff :
+      (hodgeD P ν \ W).card = (hodgeD P ν).card - W.card := by
+    simpa using Finset.card_sdiff_of_subset hWD
+  have hWle : W.card ≤ (hodgeD P ν).card := Finset.card_le_card hWD
+  have hWcard : W.card = (rightPrefix P ν).card := by
+    rw [card_rightPrefix]
+    rw [card_hodgeD] at hsdiff hWle
+    omega
+  exact (Finset.eq_of_subset_of_card_le hright (by simp [hWcard])).symm
+
+end Hodge
+
+/-- Column-side Hodge split for Swan's component branch.
+
+`rowSlots` is Swan's `U ⊇ A`, `W` is a subset of the Hodge set `C`, and the
+new column slots are `D \ W`. -/
+structure HodgeColSplit {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) where
+  rowSlots : Finset (Fin (P.p + P.q))
+  W : Finset (Fin (P.p + P.q))
+  leftRows : leftSlotFinset P ⊆ rowSlots
+  W_subset : W ⊆ Hodge.hodgeC P ν hνp
+  card_eq : rowSlots.card = (Hodge.hodgeD P ν \ W).card
+
+namespace HodgeColSplit
+
+def colSlots {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Finset (Fin (P.p + P.q)) :=
+  Hodge.hodgeD P ν \ S.W
+
+def code {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Finset (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) :=
+  (S.rowSlots, S.W)
+
+lemma code_injective {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Function.Injective (@code m n P ν hνp) := by
+  intro S T h
+  cases S
+  cases T
+  simp only [code, Prod.mk.injEq] at h
+  rcases h with ⟨rfl, rfl⟩
+  rfl
+
+instance instFinite {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Finite (HodgeColSplit P ν hνp) := by
+  classical
+  exact Finite.of_injective (@code m n P ν hνp) code_injective
+
+noncomputable instance instFintype {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Fintype (HodgeColSplit P ν hνp) := by
+  classical
+  exact Fintype.ofFinite _
+
+noncomputable def toBiReshuffle {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    BiReshuffle P :=
+  ofFinsets P S.rowSlots S.colSlots S.card_eq
+
+/-- The Hodge pivot has `U = A` and `W = {j₁,...,jν}`, hence `D \ W = A`. -/
+noncomputable def pivot {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeColSplit P ν hνp where
+  rowSlots := leftSlotFinset P
+  W := Hodge.rightPrefix P ν
+  leftRows := Finset.Subset.rfl
+  W_subset := Hodge.rightPrefix_subset_hodgeC P ν hνp
+  card_eq := by
+    rw [Hodge.hodgeD_sdiff_rightPrefix]
+
+@[simp] lemma pivot_rowSlots {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).rowSlots = leftSlotFinset P := rfl
+
+@[simp] lemma pivot_W {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).W = Hodge.rightPrefix P ν := rfl
+
+@[simp] lemma pivot_colSlots {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).colSlots = leftSlotFinset P := by
+  simp [pivot, colSlots, Hodge.hodgeD_sdiff_rightPrefix]
+
+@[simp] lemma toBiReshuffle_r {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    S.toBiReshuffle.r = S.rowSlots.card := by
+  rfl
+
+@[simp] lemma pivot_toBiReshuffle_r {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).toBiReshuffle.r = P.p := by
+  simp
+
+noncomputable def colSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset S.card_eq.symm (by
+    rw [Finset.card_compl, Fintype.card_fin]
+    rw [← S.card_eq])
+
+noncomputable def rowSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset rfl (by
+    rw [Finset.card_compl, Fintype.card_fin])
+
+noncomputable def leibnizPerm {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  (S.colSplit.symm.trans (Equiv.sumCongr τ σ)).trans S.rowSplit
+
+noncomputable def stdSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumFinEquivToTotal (P.p + P.q) S.rowSlots.card (by
+    simpa using Finset.card_le_univ S.rowSlots)
+
+noncomputable def rowSplitRel {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.rowSplit.trans S.stdSplit.symm
+
+noncomputable def colSplitRel {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.colSplit.trans S.stdSplit.symm
+
+noncomputable def splitSignFactor {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} {R : Type*} [CommRing R]
+    (S : HodgeColSplit P ν hνp) : R :=
+  equivPermSign (R := R) S.rowSplitRel *
+    equivPermSign (R := R) S.colSplitRel
+
+lemma splitSignFactor_mul_self {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} {R : Type*} [CommRing R]
+    (S : HodgeColSplit P ν hνp) :
+    S.splitSignFactor (R := R) * S.splitSignFactor (R := R) = 1 := by
+  unfold splitSignFactor
+  have hrow := equivPermSign_mul_self (R := R) S.rowSplitRel
+  have hcol := equivPermSign_mul_self (R := R) S.colSplitRel
+  calc
+    (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel) *
+        (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel)
+        =
+      (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.rowSplitRel) *
+        (equivPermSign (R := R) S.colSplitRel *
+          equivPermSign (R := R) S.colSplitRel) := by
+          ring
+    _ = 1 := by
+          rw [hrow, hcol]
+          ring
+
+lemma eq_pivot_of_rowSlots_card_eq_of_rightPrefix_subset_W
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (hcard : S.rowSlots.card = P.p)
+    (hright : Hodge.rightPrefix P ν ⊆ S.W) :
+    S = pivot P ν hνp := by
+  classical
+  have hrow : S.rowSlots = leftSlotFinset P := by
+    exact (Finset.eq_of_subset_of_card_le S.leftRows (by
+      simp [hcard])).symm
+  have hcolcard : (Hodge.hodgeD P ν \ S.W).card = P.p := by
+    rw [← S.card_eq, hcard]
+  have hW : S.W = Hodge.rightPrefix P ν :=
+    Hodge.W_eq_rightPrefix_of_rightPrefix_subset_of_subset_hodgeC_of_card_hodgeD_sdiff
+      P ν hνp hright S.W_subset hcolcard
+  exact code_injective (by simp [code, hrow, hW])
+
+lemma rightPrefix_sdiff_W_nonempty_of_ne_pivot_of_rowSlots_card_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (hne : S ≠ pivot P ν hνp)
+    (hcard : S.rowSlots.card = P.p) :
+    (Hodge.rightPrefix P ν \ S.W).Nonempty := by
+  classical
+  rw [Finset.nonempty_iff_ne_empty]
+  intro hempty
+  have hright : Hodge.rightPrefix P ν ⊆ S.W := by
+    intro x hx
+    by_contra hxW
+    have hxsdiff : x ∈ Hodge.rightPrefix P ν \ S.W :=
+      Finset.mem_sdiff.mpr ⟨hx, hxW⟩
+    simp [hempty] at hxsdiff
+  exact hne
+    (eq_pivot_of_rowSlots_card_eq_of_rightPrefix_subset_W S hcard hright)
+
+noncomputable instance instFintypeNePivot {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Fintype { S : HodgeColSplit P ν hνp // S ≠ pivot P ν hνp } := by
+  classical
+  exact Fintype.ofFinite _
+
+end HodgeColSplit
+
+/-- Row-side Hodge split for Swan's component branch.
+
+This is the row/column mirror of `HodgeColSplit`: row slots are `D \ W`, while
+`colSlots` is Swan's containing set on the column side. -/
+structure HodgeRowSplit {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) where
+  W : Finset (Fin (P.p + P.q))
+  colSlots : Finset (Fin (P.p + P.q))
+  W_subset : W ⊆ Hodge.hodgeC P ν hνp
+  leftCols : leftSlotFinset P ⊆ colSlots
+  card_eq : (Hodge.hodgeD P ν \ W).card = colSlots.card
+
+namespace HodgeRowSplit
+
+def rowSlots {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Finset (Fin (P.p + P.q)) :=
+  Hodge.hodgeD P ν \ S.W
+
+def code {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Finset (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) :=
+  (S.W, S.colSlots)
+
+lemma code_injective {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Function.Injective (@code m n P ν hνp) := by
+  intro S T h
+  cases S
+  cases T
+  simp only [code, Prod.mk.injEq] at h
+  rcases h with ⟨rfl, rfl⟩
+  rfl
+
+instance instFinite {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Finite (HodgeRowSplit P ν hνp) := by
+  classical
+  exact Finite.of_injective (@code m n P ν hνp) code_injective
+
+noncomputable instance instFintype {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Fintype (HodgeRowSplit P ν hνp) := by
+  classical
+  exact Fintype.ofFinite _
+
+noncomputable def toBiReshuffle {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    BiReshuffle P :=
+  ofFinsets P S.rowSlots S.colSlots S.card_eq
+
+/-- The Hodge row pivot has `W = {j₁,...,jν}` and column slots equal to the
+original left slots. -/
+noncomputable def pivot {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeRowSplit P ν hνp where
+  W := Hodge.rightPrefix P ν
+  colSlots := leftSlotFinset P
+  W_subset := Hodge.rightPrefix_subset_hodgeC P ν hνp
+  leftCols := Finset.Subset.rfl
+  card_eq := by
+    rw [Hodge.hodgeD_sdiff_rightPrefix]
+
+@[simp] lemma pivot_W {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).W = Hodge.rightPrefix P ν := rfl
+
+@[simp] lemma pivot_colSlots {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).colSlots = leftSlotFinset P := rfl
+
+@[simp] lemma pivot_rowSlots {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).rowSlots = leftSlotFinset P := by
+  simp [pivot, rowSlots, Hodge.hodgeD_sdiff_rightPrefix]
+
+@[simp] lemma toBiReshuffle_r {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    S.toBiReshuffle.r = S.rowSlots.card := by
+  rfl
+
+@[simp] lemma pivot_toBiReshuffle_r {m n : ℕ}
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p) :
+    (pivot P ν hνp).toBiReshuffle.r = P.p := by
+  simp
+
+noncomputable def colSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset S.card_eq.symm (by
+    rw [Finset.card_compl, Fintype.card_fin]
+    rw [← S.card_eq]
+    rfl)
+
+noncomputable def rowSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset rfl (by
+    rw [Finset.card_compl, Fintype.card_fin])
+
+noncomputable def leibnizPerm {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  (S.colSplit.symm.trans (Equiv.sumCongr τ σ)).trans S.rowSplit
+
+noncomputable def stdSplit {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumFinEquivToTotal (P.p + P.q) S.rowSlots.card (by
+    simpa using Finset.card_le_univ S.rowSlots)
+
+noncomputable def rowSplitRel {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.rowSplit.trans S.stdSplit.symm
+
+noncomputable def colSplitRel {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.colSplit.trans S.stdSplit.symm
+
+noncomputable def splitSignFactor {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} {R : Type*} [CommRing R]
+    (S : HodgeRowSplit P ν hνp) : R :=
+  equivPermSign (R := R) S.rowSplitRel *
+    equivPermSign (R := R) S.colSplitRel
+
+lemma splitSignFactor_mul_self {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} {R : Type*} [CommRing R]
+    (S : HodgeRowSplit P ν hνp) :
+    S.splitSignFactor (R := R) * S.splitSignFactor (R := R) = 1 := by
+  unfold splitSignFactor
+  have hrow := equivPermSign_mul_self (R := R) S.rowSplitRel
+  have hcol := equivPermSign_mul_self (R := R) S.colSplitRel
+  calc
+    (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel) *
+        (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel)
+        =
+      (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.rowSplitRel) *
+        (equivPermSign (R := R) S.colSplitRel *
+          equivPermSign (R := R) S.colSplitRel) := by
+          ring
+    _ = 1 := by
+          rw [hrow, hcol]
+          ring
+
+lemma eq_pivot_of_rowSlots_card_eq_of_rightPrefix_subset_W
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (hcard : S.rowSlots.card = P.p)
+    (hright : Hodge.rightPrefix P ν ⊆ S.W) :
+    S = pivot P ν hνp := by
+  classical
+  have hrowcard : (Hodge.hodgeD P ν \ S.W).card = P.p := by
+    simpa [rowSlots] using hcard
+  have hW : S.W = Hodge.rightPrefix P ν :=
+    Hodge.W_eq_rightPrefix_of_rightPrefix_subset_of_subset_hodgeC_of_card_hodgeD_sdiff
+      P ν hνp hright S.W_subset hrowcard
+  have hcolcard : S.colSlots.card = P.p := by
+    rw [← S.card_eq]
+    exact hrowcard
+  have hcol : S.colSlots = leftSlotFinset P := by
+    exact (Finset.eq_of_subset_of_card_le S.leftCols (by
+      simp [hcolcard])).symm
+  exact code_injective (by simp [code, hW, hcol])
+
+lemma rightPrefix_sdiff_W_nonempty_of_ne_pivot_of_rowSlots_card_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (hne : S ≠ pivot P ν hνp)
+    (hcard : S.rowSlots.card = P.p) :
+    (Hodge.rightPrefix P ν \ S.W).Nonempty := by
+  classical
+  rw [Finset.nonempty_iff_ne_empty]
+  intro hempty
+  have hright : Hodge.rightPrefix P ν ⊆ S.W := by
+    intro x hx
+    by_contra hxW
+    have hxsdiff : x ∈ Hodge.rightPrefix P ν \ S.W :=
+      Finset.mem_sdiff.mpr ⟨hx, hxW⟩
+    simp [hempty] at hxsdiff
+  exact hne
+    (eq_pivot_of_rowSlots_card_eq_of_rightPrefix_subset_W S hcard hright)
+
+noncomputable instance instFintypeNePivot {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Fintype { S : HodgeRowSplit P ν hνp // S ≠ pivot P ν hνp } := by
+  classical
+  exact Fintype.ofFinite _
+
+end HodgeRowSplit
+
+/-- A canonical pair of row and column slot selections containing the
+original left block.  This is the finite-set form of Swan's conditions
+`U ⊇ A` and `W ⊇ B`. -/
+structure ContainingSplit {m n : ℕ} (P : RawMinorPair m n) where
+  rowSlots : Finset (Fin (P.p + P.q))
+  colSlots : Finset (Fin (P.p + P.q))
+  card_eq : rowSlots.card = colSlots.card
+  leftRows : leftSlotFinset P ⊆ rowSlots
+  leftCols : leftSlotFinset P ⊆ colSlots
+
+namespace ContainingSplit
+
+def code {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Finset (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) :=
+  (S.rowSlots, S.colSlots)
+
+lemma code_injective {m n : ℕ} {P : RawMinorPair m n} :
+    Function.Injective (@code m n P) := by
+  intro S T h
+  cases S
+  cases T
+  simp only [code, Prod.mk.injEq] at h
+  rcases h with ⟨rfl, rfl⟩
+  rfl
+
+instance instFinite {m n : ℕ} {P : RawMinorPair m n} :
+    Finite (ContainingSplit P) := by
+  classical
+  exact Finite.of_injective (@code m n P) code_injective
+
+noncomputable instance instFintype {m n : ℕ} {P : RawMinorPair m n} :
+    Fintype (ContainingSplit P) := by
+  classical
+  exact Fintype.ofFinite _
+
+/-- The canonical `BiReshuffle` represented by a containing slot split. -/
+noncomputable def toBiReshuffle {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    BiReshuffle P :=
+  ofFinsets P S.rowSlots S.colSlots S.card_eq
+
+/-- The distinguished split corresponding to the original raw pair. -/
+def pivot {m n : ℕ} (P : RawMinorPair m n) :
+    ContainingSplit P where
+  rowSlots := leftSlotFinset P
+  colSlots := leftSlotFinset P
+  card_eq := rfl
+  leftRows := Finset.Subset.rfl
+  leftCols := Finset.Subset.rfl
+
+@[simp] lemma toBiReshuffle_r {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    S.toBiReshuffle.r = S.rowSlots.card := by
+  rfl
+
+@[simp] lemma pivot_rowSlots {m n : ℕ} (P : RawMinorPair m n) :
+    (pivot P).rowSlots = leftSlotFinset P := rfl
+
+@[simp] lemma pivot_colSlots {m n : ℕ} (P : RawMinorPair m n) :
+    (pivot P).colSlots = leftSlotFinset P := rfl
+
+@[simp] lemma pivot_toBiReshuffle_r {m n : ℕ} (P : RawMinorPair m n) :
+    (pivot P).toBiReshuffle.r = P.p := by
+  simp
+
+noncomputable instance instFintypeNePivot {m n : ℕ} {P : RawMinorPair m n} :
+    Fintype { S : ContainingSplit P // S ≠ pivot P } := by
+  classical
+  exact Fintype.ofFinite _
+
+lemma eq_pivot_of_rowSlots_card_eq {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (hcard : S.rowSlots.card = P.p) :
+    S = pivot P := by
+  cases S with
+  | mk rowSlots colSlots card_eq leftRows leftCols =>
+      have hrow : rowSlots = leftSlotFinset P := by
+        exact (Finset.eq_of_subset_of_card_le leftRows (by
+          simp [hcard])).symm
+      have hcol : colSlots = leftSlotFinset P := by
+        exact (Finset.eq_of_subset_of_card_le leftCols (by
+          simp [card_eq.symm, hcard])).symm
+      subst rowSlots
+      subst colSlots
+      rfl
+
+lemma leftSlotFinset_card_le_rowSlots_card {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    P.p ≤ S.rowSlots.card := by
+  simpa using Finset.card_le_card S.leftRows
+
+lemma leftSlotFinset_card_le_colSlots_card {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    P.p ≤ S.colSlots.card := by
+  simpa using Finset.card_le_card S.leftCols
+
+lemma rowSlots_card_lt_of_ne_pivot {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (hS : S ≠ pivot P) :
+    P.p < S.rowSlots.card := by
+  have hle : P.p ≤ S.rowSlots.card := S.leftSlotFinset_card_le_rowSlots_card
+  exact lt_of_le_of_ne hle (by
+    intro h
+    exact hS (eq_pivot_of_rowSlots_card_eq S h.symm))
+
+lemma colSlots_card_lt_of_ne_pivot {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (hS : S ≠ pivot P) :
+    P.p < S.colSlots.card := by
+  have hrow : P.p < S.rowSlots.card := S.rowSlots_card_lt_of_ne_pivot hS
+  simpa [S.card_eq] using hrow
+
+lemma rowSlots_sdiff_leftSlotFinset_nonempty_of_ne_pivot
+    {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (hS : S ≠ pivot P) :
+    (S.rowSlots \ leftSlotFinset P).Nonempty := by
+  rw [Finset.nonempty_iff_ne_empty]
+  intro hempty
+  have hcard :
+      (S.rowSlots \ leftSlotFinset P).card = S.rowSlots.card - P.p := by
+    simpa using Finset.card_sdiff_of_subset S.leftRows
+  have hle : S.rowSlots.card ≤ P.p := by
+    have hzero : (S.rowSlots \ leftSlotFinset P).card = 0 := by
+      simp [hempty]
+    omega
+  have hlt : P.p < S.rowSlots.card := S.rowSlots_card_lt_of_ne_pivot hS
+  omega
+
+lemma colSlots_sdiff_leftSlotFinset_nonempty_of_ne_pivot
+    {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (hS : S ≠ pivot P) :
+    (S.colSlots \ leftSlotFinset P).Nonempty := by
+  rw [Finset.nonempty_iff_ne_empty]
+  intro hempty
+  have hcard :
+      (S.colSlots \ leftSlotFinset P).card = S.colSlots.card - P.p := by
+    simpa using Finset.card_sdiff_of_subset S.leftCols
+  have hle : S.colSlots.card ≤ P.p := by
+    have hzero : (S.colSlots \ leftSlotFinset P).card = 0 := by
+      simp [hempty]
+    omega
+  have hlt : P.p < S.colSlots.card := S.colSlots_card_lt_of_ne_pivot hS
+  omega
+
+lemma rowSlots_mem_Icc {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    S.rowSlots ∈ Finset.Icc (leftSlotFinset P) Finset.univ := by
+  exact Finset.mem_Icc.mpr ⟨S.leftRows, Finset.subset_univ _⟩
+
+lemma colSlots_mem_Icc {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    S.colSlots ∈ Finset.Icc (leftSlotFinset P) Finset.univ := by
+  exact Finset.mem_Icc.mpr ⟨S.leftCols, Finset.subset_univ _⟩
+
+lemma leftSlotFinset_subset_of_mem_Icc {m n : ℕ} {P : RawMinorPair m n}
+    {s : Finset (Fin (P.p + P.q))}
+    (hs : s ∈ Finset.Icc (leftSlotFinset P) Finset.univ) :
+    leftSlotFinset P ⊆ s :=
+  (Finset.mem_Icc.mp hs).1
+
+lemma subset_univ_of_mem_Icc {m n : ℕ} {P : RawMinorPair m n}
+    {s : Finset (Fin (P.p + P.q))}
+    (hs : s ∈ Finset.Icc (leftSlotFinset P) Finset.univ) :
+    s ⊆ Finset.univ :=
+  (Finset.mem_Icc.mp hs).2
+
+noncomputable def ofIcc {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : { s : Finset (Fin (P.p + P.q)) //
+      s ∈ Finset.Icc (leftSlotFinset P) Finset.univ })
+    (hcard : rowSlots.1.card = colSlots.1.card) :
+    ContainingSplit P where
+  rowSlots := rowSlots.1
+  colSlots := colSlots.1
+  card_eq := hcard
+  leftRows := leftSlotFinset_subset_of_mem_Icc rowSlots.2
+  leftCols := leftSlotFinset_subset_of_mem_Icc colSlots.2
+
+@[simp] lemma ofIcc_rowSlots {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : { s : Finset (Fin (P.p + P.q)) //
+      s ∈ Finset.Icc (leftSlotFinset P) Finset.univ })
+    (hcard : rowSlots.1.card = colSlots.1.card) :
+    (ofIcc P rowSlots colSlots hcard).rowSlots = rowSlots.1 := rfl
+
+@[simp] lemma ofIcc_colSlots {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : { s : Finset (Fin (P.p + P.q)) //
+      s ∈ Finset.Icc (leftSlotFinset P) Finset.univ })
+    (hcard : rowSlots.1.card = colSlots.1.card) :
+    (ofIcc P rowSlots colSlots hcard).colSlots = colSlots.1 := rfl
+
+abbrev IccSplit {m n : ℕ} (P : RawMinorPair m n) :=
+  { rc :
+      ({ s : Finset (Fin (P.p + P.q)) //
+          s ∈ Finset.Icc (leftSlotFinset P) Finset.univ } ×
+        { s : Finset (Fin (P.p + P.q)) //
+          s ∈ Finset.Icc (leftSlotFinset P) Finset.univ }) //
+      rc.1.1.card = rc.2.1.card }
+
+noncomputable def toIccSplit {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) : IccSplit P :=
+  ⟨(⟨S.rowSlots, S.rowSlots_mem_Icc⟩, ⟨S.colSlots, S.colSlots_mem_Icc⟩), S.card_eq⟩
+
+noncomputable def ofIccSplit {m n : ℕ} {P : RawMinorPair m n}
+    (S : IccSplit P) : ContainingSplit P :=
+  ofIcc P S.1.1 S.1.2 S.2
+
+lemma ofIccSplit_toIccSplit {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    ofIccSplit (toIccSplit S) = S := by
+  cases S
+  rfl
+
+lemma toIccSplit_ofIccSplit {m n : ℕ} {P : RawMinorPair m n}
+    (S : IccSplit P) :
+    toIccSplit (ofIccSplit S) = S := by
+  cases S with
+  | mk rc hcard =>
+      cases rc with
+      | mk row col =>
+          cases row
+          cases col
+          rfl
+
+noncomputable def iccSplitEquiv {m n : ℕ} (P : RawMinorPair m n) :
+    ContainingSplit P ≃ IccSplit P where
+  toFun := toIccSplit
+  invFun := ofIccSplit
+  left_inv := ofIccSplit_toIccSplit
+  right_inv := toIccSplit_ofIccSplit
+
+@[simp] lemma iccSplitEquiv_apply_fst_fst {m n : ℕ} (P : RawMinorPair m n)
+    (S : ContainingSplit P) :
+    ((iccSplitEquiv P S).1.1.1) = S.rowSlots := rfl
+
+@[simp] lemma iccSplitEquiv_apply_fst_snd {m n : ℕ} (P : RawMinorPair m n)
+    (S : ContainingSplit P) :
+    ((iccSplitEquiv P S).1.2.1) = S.colSlots := rfl
+
+lemma sum_containingSplit_eq_sum_iccSplit {m n : ℕ} {P : RawMinorPair m n}
+    {M : Type*} [AddCommMonoid M] (f : ContainingSplit P → M) :
+    (∑ S : ContainingSplit P, f S) =
+      ∑ S : IccSplit P, f (ofIccSplit S) := by
+  classical
+  exact Fintype.sum_equiv (iccSplitEquiv P) f (fun S => f (ofIccSplit S))
+    (by intro S; simp [iccSplitEquiv, ofIccSplit_toIccSplit])
+
+lemma exists_rowEquiv_inl_eq_inl {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (i : Fin P.p) :
+    ∃ a : Fin S.toBiReshuffle.r,
+      S.toBiReshuffle.rowEquiv (Sum.inl a) = Sum.inl i := by
+  classical
+  let x : S.rowSlots := ⟨Fin.castAdd P.q i,
+    S.leftRows (mem_leftSlotFinset_castAdd P i)⟩
+  let a : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm x
+  refine ⟨a, ?_⟩
+  simp only [toBiReshuffle, ofFinsets_rowEquiv_inl]
+  have ha :
+      S.rowSlots.orderEmbOfFin rfl a = Fin.castAdd P.q i := by
+    exact congrArg Subtype.val ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply x)
+  rw [ha, finSumFinEquiv_symm_apply_castAdd]
+
+lemma exists_colEquiv_inl_eq_inl {m n : ℕ} {P : RawMinorPair m n}
+    (S : ContainingSplit P) (i : Fin P.p) :
+    ∃ a : Fin S.toBiReshuffle.r,
+      S.toBiReshuffle.colEquiv (Sum.inl a) = Sum.inl i := by
+  classical
+  let x : S.colSlots := ⟨Fin.castAdd P.q i,
+    S.leftCols (mem_leftSlotFinset_castAdd P i)⟩
+  let a : Fin S.colSlots.card := (S.colSlots.orderIsoOfFin rfl).symm x
+  refine ⟨Fin.cast S.card_eq.symm a, ?_⟩
+  simp only [toBiReshuffle, ofFinsets_colEquiv_inl]
+  have ha :
+      S.colSlots.orderEmbOfFin S.card_eq.symm (Fin.cast S.card_eq.symm a) =
+        Fin.castAdd P.q i := by
+    exact congrArg Subtype.val ((S.colSlots.orderIsoOfFin rfl).apply_symm_apply x)
+  rw [ha, finSumFinEquiv_symm_apply_castAdd]
+
+end ContainingSplit
+
+def toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) : RawMinorPair m n where
+  p := E.r
+  q := P.p + P.q - E.r
+  left :=
+    { row := fun i => P.slotRow (E.rowEquiv (Sum.inl i))
+      col := fun i => P.slotCol (E.colEquiv (Sum.inl i)) }
+  right :=
+    { row := fun j => P.slotRow (E.rowEquiv (Sum.inr j))
+      col := fun j => P.slotCol (E.colEquiv (Sum.inr j)) }
+
+lemma ofFinsets_left_row_filter_card_eq {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (x : Fin m) :
+    (Finset.univ.filter fun a : Fin rowSlots.card =>
+        (ofFinsets P rowSlots colSlots hcard).toPair.left.row a ≤ x).card =
+      (rowSlots.filter fun y =>
+        P.slotRow (finSumFinEquiv.symm y) ≤ x).card := by
+  classical
+  refine Finset.card_bij
+      (fun a _ha => rowSlots.orderEmbOfFin rfl a) ?_ ?_ ?_
+  · intro a ha
+    rw [Finset.mem_filter] at ha ⊢
+    refine ⟨Finset.orderEmbOfFin_mem rowSlots rfl a, ?_⟩
+    simpa [BiReshuffle.toPair] using ha.2
+  · intro a₁ _ha₁ a₂ _ha₂ h
+    exact (rowSlots.orderEmbOfFin rfl).injective h
+  · intro y hy
+    rcases Finset.mem_filter.mp hy with ⟨hyrow, hyx⟩
+    let a : Fin rowSlots.card := (rowSlots.orderIsoOfFin rfl).symm ⟨y, hyrow⟩
+    refine ⟨a, ?_, ?_⟩
+    · rw [Finset.mem_filter]
+      refine ⟨Finset.mem_univ _, ?_⟩
+      have ha :
+          rowSlots.orderEmbOfFin rfl a = y := by
+        exact congrArg Subtype.val
+          ((rowSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hyrow⟩)
+      change
+        P.slotRow (finSumFinEquiv.symm (rowSlots.orderEmbOfFin rfl a)) ≤ x
+      rw [ha]
+      exact hyx
+    · exact congrArg Subtype.val
+        ((rowSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hyrow⟩)
+
+lemma ofFinsets_left_col_filter_card_eq {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (x : Fin n) :
+    (Finset.univ.filter fun a : Fin rowSlots.card =>
+        (ofFinsets P rowSlots colSlots hcard).toPair.left.col a ≤ x).card =
+      (colSlots.filter fun y =>
+        P.slotCol (finSumFinEquiv.symm y) ≤ x).card := by
+  classical
+  refine Finset.card_bij
+      (fun a _ha => colSlots.orderEmbOfFin hcard.symm a) ?_ ?_ ?_
+  · intro a ha
+    rw [Finset.mem_filter] at ha ⊢
+    refine ⟨Finset.orderEmbOfFin_mem colSlots hcard.symm a, ?_⟩
+    simpa [BiReshuffle.toPair] using ha.2
+  · intro a₁ _ha₁ a₂ _ha₂ h
+    exact (colSlots.orderEmbOfFin hcard.symm).injective h
+  · intro y hy
+    rcases Finset.mem_filter.mp hy with ⟨hycol, hyx⟩
+    let a : Fin colSlots.card := (colSlots.orderIsoOfFin rfl).symm ⟨y, hycol⟩
+    refine ⟨Fin.cast hcard.symm a, ?_, ?_⟩
+    · rw [Finset.mem_filter]
+      refine ⟨Finset.mem_univ _, ?_⟩
+      have ha :
+          colSlots.orderEmbOfFin hcard.symm (Fin.cast hcard.symm a) = y := by
+        exact congrArg Subtype.val
+          ((colSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hycol⟩)
+      change
+        P.slotCol
+          (finSumFinEquiv.symm
+            (colSlots.orderEmbOfFin hcard.symm (Fin.cast hcard.symm a))) ≤ x
+      rw [ha]
+      exact hyx
+    · exact congrArg Subtype.val
+        ((colSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hycol⟩)
+
+lemma ofFinsets_left_row_filter_card_lt_eq {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (x : Fin m) :
+    (Finset.univ.filter fun a : Fin rowSlots.card =>
+        (ofFinsets P rowSlots colSlots hcard).toPair.left.row a < x).card =
+      (rowSlots.filter fun y =>
+        P.slotRow (finSumFinEquiv.symm y) < x).card := by
+  classical
+  refine Finset.card_bij
+      (fun a _ha => rowSlots.orderEmbOfFin rfl a) ?_ ?_ ?_
+  · intro a ha
+    rw [Finset.mem_filter] at ha ⊢
+    refine ⟨Finset.orderEmbOfFin_mem rowSlots rfl a, ?_⟩
+    simpa [BiReshuffle.toPair] using ha.2
+  · intro a₁ _ha₁ a₂ _ha₂ h
+    exact (rowSlots.orderEmbOfFin rfl).injective h
+  · intro y hy
+    rcases Finset.mem_filter.mp hy with ⟨hyrow, hyx⟩
+    let a : Fin rowSlots.card := (rowSlots.orderIsoOfFin rfl).symm ⟨y, hyrow⟩
+    refine ⟨a, ?_, ?_⟩
+    · rw [Finset.mem_filter]
+      refine ⟨Finset.mem_univ _, ?_⟩
+      have ha :
+          rowSlots.orderEmbOfFin rfl a = y := by
+        exact congrArg Subtype.val
+          ((rowSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hyrow⟩)
+      change
+        P.slotRow (finSumFinEquiv.symm (rowSlots.orderEmbOfFin rfl a)) < x
+      rw [ha]
+      exact hyx
+    · exact congrArg Subtype.val
+        ((rowSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hyrow⟩)
+
+lemma ofFinsets_left_col_filter_card_lt_eq {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) (x : Fin n) :
+    (Finset.univ.filter fun a : Fin rowSlots.card =>
+        (ofFinsets P rowSlots colSlots hcard).toPair.left.col a < x).card =
+      (colSlots.filter fun y =>
+        P.slotCol (finSumFinEquiv.symm y) < x).card := by
+  classical
+  refine Finset.card_bij
+      (fun a _ha => colSlots.orderEmbOfFin hcard.symm a) ?_ ?_ ?_
+  · intro a ha
+    rw [Finset.mem_filter] at ha ⊢
+    refine ⟨Finset.orderEmbOfFin_mem colSlots hcard.symm a, ?_⟩
+    simpa [BiReshuffle.toPair] using ha.2
+  · intro a₁ _ha₁ a₂ _ha₂ h
+    exact (colSlots.orderEmbOfFin hcard.symm).injective h
+  · intro y hy
+    rcases Finset.mem_filter.mp hy with ⟨hycol, hyx⟩
+    let a : Fin colSlots.card := (colSlots.orderIsoOfFin rfl).symm ⟨y, hycol⟩
+    refine ⟨Fin.cast hcard.symm a, ?_, ?_⟩
+    · rw [Finset.mem_filter]
+      refine ⟨Finset.mem_univ _, ?_⟩
+      have ha :
+          colSlots.orderEmbOfFin hcard.symm (Fin.cast hcard.symm a) = y := by
+        exact congrArg Subtype.val
+          ((colSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hycol⟩)
+      change
+        P.slotCol
+          (finSumFinEquiv.symm
+            (colSlots.orderEmbOfFin hcard.symm (Fin.cast hcard.symm a))) < x
+      rw [ha]
+      exact hyx
+    · exact congrArg Subtype.val
+        ((colSlots.orderIsoOfFin rfl).apply_symm_apply ⟨y, hycol⟩)
+
+lemma ofFinsets_sorted_left_row_le_of_slot_count {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin rowSlots.card) (x : Fin m)
+    (hcount :
+      (i : ℕ) <
+        (rowSlots.filter fun y =>
+          P.slotRow (finSumFinEquiv.symm y) ≤ x).card) :
+    (ofFinsets P rowSlots colSlots hcard).toPair.left.sorted.row i ≤ x := by
+  have hdomain :
+      (i : ℕ) <
+        (Finset.univ.filter fun a : Fin rowSlots.card =>
+          (ofFinsets P rowSlots colSlots hcard).toPair.left.row a ≤ x).card := by
+    simpa [ofFinsets_left_row_filter_card_eq] using hcount
+  exact RawMinorIndex.sorted_row_le_of_card_filter_le
+    (ofFinsets P rowSlots colSlots hcard).toPair.left i x hdomain
+
+lemma ofFinsets_sorted_left_col_le_of_slot_count {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin rowSlots.card) (x : Fin n)
+    (hcount :
+      (i : ℕ) <
+        (colSlots.filter fun y =>
+          P.slotCol (finSumFinEquiv.symm y) ≤ x).card) :
+    (ofFinsets P rowSlots colSlots hcard).toPair.left.sorted.col i ≤ x := by
+  have hdomain :
+      (i : ℕ) <
+        (Finset.univ.filter fun a : Fin rowSlots.card =>
+          (ofFinsets P rowSlots colSlots hcard).toPair.left.col a ≤ x).card := by
+    simpa [ofFinsets_left_col_filter_card_eq] using hcount
+  exact RawMinorIndex.sorted_col_le_of_card_filter_le
+    (ofFinsets P rowSlots colSlots hcard).toPair.left i x hdomain
+
+lemma ofFinsets_sorted_left_row_lt_of_slot_count {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin rowSlots.card) (x : Fin m)
+    (hcount :
+      (i : ℕ) <
+        (rowSlots.filter fun y =>
+          P.slotRow (finSumFinEquiv.symm y) < x).card) :
+    (ofFinsets P rowSlots colSlots hcard).toPair.left.sorted.row i < x := by
+  have hdomain :
+      (i : ℕ) <
+        (Finset.univ.filter fun a : Fin rowSlots.card =>
+          (ofFinsets P rowSlots colSlots hcard).toPair.left.row a < x).card := by
+    simpa [ofFinsets_left_row_filter_card_lt_eq] using hcount
+  exact RawMinorIndex.sorted_row_lt_of_card_filter_lt
+    (ofFinsets P rowSlots colSlots hcard).toPair.left i x hdomain
+
+lemma ofFinsets_sorted_left_col_lt_of_slot_count {m n : ℕ} (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card)
+    (i : Fin rowSlots.card) (x : Fin n)
+    (hcount :
+      (i : ℕ) <
+        (colSlots.filter fun y =>
+          P.slotCol (finSumFinEquiv.symm y) < x).card) :
+    (ofFinsets P rowSlots colSlots hcard).toPair.left.sorted.col i < x := by
+  have hdomain :
+      (i : ℕ) <
+        (Finset.univ.filter fun a : Fin rowSlots.card =>
+          (ofFinsets P rowSlots colSlots hcard).toPair.left.col a < x).card := by
+    simpa [ofFinsets_left_col_filter_card_lt_eq] using hcount
+  exact RawMinorIndex.sorted_col_lt_of_card_filter_lt
+    (ofFinsets P rowSlots colSlots hcard).toPair.left i x hdomain
+
+/-- The common square matrix of slot variables underlying every bi-reshuffle
+of `P`.  Repeated ambient rows or columns are intentionally retained. -/
+noncomputable def slotMatrix {m n : ℕ} {k : Type*} [CommRing k]
+    (P : RawMinorPair m n) :
+    Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q))
+      (MvPolynomial (Fin m × Fin n) k) :=
+  fun i j =>
+    MvPolynomial.X
+      (P.slotRow (finSumFinEquiv.symm i),
+        P.slotCol (finSumFinEquiv.symm j))
+
+lemma ofFinsets_toPair_left_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) :
+    RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P rowSlots colSlots hcard).toPair.left =
+      Matrix.det
+        (Matrix.submatrix (slotMatrix (k := k) P)
+          (rowSlots.orderEmbOfFin rfl)
+          (colSlots.orderEmbOfFin hcard.symm)) := by
+  unfold RawMinorIndex.toPolynomial
+  apply congrArg Matrix.det
+  ext i j
+  simp only [Matrix.submatrix_apply, slotMatrix, toPair, genericMatrix_apply,
+    ofFinsets_rowEquiv_inl, ofFinsets_colEquiv_inl]
+
+lemma ofFinsets_toPair_right_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (rowSlots colSlots : Finset (Fin (P.p + P.q)))
+    (hcard : rowSlots.card = colSlots.card) :
+    RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P rowSlots colSlots hcard).toPair.right =
+      Matrix.det
+        (Matrix.submatrix (slotMatrix (k := k) P)
+          (rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]))
+          (colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin, hcard]))) := by
+  unfold RawMinorIndex.toPolynomial
+  apply congrArg Matrix.det
+  ext i j
+  simp only [Matrix.submatrix_apply, slotMatrix, toPair, genericMatrix_apply,
+    ofFinsets_rowEquiv_inr, ofFinsets_colEquiv_inr]
+
+lemma ContainingSplit.toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    RawMinorPair.toPolynomial (k := k) S.toBiReshuffle.toPair =
+      Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlots.orderEmbOfFin rfl)
+            (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+      Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+              rw [Finset.card_compl, Fintype.card_fin]))
+            (S.colSlotsᶜ.orderEmbOfFin (by
+              rw [Finset.card_compl, Fintype.card_fin, S.card_eq]))) := by
+  rw [RawMinorPair.toPolynomial]
+  change
+    RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.left *
+      RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.right =
+      _
+  rw [ofFinsets_toPair_left_toPolynomial (k := k) P S.rowSlots S.colSlots S.card_eq]
+  rw [ofFinsets_toPair_right_toPolynomial (k := k) P S.rowSlots S.colSlots S.card_eq]
+
+lemma ContainingSplit.toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      MvPolynomial.C
+          (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+        (Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+              (S.rowSlots.orderEmbOfFin rfl)
+              (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+          Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin, S.card_eq])))) := by
+  rw [RawMinorPair.laplacePolynomial,
+    ContainingSplit.toBiReshuffle_toPair_toPolynomial (k := k) S]
+
+/-- The full Leibniz permutation obtained by gluing the two permutations from
+the selected and complementary determinant blocks of a `ContainingSplit`.
+
+It maps ambient column slots to ambient row slots. -/
+noncomputable def ContainingSplit.colSplit {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset S.card_eq.symm (by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp [S.card_eq])
+
+noncomputable def ContainingSplit.rowSplit {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumEquivOfFinset rfl (by
+    rw [Finset.card_compl, Fintype.card_fin])
+
+noncomputable def ContainingSplit.leibnizPerm {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  (S.colSplit.symm.trans (Equiv.sumCongr τ σ)).trans S.rowSplit
+
+noncomputable def ContainingSplit.stdSplit {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+      Fin (P.p + P.q) :=
+  finSumFinEquivToTotal (P.p + P.q) S.rowSlots.card (by
+    simpa using Finset.card_le_univ S.rowSlots)
+
+noncomputable def ContainingSplit.rowSplitRel {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.rowSplit.trans S.stdSplit.symm
+
+noncomputable def ContainingSplit.colSplitRel {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Equiv.Perm (Fin S.rowSlots.card ⊕
+      Fin (P.p + P.q - S.rowSlots.card)) :=
+  S.colSplit.trans S.stdSplit.symm
+
+noncomputable def ContainingSplit.splitSignFactor {m n : ℕ}
+    {P : RawMinorPair m n} {R : Type*} [CommRing R]
+    (S : ContainingSplit P) : R :=
+  equivPermSign (R := R) S.rowSplitRel *
+    equivPermSign (R := R) S.colSplitRel
+
+lemma ContainingSplit.splitSignFactor_mul_self {m n : ℕ}
+    {P : RawMinorPair m n} {R : Type*} [CommRing R]
+    (S : ContainingSplit P) :
+    S.splitSignFactor (R := R) * S.splitSignFactor (R := R) = 1 := by
+  unfold ContainingSplit.splitSignFactor
+  have hrow := equivPermSign_mul_self (R := R) S.rowSplitRel
+  have hcol := equivPermSign_mul_self (R := R) S.colSplitRel
+  calc
+    (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel) *
+        (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.colSplitRel)
+        =
+      (equivPermSign (R := R) S.rowSplitRel *
+          equivPermSign (R := R) S.rowSplitRel) *
+        (equivPermSign (R := R) S.colSplitRel *
+          equivPermSign (R := R) S.colSplitRel) := by
+          ring
+    _ = 1 := by
+          rw [hrow, hcol]
+          ring
+
+lemma ContainingSplit.sign_leibnizPerm {m n : ℕ}
+    {P : RawMinorPair m n}
+    (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm.sign (S.leibnizPerm τ σ) =
+      Equiv.Perm.sign S.rowSplitRel *
+        (Equiv.Perm.sign τ * Equiv.Perm.sign σ) *
+          Equiv.Perm.sign S.colSplitRel := by
+  classical
+  let A := S.stdSplit
+  let rrel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.rowSplitRel
+  let crel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.colSplitRel
+  have hconj :
+      (A.trans (S.leibnizPerm τ σ)).trans A.symm =
+        crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel) := by
+    ext x
+    simp [A, rrel, crel, ContainingSplit.leibnizPerm,
+      ContainingSplit.rowSplitRel, ContainingSplit.colSplitRel]
+  have hsign :
+      Equiv.Perm.sign (S.leibnizPerm τ σ) =
+        Equiv.Perm.sign
+          (crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel)) := by
+    rw [← hconj]
+    exact (Equiv.Perm.sign_trans_trans_symm (S.leibnizPerm τ σ) A).symm
+  rw [hsign]
+  simp [rrel, crel, Equiv.Perm.sign_trans, Equiv.Perm.sign_sumCongr,
+    mul_assoc, mul_comm, mul_left_comm]
+
+lemma ContainingSplit.splitSignFactor_mul_blockSigns {m n : ℕ}
+    {P : RawMinorPair m n} {R : Type*} [CommRing R]
+    (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.splitSignFactor (R := R) *
+        (equivPermSign (R := R) τ * equivPermSign (R := R) σ) =
+      equivPermSign (R := R) (S.leibnizPerm τ σ) := by
+  unfold ContainingSplit.splitSignFactor equivPermSign
+  rw [S.sign_leibnizPerm τ σ]
+  simp only [Units.val_mul, Int.cast_mul]
+  ring
+
+@[simp] lemma ContainingSplit.leibnizPerm_colSlots {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin S.rowSlots.card) :
+    S.leibnizPerm τ σ (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+      S.rowSlots.orderEmbOfFin rfl (τ j) := by
+  classical
+  have hleft :
+      S.colSplit.symm
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+        Sum.inl j := by
+    simpa [ContainingSplit.colSplit] using S.colSplit.left_inv (Sum.inl j)
+  simp [ContainingSplit.leibnizPerm, hleft, ContainingSplit.rowSplit]
+
+@[simp] lemma ContainingSplit.leibnizPerm_colSlots_compl {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin (P.p + P.q - S.rowSlots.card)) :
+    S.leibnizPerm τ σ
+        (S.colSlotsᶜ.orderEmbOfFin (by
+          rw [Finset.card_compl, Fintype.card_fin]
+          simp [S.card_eq]) j) =
+      S.rowSlotsᶜ.orderEmbOfFin (by
+        rw [Finset.card_compl, Fintype.card_fin]) (σ j) := by
+  classical
+  have hright :
+      S.colSplit.symm
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]) j) =
+        Sum.inr j := by
+    simpa [ContainingSplit.colSplit] using S.colSplit.left_inv (Sum.inr j)
+  simp [ContainingSplit.leibnizPerm, hright, ContainingSplit.rowSplit]
+
+lemma ContainingSplit.leibnizPerm_pair_injective {m n : ℕ}
+    {P : RawMinorPair m n} (S : ContainingSplit P) :
+    Function.Injective
+      (fun p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) =>
+        S.leibnizPerm p.1 p.2) := by
+  classical
+  intro a b hab
+  cases a with
+  | mk τa σa =>
+      cases b with
+      | mk τb σb =>
+          change S.leibnizPerm τa σa = S.leibnizPerm τb σb at hab
+          congr
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e (S.colSlots.orderEmbOfFin S.card_eq.symm j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlots.orderEmbOfFin rfl).injective (by
+                simpa using h))
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e
+                    (S.colSlotsᶜ.orderEmbOfFin (by
+                      rw [Finset.card_compl, Fintype.card_fin]
+                      simp [S.card_eq]) j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin])).injective (by
+                  simpa using h))
+
+lemma ContainingSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π) :
+    S.rowSlots = S.colSlots.map π.toEmbedding := by
+  classical
+  subst π
+  ext x
+  constructor
+  · intro hx
+    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
+    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
+      exact congrArg Subtype.val
+        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
+    refine Finset.mem_map.mpr ?_
+    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
+    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
+    · change S.leibnizPerm τ σ
+          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
+      rw [ContainingSplit.leibnizPerm_colSlots]
+      simp [hxj]
+  · intro hx
+    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
+    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
+    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
+    have hrow :
+        S.leibnizPerm τ σ y ∈ S.rowSlots := by
+      rw [← hyj, ContainingSplit.leibnizPerm_colSlots]
+      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
+    have hyx' : S.leibnizPerm τ σ y = x := by
+      simpa using hyx
+    simpa [hyx'] using hrow
+
+lemma ContainingSplit.eq_of_colSlots_eq_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {S S' : ContainingSplit P}
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (τ' : Equiv.Perm (Fin S'.rowSlots.card))
+    (σ' : Equiv.Perm (Fin (P.p + P.q - S'.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π)
+    (hπ' : S'.leibnizPerm τ' σ' = π)
+    (hcol : S.colSlots = S'.colSlots) :
+    S = S' := by
+  have hrow : S.rowSlots = S'.rowSlots := by
+    rw [S.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ σ π hπ,
+      S'.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ' σ' π hπ',
+      hcol]
+  cases S with
+  | mk rowSlots colSlots card_eq leftRows leftCols =>
+      cases S' with
+      | mk rowSlots' colSlots' card_eq' leftRows' leftCols' =>
+          simp only at hrow hcol
+          subst rowSlots'
+          subst colSlots'
+          rfl
+
+lemma ContainingSplit.leibnizPerm_mem_rowSlots_compl_of_mem_colSlots_compl
+    {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    {x : Fin (P.p + P.q)} (hx : x ∈ S.colSlotsᶜ) :
+    S.leibnizPerm τ σ x ∈ S.rowSlotsᶜ := by
+  classical
+  let hcol :
+      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp [S.card_eq]
+  let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hx⟩
+  let j : Fin (P.p + P.q - S.rowSlots.card) :=
+    ((S.colSlotsᶜ).orderIsoOfFin hcol).symm x'
+  have hxj :
+      (S.colSlotsᶜ.orderEmbOfFin hcol j) = x := by
+    exact congrArg Subtype.val
+      (((S.colSlotsᶜ).orderIsoOfFin hcol).apply_symm_apply x')
+  rw [← hxj]
+  rw [ContainingSplit.leibnizPerm_colSlots_compl]
+  exact Finset.orderEmbOfFin_mem S.rowSlotsᶜ
+    (by rw [Finset.card_compl, Fintype.card_fin]) (σ j)
+
+lemma ContainingSplit.leftSlotFinset_union_permPreimage_subset_colSlots
+    {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    leftSlotFinset P ∪
+        permPreimageLeftSlotFinset P (S.leibnizPerm τ σ) ⊆
+      S.colSlots := by
+  classical
+  intro x hx
+  rcases Finset.mem_union.mp hx with hleft | hpre
+  · exact S.leftCols hleft
+  · by_contra hxcol
+    have hxcomp : x ∈ S.colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hxcol
+    have hrowcomp :
+        S.leibnizPerm τ σ x ∈ S.rowSlotsᶜ :=
+      S.leibnizPerm_mem_rowSlots_compl_of_mem_colSlots_compl τ σ hxcomp
+    have hnotrow : S.leibnizPerm τ σ x ∉ S.rowSlots := by
+      simpa [Finset.mem_compl] using hrowcomp
+    have hleftrow :
+        S.leibnizPerm τ σ x ∈ leftSlotFinset P :=
+      (mem_permPreimageLeftSlotFinset_iff P (S.leibnizPerm τ σ) x).mp hpre
+    exact hnotrow (S.leftRows hleftrow)
+
+lemma ContainingSplit.colSlots_mem_Icc_leftSlotFinset_union_permPreimage
+    {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.colSlots ∈
+      Finset.Icc
+        (leftSlotFinset P ∪
+          permPreimageLeftSlotFinset P (S.leibnizPerm τ σ))
+        Finset.univ := by
+  exact Finset.mem_Icc.mpr
+    ⟨S.leftSlotFinset_union_permPreimage_subset_colSlots τ σ,
+      Finset.subset_univ _⟩
+
+lemma ContainingSplit.colSlots_mem_Icc_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π) :
+    S.colSlots ∈
+      Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+        Finset.univ := by
+  subst π
+  exact S.colSlots_mem_Icc_leftSlotFinset_union_permPreimage τ σ
+
+noncomputable def ContainingSplit.ofColSlotsPerm
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q)))
+    (hs : s ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π) Finset.univ) :
+    ContainingSplit P where
+  rowSlots := s.map π.toEmbedding
+  colSlots := s
+  card_eq := by
+    simp
+  leftRows := by
+    intro x hxleft
+    have hsub :
+        leftSlotFinset P ∪ permPreimageLeftSlotFinset P π ⊆ s :=
+      (Finset.mem_Icc.mp hs).1
+    have hpre :
+        π.symm x ∈ permPreimageLeftSlotFinset P π := by
+      rw [mem_permPreimageLeftSlotFinset_iff]
+      simp [hxleft]
+    have hxs : π.symm x ∈ s :=
+      hsub (Finset.mem_union_right (leftSlotFinset P) hpre)
+    exact Finset.mem_map.mpr
+      ⟨π.symm x, hxs, by simp⟩
+  leftCols := by
+    intro x hxleft
+    exact (Finset.mem_Icc.mp hs).1
+      (Finset.mem_union_left (permPreimageLeftSlotFinset P π) hxleft)
+
+@[simp] lemma ContainingSplit.ofColSlotsPerm_rowSlots
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q)))
+    (hs : s ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π) Finset.univ) :
+    (ContainingSplit.ofColSlotsPerm P π s hs).rowSlots =
+      s.map π.toEmbedding := rfl
+
+@[simp] lemma ContainingSplit.ofColSlotsPerm_colSlots
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q)))
+    (hs : s ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π) Finset.univ) :
+    (ContainingSplit.ofColSlotsPerm P π s hs).colSlots = s := rfl
+
+lemma ContainingSplit.exists_leibnizPerm_eq_of_colSlots_mem_Icc
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q)))
+    (hs : s ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π) Finset.univ) :
+    ∃ S : ContainingSplit P,
+      ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+      ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        S.colSlots = s ∧ S.leibnizPerm τ σ = π := by
+  classical
+  let S : ContainingSplit P := ContainingSplit.ofColSlotsPerm P π s hs
+  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
+    (S.rowSlots.orderIsoOfFin rfl).symm
+      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+        change π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈ s.map π.toEmbedding
+        exact Finset.mem_map.mpr
+          ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, by simp [S], rfl⟩⟩
+  have hτFun :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τFun j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
+        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+          change π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
+            s.map π.toEmbedding
+          exact Finset.mem_map.mpr
+            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, by simp [S], rfl⟩⟩)
+  have hτInj : Function.Injective τFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
+    simp only at h
+    rw [hτFun a, hτFun b] at h
+    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
+  have hτBij : Function.Bijective τFun :=
+    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
+  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
+  have hτ :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τ j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact hτFun j
+  let hrowCompl :
+      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+  let hcolCompl :
+      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp [S.card_eq]
+  let σFun :
+      Fin (P.p + P.q - S.rowSlots.card) →
+        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
+    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
+      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+        have hjc :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+        rw [Finset.mem_compl] at hjc
+        rw [Finset.mem_compl]
+        intro hrow
+        change π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈ s.map π.toEmbedding at hrow
+        rcases Finset.mem_map.mp hrow with
+          ⟨y, hy, hyπ⟩
+        have hxy :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+          π.injective hyπ.symm
+        have hxmem : S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlots := by
+          change S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ s
+          rw [hxy]
+          exact hy
+        exact hjc hxmem⟩
+  have hσFun :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
+        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+          have hjc :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+          rw [Finset.mem_compl] at hjc
+          rw [Finset.mem_compl]
+          intro hrow
+          change π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈ s.map π.toEmbedding at hrow
+          rcases Finset.mem_map.mp hrow with
+            ⟨y, hy, hyπ⟩
+          have hxy :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+            π.injective hyπ.symm
+          have hxmem : S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlots := by
+            change S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ s
+            rw [hxy]
+            exact hy
+          exact hjc hxmem⟩)
+  have hσInj : Function.Injective σFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
+    simp only at h
+    rw [hσFun a, hσFun b] at h
+    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
+  have hσBij : Function.Bijective σFun :=
+    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
+  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
+    Equiv.ofBijective σFun hσBij
+  have hσ :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact hσFun j
+  refine ⟨S, τ, σ, rfl, ?_⟩
+  ext x
+  by_cases hx : x ∈ S.colSlots
+  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
+    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
+    rw [← hxj]
+    rw [ContainingSplit.leibnizPerm_colSlots]
+    simpa using congrArg Fin.val (hτ j)
+  · have hxc : x ∈ S.colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hx
+    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
+    let j : Fin (P.p + P.q - S.rowSlots.card) :=
+      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
+    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
+    rw [← hxj]
+    rw [ContainingSplit.leibnizPerm_colSlots_compl]
+    simpa using congrArg Fin.val (hσ j)
+
+theorem ContainingSplit.exists_leibnizPerm_eq_and_colSlots_iff_mem_Icc
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q))) :
+    (∃ S : ContainingSplit P,
+      ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+      ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        S.colSlots = s ∧ S.leibnizPerm τ σ = π) ↔
+      s ∈ Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+        Finset.univ := by
+  constructor
+  · rintro ⟨S, τ, σ, rfl, hπ⟩
+    exact S.colSlots_mem_Icc_of_leibnizPerm_eq τ σ π hπ
+  · intro hs
+    exact ContainingSplit.exists_leibnizPerm_eq_of_colSlots_mem_Icc P π s hs
+
+/-- For a fixed ambient Leibniz permutation `π`, the possible column-slot sets
+of all `ContainingSplit` terms whose two local permutations glue to `π` are
+exactly the interval from `left ∪ π⁻¹(left)` to `univ`. -/
+theorem ContainingSplit.fixedLeibnizPerm_colSlots_iff_mem_Icc
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (s : Finset (Fin (P.p + P.q))) :
+    (∃ S : ContainingSplit P,
+      ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+      ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        S.leibnizPerm τ σ = π ∧ S.colSlots = s) ↔
+      s ∈ Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+        Finset.univ := by
+  rw [← ContainingSplit.exists_leibnizPerm_eq_and_colSlots_iff_mem_Icc P π s]
+  constructor
+  · rintro ⟨S, τ, σ, hπ, hcols⟩
+    exact ⟨S, τ, σ, hcols, hπ⟩
+  · rintro ⟨S, τ, σ, hcols, hπ⟩
+    exact ⟨S, τ, σ, hπ, hcols⟩
+
+noncomputable def ContainingSplit.colSlotsLeibnizFiberEquivIcc
+    {m n : ℕ} (P : RawMinorPair m n)
+    (π : Equiv.Perm (Fin (P.p + P.q))) :
+    { s : Finset (Fin (P.p + P.q)) //
+      ∃ S : ContainingSplit P,
+      ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+      ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        S.colSlots = s ∧ S.leibnizPerm τ σ = π } ≃
+    { s : Finset (Fin (P.p + P.q)) //
+      s ∈ Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+        Finset.univ } where
+  toFun s :=
+    ⟨s.1,
+      (ContainingSplit.exists_leibnizPerm_eq_and_colSlots_iff_mem_Icc P π s.1).mp
+        s.2⟩
+  invFun s :=
+    ⟨s.1,
+      (ContainingSplit.exists_leibnizPerm_eq_and_colSlots_iff_mem_Icc P π s.1).mpr
+        s.2⟩
+  left_inv := by
+    intro s
+    ext
+    rfl
+  right_inv := by
+    intro s
+    ext
+    rfl
+
+lemma ContainingSplit.sum_colSlots_leibnizFiber_eq_sum_Icc
+    {m n : ℕ} {P : RawMinorPair m n}
+    {M : Type*} [AddCommMonoid M]
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (f : Finset (Fin (P.p + P.q)) → M) :
+    (∑ s : { s : Finset (Fin (P.p + P.q)) //
+        ∃ S : ContainingSplit P,
+        ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+        ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+          S.colSlots = s ∧ S.leibnizPerm τ σ = π },
+      f s.1) =
+    ∑ s : { s : Finset (Fin (P.p + P.q)) //
+        s ∈ Finset.Icc
+          (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+          Finset.univ },
+      f s.1 := by
+  classical
+  refine Fintype.sum_equiv
+    (ContainingSplit.colSlotsLeibnizFiberEquivIcc P π)
+    (fun s => f s.1) (fun s => f s.1) ?_
+  intro s
+  rfl
+
+lemma ContainingSplit.sum_colSlots_leibnizFiber_eq_finset_sum_Icc
+    {m n : ℕ} {P : RawMinorPair m n}
+    {M : Type*} [AddCommMonoid M]
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (f : Finset (Fin (P.p + P.q)) → M) :
+    (∑ s : { s : Finset (Fin (P.p + P.q)) //
+        ∃ S : ContainingSplit P,
+        ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+        ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+          S.colSlots = s ∧ S.leibnizPerm τ σ = π },
+      f s.1) =
+    ∑ s ∈ Finset.Icc
+        (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+        Finset.univ,
+      f s := by
+  classical
+  rw [ContainingSplit.sum_colSlots_leibnizFiber_eq_sum_Icc (P := P) π f]
+  let interval : Finset (Finset (Fin (P.p + P.q))) :=
+    Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+      Finset.univ
+  letI : Fintype { s : Finset (Fin (P.p + P.q)) // s ∈ interval } :=
+    Finset.Subtype.fintype interval
+  change (∑ s : { s : Finset (Fin (P.p + P.q)) // s ∈ interval }, f s.1) =
+    ∑ s ∈ interval, f s
+  have huniv :
+      (Finset.univ : Finset
+        { s : Finset (Fin (P.p + P.q)) // s ∈ interval }) =
+        interval.attach := by
+    ext s
+    constructor
+    · intro _
+      exact Finset.mem_attach interval s
+    · intro _
+      exact Finset.mem_univ s
+  rw [← interval.sum_attach f]
+  change
+      (∑ s ∈ (Finset.univ : Finset
+        { s : Finset (Fin (P.p + P.q)) // s ∈ interval }), f s.1) =
+      ∑ s ∈ interval.attach, f s.1
+  rw [huniv]
+
+lemma ContainingSplit.leibnizPerm_product_split {m n : ℕ}
+    {Rng : Type*} [CommMonoid Rng] {P : RawMinorPair m n}
+    (S : ContainingSplit P)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    (∏ j : Fin (P.p + P.q), M (S.leibnizPerm τ σ j) j) =
+      (∏ j : Fin S.rowSlots.card,
+        M (S.rowSlots.orderEmbOfFin rfl (τ j))
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+      (∏ j : Fin (P.p + P.q - S.rowSlots.card),
+        M (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]) j)) := by
+  classical
+  let colSplit :
+      Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card) ≃
+        Fin (P.p + P.q) :=
+    finSumEquivOfFinset S.card_eq.symm (by
+      rw [Finset.card_compl, Fintype.card_fin]
+      simp [S.card_eq])
+  rw [← Equiv.prod_comp
+    colSplit
+    (fun j : Fin (P.p + P.q) => M (S.leibnizPerm τ σ j) j)]
+  rw [Fintype.prod_sum_type]
+  simp [colSplit]
+
+lemma ContainingSplit.det_mul_det_eq_sum_leibnizPerm_terms {m n : ℕ}
+    {Rng : Type*} [CommRing Rng] {P : RawMinorPair m n}
+    (S : ContainingSplit P)
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlots.orderEmbOfFin rfl)
+          (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+      Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]))) =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        ((Equiv.Perm.sign p.1 : Rng) *
+            (Equiv.Perm.sign p.2 : Rng)) *
+          ∏ j : Fin (P.p + P.q), M (S.leibnizPerm p.1 p.2 j) j := by
+  classical
+  rw [Matrix.det_apply', Matrix.det_apply']
+  simp_rw [Finset.sum_mul, Finset.mul_sum]
+  simp only [Matrix.submatrix_apply]
+  rw [← Fintype.sum_prod_type' (γ := Rng)
+    (f := fun τ σ =>
+      ((Equiv.Perm.sign τ : Rng) *
+          ∏ j : Fin S.rowSlots.card,
+            M (S.rowSlots.orderEmbOfFin rfl (τ j))
+              (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+        ((Equiv.Perm.sign σ : Rng) *
+          ∏ j : Fin (P.p + P.q - S.rowSlots.card),
+            M (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]
+                simp [S.card_eq]) j)))]
+  refine Finset.sum_congr rfl ?_
+  rintro ⟨τ, σ⟩ _hp
+  have hprod := S.leibnizPerm_product_split τ σ M
+  rw [hprod]
+  ring
+
+lemma ContainingSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    {m n : ℕ} {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (S : ContainingSplit P) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign p.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign p.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (P.p + P.q),
+              slotMatrix (k := k) P (S.leibnizPerm p.1 p.2 j) j) := by
+  classical
+  rw [ContainingSplit.toBiReshuffle_toPair_laplacePolynomial (k := k) S]
+  rw [ContainingSplit.det_mul_det_eq_sum_leibnizPerm_terms
+    (S := S) (M := slotMatrix (k := k) P)]
+  rw [Finset.mul_sum]
+
+/-- One Leibniz term occurring after expanding both determinant blocks attached
+to a containing split. -/
+abbrev ContainingSplit.LeibnizTerm {m n : ℕ} (P : RawMinorPair m n) :=
+  Σ S : ContainingSplit P,
+    Equiv.Perm (Fin S.rowSlots.card) ×
+      Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))
+
+namespace ContainingSplit.LeibnizTerm
+
+noncomputable def ambientPerm {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  X.1.leibnizPerm X.2.1 X.2.2
+
+@[simp] lemma ambientPerm_apply {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) (j : Fin (P.p + P.q)) :
+    X.ambientPerm j = X.1.leibnizPerm X.2.1 X.2.2 j := rfl
+
+lemma colSlots_mem_Icc {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    X.1.colSlots ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P X.ambientPerm)
+      Finset.univ := by
+  exact X.1.colSlots_mem_Icc_leftSlotFinset_union_permPreimage
+    X.2.1 X.2.2
+
+noncomputable def toAmbientColSlots {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    Σ π : Equiv.Perm (Fin (P.p + P.q)),
+      { C : Finset (Fin (P.p + P.q)) //
+        C ∈ Finset.Icc
+          (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+          Finset.univ } :=
+  ⟨X.ambientPerm, ⟨X.1.colSlots, X.colSlots_mem_Icc⟩⟩
+
+@[simp] lemma toAmbientColSlots_fst {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    (X.toAmbientColSlots).1 = X.ambientPerm := rfl
+
+@[simp] lemma toAmbientColSlots_snd_val {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    (X.toAmbientColSlots).2.1 = X.1.colSlots := rfl
+
+abbrev AmbientColSlots {m n : ℕ} (P : RawMinorPair m n) :=
+  { pc : Equiv.Perm (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) //
+    pc.2 ∈ Finset.Icc
+      (leftSlotFinset P ∪ permPreimageLeftSlotFinset P pc.1)
+      Finset.univ }
+
+noncomputable def toAmbientColSlotsFlat {m n : ℕ} {P : RawMinorPair m n}
+    (X : ContainingSplit.LeibnizTerm P) :
+    AmbientColSlots P :=
+  ⟨(X.ambientPerm, X.1.colSlots), X.colSlots_mem_Icc⟩
+
+lemma toAmbientColSlotsFlat_injective {m n : ℕ} {P : RawMinorPair m n} :
+    Function.Injective
+      (@ContainingSplit.LeibnizTerm.toAmbientColSlotsFlat m n P) := by
+  classical
+  intro X Y h
+  cases X with
+  | mk S p =>
+      cases p with
+      | mk τ σ =>
+          cases Y with
+          | mk S' p' =>
+              cases p' with
+              | mk τ' σ' =>
+                  have hπ :
+                      S.leibnizPerm τ σ = S'.leibnizPerm τ' σ' :=
+                    congrArg (fun z : AmbientColSlots P => z.1.1) h
+                  have hcol : S.colSlots = S'.colSlots := by
+                    exact congrArg (fun z : AmbientColSlots P => z.1.2) h
+                  have hS : S = S' :=
+                    ContainingSplit.eq_of_colSlots_eq_of_leibnizPerm_eq
+                      (S := S) (S' := S') τ σ τ' σ'
+                      (S.leibnizPerm τ σ) rfl hπ.symm hcol
+                  cases hS
+                  have hp : (τ, σ) = (τ', σ') :=
+                    S.leibnizPerm_pair_injective hπ
+                  cases hp
+                  rfl
+
+lemma toAmbientColSlotsFlat_surjective {m n : ℕ} (P : RawMinorPair m n) :
+    Function.Surjective
+      (@ContainingSplit.LeibnizTerm.toAmbientColSlotsFlat m n P) := by
+  classical
+  intro Y
+  rcases Y with ⟨⟨π, C⟩, hC⟩
+  rcases ContainingSplit.exists_leibnizPerm_eq_of_colSlots_mem_Icc
+      P π C hC with ⟨S, τ, σ, hcols, hπ⟩
+  refine ⟨⟨S, (τ, σ)⟩, ?_⟩
+  subst π
+  subst C
+  rfl
+
+noncomputable def equivAmbientColSlotsFlat {m n : ℕ} (P : RawMinorPair m n) :
+    ContainingSplit.LeibnizTerm P ≃ AmbientColSlots P :=
+  Equiv.ofBijective
+    (@ContainingSplit.LeibnizTerm.toAmbientColSlotsFlat m n P)
+    ⟨toAmbientColSlotsFlat_injective, toAmbientColSlotsFlat_surjective P⟩
+
+noncomputable def ambientColSlotsEquivSigma {m n : ℕ} (P : RawMinorPair m n) :
+    AmbientColSlots P ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { C : Finset (Fin (P.p + P.q)) //
+          C ∈ Finset.Icc
+            (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+            Finset.univ } where
+  toFun z := ⟨z.1.1, ⟨z.1.2, z.2⟩⟩
+  invFun z := ⟨(z.1, z.2.1), z.2.2⟩
+  left_inv := by
+    intro z
+    rfl
+  right_inv := by
+    intro z
+    rfl
+
+noncomputable def equivAmbientColSlots {m n : ℕ} (P : RawMinorPair m n) :
+    ContainingSplit.LeibnizTerm P ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { C : Finset (Fin (P.p + P.q)) //
+          C ∈ Finset.Icc
+            (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+            Finset.univ } :=
+  (equivAmbientColSlotsFlat P).trans (ambientColSlotsEquivSigma P)
+
+lemma sum_eq_sum_ambient_Icc {m n : ℕ} {P : RawMinorPair m n}
+    {M : Type*} [AddCommMonoid M]
+    (f : ContainingSplit.LeibnizTerm P → M)
+    (g :
+      (π : Equiv.Perm (Fin (P.p + P.q))) →
+        { C : Finset (Fin (P.p + P.q)) //
+          C ∈ Finset.Icc
+            (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+            Finset.univ } → M)
+    (h :
+      ∀ X : ContainingSplit.LeibnizTerm P,
+        f X =
+          g X.ambientPerm
+            ⟨X.1.colSlots, X.colSlots_mem_Icc⟩) :
+    (∑ X : ContainingSplit.LeibnizTerm P, f X) =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ C : { C : Finset (Fin (P.p + P.q)) //
+          C ∈ Finset.Icc
+            (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+            Finset.univ },
+          g π C := by
+  classical
+  calc
+    (∑ X : ContainingSplit.LeibnizTerm P, f X)
+        =
+      ∑ Y :
+          (Σ π : Equiv.Perm (Fin (P.p + P.q)),
+            { C : Finset (Fin (P.p + P.q)) //
+              C ∈ Finset.Icc
+                (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+                Finset.univ }),
+        g Y.1 Y.2 := by
+          refine Fintype.sum_equiv
+            (ContainingSplit.LeibnizTerm.equivAmbientColSlots P)
+            f (fun Y => g Y.1 Y.2) ?_
+          intro X
+          simpa [ContainingSplit.LeibnizTerm.equivAmbientColSlots,
+            ContainingSplit.LeibnizTerm.equivAmbientColSlotsFlat,
+            ContainingSplit.LeibnizTerm.ambientColSlotsEquivSigma,
+            ContainingSplit.LeibnizTerm.toAmbientColSlotsFlat] using h X
+    _ =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ C : { C : Finset (Fin (P.p + P.q)) //
+          C ∈ Finset.Icc
+            (leftSlotFinset P ∪ permPreimageLeftSlotFinset P π)
+            Finset.univ },
+          g π C := by
+          rw [Fintype.sum_sigma]
+
+end ContainingSplit.LeibnizTerm
+
+lemma ContainingSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    {m n : ℕ} {k : Type*} [Field k] {P : RawMinorPair m n}
+    (coeff : ContainingSplit P → k) :
+    (∑ S : ContainingSplit P,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) =
+      ∑ X : ContainingSplit.LeibnizTerm P,
+        MvPolynomial.C (coeff X.1) *
+          (MvPolynomial.C
+              (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+            (((Equiv.Perm.sign X.2.1 :
+                MvPolynomial (Fin m × Fin n) k) *
+              (Equiv.Perm.sign X.2.2 :
+                MvPolynomial (Fin m × Fin n) k)) *
+              ∏ j : Fin (P.p + P.q),
+                slotMatrix (k := k) P (X.ambientPerm j) j)) := by
+  classical
+  rw [Fintype.sum_sigma]
+  apply Finset.sum_congr rfl
+  intro S _hS
+  rw [ContainingSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    (k := k) S]
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  rintro ⟨τ, σ⟩ _hτσ
+  simp [ContainingSplit.LeibnizTerm.ambientPerm]
+
+@[simp] lemma HodgeColSplit.colSlots_card {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    S.colSlots.card = S.rowSlots.card := by
+  simpa [HodgeColSplit.colSlots] using S.card_eq.symm
+
+@[simp] lemma HodgeColSplit.colSlots_compl_card {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+  rw [Finset.card_compl, Fintype.card_fin]
+  exact congrArg (fun r => P.p + P.q - r) S.colSlots_card
+
+@[simp] lemma HodgeRowSplit.colSlots_card {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    S.colSlots.card = S.rowSlots.card := by
+  simpa [HodgeRowSplit.rowSlots] using S.card_eq.symm
+
+@[simp] lemma HodgeRowSplit.colSlots_compl_card {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+  rw [Finset.card_compl, Fintype.card_fin]
+  exact congrArg (fun r => P.p + P.q - r) S.colSlots_card
+
+lemma HodgeColSplit.toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    RawMinorPair.toPolynomial (k := k) S.toBiReshuffle.toPair =
+      Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlots.orderEmbOfFin rfl)
+            (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+        Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+              rw [Finset.card_compl, Fintype.card_fin]))
+            (S.colSlotsᶜ.orderEmbOfFin (by
+              simp))) := by
+  rw [RawMinorPair.toPolynomial]
+  change
+    RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.left *
+      RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.right =
+      _
+  rw [ofFinsets_toPair_left_toPolynomial (k := k) P S.rowSlots S.colSlots S.card_eq]
+  rw [ofFinsets_toPair_right_toPolynomial (k := k) P S.rowSlots S.colSlots S.card_eq]
+
+lemma HodgeColSplit.toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      MvPolynomial.C
+          (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+        (Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+              (S.rowSlots.orderEmbOfFin rfl)
+              (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+          Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                simp)))) := by
+  rw [RawMinorPair.laplacePolynomial,
+    HodgeColSplit.toBiReshuffle_toPair_toPolynomial (k := k) S]
+
+lemma HodgeColSplit.sign_leibnizPerm {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm.sign (S.leibnizPerm τ σ) =
+      Equiv.Perm.sign S.rowSplitRel *
+        (Equiv.Perm.sign τ * Equiv.Perm.sign σ) *
+          Equiv.Perm.sign S.colSplitRel := by
+  classical
+  let A := S.stdSplit
+  let rrel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.rowSplitRel
+  let crel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.colSplitRel
+  have hconj :
+      (A.trans (S.leibnizPerm τ σ)).trans A.symm =
+        crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel) := by
+    ext x
+    simp [A, rrel, crel, HodgeColSplit.leibnizPerm,
+      HodgeColSplit.rowSplitRel, HodgeColSplit.colSplitRel]
+  have hsign :
+      Equiv.Perm.sign (S.leibnizPerm τ σ) =
+        Equiv.Perm.sign
+          (crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel)) := by
+    rw [← hconj]
+    exact (Equiv.Perm.sign_trans_trans_symm (S.leibnizPerm τ σ) A).symm
+  rw [hsign]
+  simp [rrel, crel, Equiv.Perm.sign_trans, Equiv.Perm.sign_sumCongr,
+    mul_assoc, mul_comm, mul_left_comm]
+
+lemma HodgeColSplit.splitSignFactor_mul_blockSigns {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    {R : Type*} [CommRing R]
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.splitSignFactor (R := R) *
+        (equivPermSign (R := R) τ * equivPermSign (R := R) σ) =
+      equivPermSign (R := R) (S.leibnizPerm τ σ) := by
+  unfold HodgeColSplit.splitSignFactor equivPermSign
+  rw [S.sign_leibnizPerm τ σ]
+  simp only [Units.val_mul, Int.cast_mul]
+  ring
+
+@[simp] lemma HodgeColSplit.leibnizPerm_colSlots {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin S.rowSlots.card) :
+    S.leibnizPerm τ σ (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+      S.rowSlots.orderEmbOfFin rfl (τ j) := by
+  classical
+  have hleft :
+      S.colSplit.symm
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+        Sum.inl j := by
+    simpa [HodgeColSplit.colSplit] using S.colSplit.left_inv (Sum.inl j)
+  simp [HodgeColSplit.leibnizPerm, hleft, HodgeColSplit.rowSplit]
+
+@[simp] lemma HodgeColSplit.leibnizPerm_colSlots_compl {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin (P.p + P.q - S.rowSlots.card)) :
+    S.leibnizPerm τ σ
+        (S.colSlotsᶜ.orderEmbOfFin (by
+          rw [Finset.card_compl, Fintype.card_fin]
+          simp [S.card_eq]) j) =
+      S.rowSlotsᶜ.orderEmbOfFin (by
+        rw [Finset.card_compl, Fintype.card_fin]) (σ j) := by
+  classical
+  have hright :
+      S.colSplit.symm
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]) j) =
+        Sum.inr j := by
+    simpa [HodgeColSplit.colSplit] using S.colSplit.left_inv (Sum.inr j)
+  simp [HodgeColSplit.leibnizPerm, hright, HodgeColSplit.rowSplit]
+
+lemma HodgeColSplit.leibnizPerm_product_split {m n : ℕ}
+    {Rng : Type*} [CommMonoid Rng] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    (∏ j : Fin (P.p + P.q), M (S.leibnizPerm τ σ j) j) =
+      (∏ j : Fin S.rowSlots.card,
+        M (S.rowSlots.orderEmbOfFin rfl (τ j))
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+      (∏ j : Fin (P.p + P.q - S.rowSlots.card),
+        M (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]) j)) := by
+  classical
+  rw [← Equiv.prod_comp
+    S.colSplit
+    (fun j : Fin (P.p + P.q) => M (S.leibnizPerm τ σ j) j)]
+  rw [Fintype.prod_sum_type]
+  apply congrArg₂ (· * ·)
+  · apply Finset.prod_congr rfl
+    intro j _hj
+    have hcol :
+        S.colSplit (Sum.inl j) =
+          S.colSlots.orderEmbOfFin S.card_eq.symm j := by
+      simp [HodgeColSplit.colSplit, HodgeColSplit.colSlots]
+    rw [hcol, HodgeColSplit.leibnizPerm_colSlots]
+  · apply Finset.prod_congr rfl
+    intro j _hj
+    have hcol :
+        S.colSplit (Sum.inr j) =
+          S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]) j := by
+      simp [HodgeColSplit.colSplit, HodgeColSplit.colSlots]
+    rw [hcol, HodgeColSplit.leibnizPerm_colSlots_compl]
+
+lemma HodgeColSplit.det_mul_det_eq_sum_leibnizPerm_terms {m n : ℕ}
+    {Rng : Type*} [CommRing Rng] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlots.orderEmbOfFin rfl)
+          (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+      Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp [S.card_eq]))) =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        ((Equiv.Perm.sign p.1 : Rng) *
+            (Equiv.Perm.sign p.2 : Rng)) *
+          ∏ j : Fin (P.p + P.q), M (S.leibnizPerm p.1 p.2 j) j := by
+  classical
+  rw [Matrix.det_apply', Matrix.det_apply']
+  simp_rw [Finset.sum_mul, Finset.mul_sum]
+  simp only [Matrix.submatrix_apply]
+  rw [← Fintype.sum_prod_type' (γ := Rng)
+    (f := fun τ σ =>
+      ((Equiv.Perm.sign τ : Rng) *
+          ∏ j : Fin S.rowSlots.card,
+            M (S.rowSlots.orderEmbOfFin rfl (τ j))
+              (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+        ((Equiv.Perm.sign σ : Rng) *
+          ∏ j : Fin (P.p + P.q - S.rowSlots.card),
+            M (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]
+                simp [S.card_eq]) j)))]
+  refine Finset.sum_congr rfl ?_
+  rintro ⟨τ, σ⟩ _hp
+  have hprod := S.leibnizPerm_product_split τ σ M
+  rw [hprod]
+  ring
+
+lemma HodgeColSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    {m n : ℕ} {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign p.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign p.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (P.p + P.q),
+              slotMatrix (k := k) P (S.leibnizPerm p.1 p.2 j) j) := by
+  classical
+  rw [HodgeColSplit.toBiReshuffle_toPair_laplacePolynomial (k := k) S]
+  rw [HodgeColSplit.det_mul_det_eq_sum_leibnizPerm_terms
+    (S := S) (M := slotMatrix (k := k) P)]
+  rw [Finset.mul_sum]
+
+/-- One Leibniz term occurring after expanding both determinant blocks attached
+to a column-side Hodge split. -/
+abbrev HodgeColSplit.LeibnizTerm {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :=
+  Σ S : HodgeColSplit P ν hνp,
+    Equiv.Perm (Fin S.rowSlots.card) ×
+      Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))
+
+namespace HodgeColSplit.LeibnizTerm
+
+noncomputable def ambientPerm {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeColSplit.LeibnizTerm P ν hνp) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  X.1.leibnizPerm X.2.1 X.2.2
+
+@[simp] lemma ambientPerm_apply {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeColSplit.LeibnizTerm P ν hνp) (j : Fin (P.p + P.q)) :
+    X.ambientPerm j = X.1.leibnizPerm X.2.1 X.2.2 j := rfl
+
+end HodgeColSplit.LeibnizTerm
+
+lemma HodgeColSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    {m n : ℕ} {k : Type*} [Field k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (coeff : HodgeColSplit P ν hνp → k) :
+    (∑ S : HodgeColSplit P ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) =
+      ∑ X : HodgeColSplit.LeibnizTerm P ν hνp,
+        MvPolynomial.C (coeff X.1) *
+          (MvPolynomial.C
+              (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+            (((Equiv.Perm.sign X.2.1 :
+                MvPolynomial (Fin m × Fin n) k) *
+              (Equiv.Perm.sign X.2.2 :
+                MvPolynomial (Fin m × Fin n) k)) *
+              ∏ j : Fin (P.p + P.q),
+                slotMatrix (k := k) P (X.ambientPerm j) j)) := by
+  classical
+  rw [Fintype.sum_sigma]
+  apply Finset.sum_congr rfl
+  intro S _hS
+  rw [HodgeColSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    (k := k) S]
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  rintro ⟨τ, σ⟩ _hτσ
+  simp [HodgeColSplit.LeibnizTerm.ambientPerm]
+
+lemma HodgeColSplit.leibnizPerm_pair_injective {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    Function.Injective
+      (fun p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) =>
+        S.leibnizPerm p.1 p.2) := by
+  classical
+  intro a b hab
+  cases a with
+  | mk τa σa =>
+      cases b with
+      | mk τb σb =>
+          change S.leibnizPerm τa σa = S.leibnizPerm τb σb at hab
+          congr
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e (S.colSlots.orderEmbOfFin S.card_eq.symm j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlots.orderEmbOfFin rfl).injective (by
+                simpa using h))
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e
+                    (S.colSlotsᶜ.orderEmbOfFin (by
+                      rw [Finset.card_compl, Fintype.card_fin]
+                      simp [S.card_eq]) j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin])).injective (by
+                  simpa using h))
+
+lemma HodgeColSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π) :
+    S.rowSlots = S.colSlots.map π.toEmbedding := by
+  classical
+  subst π
+  ext x
+  constructor
+  · intro hx
+    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
+    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
+      exact congrArg Subtype.val
+        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
+    refine Finset.mem_map.mpr ?_
+    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
+    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
+    · change S.leibnizPerm τ σ
+          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
+      rw [HodgeColSplit.leibnizPerm_colSlots]
+      simp [hxj]
+  · intro hx
+    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
+    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
+    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
+    have hrow :
+        S.leibnizPerm τ σ y ∈ S.rowSlots := by
+      rw [← hyj, HodgeColSplit.leibnizPerm_colSlots]
+      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
+    have hyx' : S.leibnizPerm τ σ y = x := by
+      simpa using hyx
+    simpa [hyx'] using hrow
+
+lemma HodgeColSplit.eq_of_W_eq_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    {S S' : HodgeColSplit P ν hνp}
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (τ' : Equiv.Perm (Fin S'.rowSlots.card))
+    (σ' : Equiv.Perm (Fin (P.p + P.q - S'.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π)
+    (hπ' : S'.leibnizPerm τ' σ' = π)
+    (hW : S.W = S'.W) :
+    S = S' := by
+  have hcol : S.colSlots = S'.colSlots := by
+    simp [HodgeColSplit.colSlots, hW]
+  have hrow : S.rowSlots = S'.rowSlots := by
+    rw [S.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ σ π hπ,
+      S'.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ' σ' π hπ',
+      hcol]
+  cases S with
+  | mk rowSlots W leftRows W_subset card_eq =>
+      cases S' with
+      | mk rowSlots' W' leftRows' W_subset' card_eq' =>
+          simp only at hrow hW
+          subst rowSlots'
+          subst W'
+          rfl
+
+lemma HodgeColSplit.leibnizPerm_mem_rowSlots_compl_of_mem_colSlots_compl
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    {x : Fin (P.p + P.q)} (hx : x ∈ S.colSlotsᶜ) :
+    S.leibnizPerm τ σ x ∈ S.rowSlotsᶜ := by
+  classical
+  let hcol :
+      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp [S.card_eq]
+  let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hx⟩
+  let j : Fin (P.p + P.q - S.rowSlots.card) :=
+    ((S.colSlotsᶜ).orderIsoOfFin hcol).symm x'
+  have hxj :
+      (S.colSlotsᶜ.orderEmbOfFin hcol j) = x := by
+    exact congrArg Subtype.val
+      (((S.colSlotsᶜ).orderIsoOfFin hcol).apply_symm_apply x')
+  rw [← hxj]
+  rw [HodgeColSplit.leibnizPerm_colSlots_compl]
+  exact Finset.orderEmbOfFin_mem S.rowSlotsᶜ
+    (by rw [Finset.card_compl, Fintype.card_fin]) (σ j)
+
+lemma HodgeColSplit.W_subset_colSlots_compl
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp) :
+    S.W ⊆ S.colSlotsᶜ := by
+  intro x hxW
+  rw [Finset.mem_compl]
+  intro hxcol
+  exact (Finset.mem_sdiff.mp hxcol).2 hxW
+
+lemma HodgeColSplit.permPreimageLeftSlotFinset_subset_hodgeD
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    permPreimageLeftSlotFinset P (S.leibnizPerm τ σ) ⊆
+      Hodge.hodgeD P ν := by
+  intro x hxpre
+  have hleft :
+      S.leibnizPerm τ σ x ∈ leftSlotFinset P :=
+    (mem_permPreimageLeftSlotFinset_iff P (S.leibnizPerm τ σ) x).mp hxpre
+  by_cases hxcol : x ∈ S.colSlots
+  · exact (Finset.mem_sdiff.mp hxcol).1
+  · have hxcomp : x ∈ S.colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hxcol
+    have hrowcomp :
+        S.leibnizPerm τ σ x ∈ S.rowSlotsᶜ :=
+      S.leibnizPerm_mem_rowSlots_compl_of_mem_colSlots_compl τ σ hxcomp
+    exact False.elim ((Finset.mem_compl.mp hrowcomp) (S.leftRows hleft))
+
+lemma HodgeColSplit.W_mem_powerset_hodgeC_sdiff_permPreimage
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P (S.leibnizPerm τ σ)).powerset := by
+  classical
+  refine Finset.mem_powerset.mpr ?_
+  intro x hxW
+  refine Finset.mem_sdiff.mpr ⟨S.W_subset hxW, ?_⟩
+  intro hxpre
+  have hxcomp : x ∈ S.colSlotsᶜ := S.W_subset_colSlots_compl hxW
+  have hrowcomp :
+      S.leibnizPerm τ σ x ∈ S.rowSlotsᶜ :=
+    S.leibnizPerm_mem_rowSlots_compl_of_mem_colSlots_compl τ σ hxcomp
+  have hleft :
+      S.leibnizPerm τ σ x ∈ leftSlotFinset P :=
+    (mem_permPreimageLeftSlotFinset_iff P (S.leibnizPerm τ σ) x).mp hxpre
+  exact (Finset.mem_compl.mp hrowcomp) (S.leftRows hleft)
+
+noncomputable def HodgeColSplit.ofWPerm
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π).powerset) :
+    HodgeColSplit P ν hνp where
+  rowSlots := (Hodge.hodgeD P ν \ W).map π.toEmbedding
+  W := W
+  leftRows := by
+    intro x hxleft
+    have hxpre :
+        π.symm x ∈ permPreimageLeftSlotFinset P π := by
+      rw [mem_permPreimageLeftSlotFinset_iff]
+      simpa using hxleft
+    have hxD : π.symm x ∈ Hodge.hodgeD P ν := hpreD hxpre
+    have hxnotW : π.symm x ∉ W := by
+      intro hxW
+      have hxsdiff :
+          π.symm x ∈ Hodge.hodgeC P ν hνp \
+            permPreimageLeftSlotFinset P π :=
+        (Finset.mem_powerset.mp hW) hxW
+      exact (Finset.mem_sdiff.mp hxsdiff).2 hxpre
+    refine Finset.mem_map.mpr ?_
+    exact ⟨π.symm x, Finset.mem_sdiff.mpr ⟨hxD, hxnotW⟩, by simp⟩
+  W_subset := by
+    intro x hxW
+    exact (Finset.mem_sdiff.mp ((Finset.mem_powerset.mp hW) hxW)).1
+  card_eq := by
+    simp
+
+@[simp] lemma HodgeColSplit.ofWPerm_W
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π).powerset) :
+    (HodgeColSplit.ofWPerm P ν hνp π W hpreD hW).W = W := rfl
+
+@[simp] lemma HodgeColSplit.ofWPerm_colSlots
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π).powerset) :
+    (HodgeColSplit.ofWPerm P ν hνp π W hpreD hW).colSlots =
+      Hodge.hodgeD P ν \ W := rfl
+
+lemma HodgeColSplit.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeColSplit P ν hνp)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hrow : S.rowSlots = S.colSlots.map π.toEmbedding) :
+    ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+    ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+      S.leibnizPerm τ σ = π := by
+  classical
+  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
+    (S.rowSlots.orderIsoOfFin rfl).symm
+      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+        have hmem :
+            π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
+              S.colSlots.map π.toEmbedding :=
+          Finset.mem_map.mpr
+            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
+        simpa only [hrow] using hmem⟩
+  have hτFun :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τFun j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
+        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+          have hmem :
+              π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
+                S.colSlots.map π.toEmbedding :=
+            Finset.mem_map.mpr
+              ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
+          simpa only [hrow] using hmem⟩)
+  have hτInj : Function.Injective τFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
+    simp only at h
+    rw [hτFun a, hτFun b] at h
+    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
+  have hτBij : Function.Bijective τFun :=
+    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
+  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
+  have hτ :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τ j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact hτFun j
+  let hrowCompl :
+      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+  let hcolCompl :
+      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp [S.card_eq]
+  let σFun :
+      Fin (P.p + P.q - S.rowSlots.card) →
+        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
+    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
+      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+        have hjc :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+        rw [Finset.mem_compl] at hjc
+        rw [Finset.mem_compl]
+        intro hrowmem
+        have hrowmem' :
+            π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
+              S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
+        rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
+        have hxy :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+          π.injective hyπ.symm
+        exact hjc (by rw [hxy]; exact hy)⟩
+  have hσFun :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
+        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+          have hjc :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+          rw [Finset.mem_compl] at hjc
+          rw [Finset.mem_compl]
+          intro hrowmem
+          have hrowmem' :
+              π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
+                S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
+          rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
+          have hxy :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+            π.injective hyπ.symm
+          exact hjc (by rw [hxy]; exact hy)⟩)
+  have hσInj : Function.Injective σFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
+    simp only at h
+    rw [hσFun a, hσFun b] at h
+    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
+  have hσBij : Function.Bijective σFun :=
+    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
+  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
+    Equiv.ofBijective σFun hσBij
+  have hσ :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact hσFun j
+  refine ⟨τ, σ, ?_⟩
+  ext x
+  by_cases hx : x ∈ S.colSlots
+  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
+    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
+    rw [← hxj]
+    rw [HodgeColSplit.leibnizPerm_colSlots]
+    simpa using congrArg Fin.val (hτ j)
+  · have hxc : x ∈ S.colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hx
+    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
+    let j : Fin (P.p + P.q - S.rowSlots.card) :=
+      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
+    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
+    rw [← hxj]
+    rw [HodgeColSplit.leibnizPerm_colSlots_compl]
+    simpa using congrArg Fin.val (hσ j)
+
+lemma HodgeColSplit.exists_leibnizPerm_eq_of_W_mem_powerset
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π).powerset) :
+    ∃ S : HodgeColSplit P ν hνp,
+    ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+    ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+      S.W = W ∧ S.leibnizPerm τ σ = π := by
+  classical
+  let S : HodgeColSplit P ν hνp :=
+    HodgeColSplit.ofWPerm P ν hνp π W hpreD hW
+  have hrow : S.rowSlots = S.colSlots.map π.toEmbedding := by
+    rfl
+  rcases S.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image π hrow with
+    ⟨τ, σ, hπ⟩
+  exact ⟨S, τ, σ, rfl, hπ⟩
+
+namespace HodgeColSplit.LeibnizTerm
+
+abbrev AmbientW {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :=
+  { pw : Equiv.Perm (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) //
+    permPreimageLeftSlotFinset P pw.1 ⊆ Hodge.hodgeD P ν ∧
+      pw.2 ∈ (Hodge.hodgeC P ν hνp \
+        permPreimageLeftSlotFinset P pw.1).powerset }
+
+noncomputable def toAmbientWFlat {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeColSplit.LeibnizTerm P ν hνp) :
+    AmbientW P ν hνp :=
+  ⟨(X.ambientPerm, X.1.W),
+    X.1.permPreimageLeftSlotFinset_subset_hodgeD X.2.1 X.2.2,
+    X.1.W_mem_powerset_hodgeC_sdiff_permPreimage X.2.1 X.2.2⟩
+
+lemma toAmbientWFlat_injective {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Function.Injective
+      (@HodgeColSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp) := by
+  classical
+  intro X Y h
+  cases X with
+  | mk S p =>
+      cases p with
+      | mk τ σ =>
+          cases Y with
+          | mk S' p' =>
+              cases p' with
+              | mk τ' σ' =>
+                  have hπ :
+                      S.leibnizPerm τ σ = S'.leibnizPerm τ' σ' :=
+                    congrArg (fun z : AmbientW P ν hνp => z.1.1) h
+                  have hW : S.W = S'.W :=
+                    congrArg (fun z : AmbientW P ν hνp => z.1.2) h
+                  have hS : S = S' :=
+                    HodgeColSplit.eq_of_W_eq_of_leibnizPerm_eq
+                      (S := S) (S' := S') τ σ τ' σ'
+                      (S.leibnizPerm τ σ) rfl hπ.symm hW
+                  cases hS
+                  have hp : (τ, σ) = (τ', σ') :=
+                    S.leibnizPerm_pair_injective hπ
+                  cases hp
+                  rfl
+
+lemma toAmbientWFlat_surjective {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Function.Surjective
+      (@HodgeColSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp) := by
+  classical
+  intro Y
+  rcases Y with ⟨⟨π, W⟩, hpreD, hW⟩
+  rcases HodgeColSplit.exists_leibnizPerm_eq_of_W_mem_powerset
+      P ν hνp π W hpreD hW with ⟨S, τ, σ, hSW, hπ⟩
+  refine ⟨⟨S, (τ, σ)⟩, ?_⟩
+  apply Subtype.ext
+  simp [HodgeColSplit.LeibnizTerm.toAmbientWFlat,
+    HodgeColSplit.LeibnizTerm.ambientPerm, hπ, hSW]
+
+noncomputable def equivAmbientWFlat {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeColSplit.LeibnizTerm P ν hνp ≃ AmbientW P ν hνp :=
+  Equiv.ofBijective
+    (@HodgeColSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp)
+    ⟨toAmbientWFlat_injective, toAmbientWFlat_surjective P ν hνp⟩
+
+noncomputable def ambientWEquivSigma {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    AmbientW P ν hνp ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π).powerset } where
+  toFun z := ⟨z.1.1, ⟨z.1.2, z.2⟩⟩
+  invFun z := ⟨(z.1, z.2.1), z.2.2⟩
+  left_inv := by
+    intro z
+    rfl
+  right_inv := by
+    intro z
+    rfl
+
+noncomputable def equivAmbientW {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeColSplit.LeibnizTerm P ν hνp ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π).powerset } :=
+  (equivAmbientWFlat P ν hνp).trans (ambientWEquivSigma P ν hνp)
+
+lemma sum_eq_sum_ambientW {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    {M : Type*} [AddCommMonoid M]
+    (f : HodgeColSplit.LeibnizTerm P ν hνp → M)
+    (g :
+      (π : Equiv.Perm (Fin (P.p + P.q))) →
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π).powerset } → M)
+    (h :
+      ∀ X : HodgeColSplit.LeibnizTerm P ν hνp,
+        f X =
+          g X.ambientPerm
+            ⟨X.1.W,
+              X.1.permPreimageLeftSlotFinset_subset_hodgeD X.2.1 X.2.2,
+              X.1.W_mem_powerset_hodgeC_sdiff_permPreimage X.2.1 X.2.2⟩) :
+    (∑ X : HodgeColSplit.LeibnizTerm P ν hνp, f X) =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ W : { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π).powerset },
+          g π W := by
+  classical
+  calc
+    (∑ X : HodgeColSplit.LeibnizTerm P ν hνp, f X)
+        =
+      ∑ Y :
+          (Σ π : Equiv.Perm (Fin (P.p + P.q)),
+            { W : Finset (Fin (P.p + P.q)) //
+              permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+                W ∈ (Hodge.hodgeC P ν hνp \
+                  permPreimageLeftSlotFinset P π).powerset }),
+        g Y.1 Y.2 := by
+          refine Fintype.sum_equiv
+            (HodgeColSplit.LeibnizTerm.equivAmbientW P ν hνp)
+            f (fun Y => g Y.1 Y.2) ?_
+          intro X
+          simpa [HodgeColSplit.LeibnizTerm.equivAmbientW,
+            HodgeColSplit.LeibnizTerm.equivAmbientWFlat,
+            HodgeColSplit.LeibnizTerm.ambientWEquivSigma,
+            HodgeColSplit.LeibnizTerm.toAmbientWFlat] using h X
+    _ =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ W : { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π).powerset },
+          g π W := by
+          rw [Fintype.sum_sigma]
+
+end HodgeColSplit.LeibnizTerm
+
+lemma HodgeRowSplit.toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    RawMinorPair.toPolynomial (k := k) S.toBiReshuffle.toPair =
+      Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlots.orderEmbOfFin rfl)
+            (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+        Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+              rw [Finset.card_compl, Fintype.card_fin]))
+            (S.colSlotsᶜ.orderEmbOfFin (by
+              simp))) := by
+  rw [RawMinorPair.toPolynomial]
+  change
+    RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.left *
+      RawMinorIndex.toPolynomial (k := k)
+        (ofFinsets P S.rowSlots S.colSlots S.card_eq).toPair.right =
+      _
+  rw [ofFinsets_toPair_left_toPolynomial (k := k) P S.rowSlots S.colSlots S.card_eq]
+  exact congrArg
+    (fun x =>
+      Matrix.det
+          (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlots.orderEmbOfFin rfl)
+            (S.colSlots.orderEmbOfFin S.card_eq.symm)) * x)
+    (ofFinsets_toPair_right_toPolynomial
+      (k := k) P S.rowSlots S.colSlots S.card_eq)
+
+lemma HodgeRowSplit.toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      MvPolynomial.C
+          (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+        (Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+              (S.rowSlots.orderEmbOfFin rfl)
+              (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+          Matrix.det
+            (Matrix.submatrix (slotMatrix (k := k) P)
+            (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                simp)))) := by
+  rw [RawMinorPair.laplacePolynomial,
+    HodgeRowSplit.toBiReshuffle_toPair_toPolynomial (k := k) S]
+
+lemma HodgeRowSplit.sign_leibnizPerm {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    Equiv.Perm.sign (S.leibnizPerm τ σ) =
+      Equiv.Perm.sign S.rowSplitRel *
+        (Equiv.Perm.sign τ * Equiv.Perm.sign σ) *
+          Equiv.Perm.sign S.colSplitRel := by
+  classical
+  let A := S.stdSplit
+  let rrel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.rowSplitRel
+  let crel : Equiv.Perm
+      (Fin S.rowSlots.card ⊕ Fin (P.p + P.q - S.rowSlots.card)) :=
+    S.colSplitRel
+  have hconj :
+      (A.trans (S.leibnizPerm τ σ)).trans A.symm =
+        crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel) := by
+    ext x
+    simp [A, rrel, crel, HodgeRowSplit.leibnizPerm,
+      HodgeRowSplit.rowSplitRel, HodgeRowSplit.colSplitRel]
+  have hsign :
+      Equiv.Perm.sign (S.leibnizPerm τ σ) =
+        Equiv.Perm.sign
+          (crel.symm.trans ((Equiv.Perm.sumCongr τ σ).trans rrel)) := by
+    rw [← hconj]
+    exact (Equiv.Perm.sign_trans_trans_symm (S.leibnizPerm τ σ) A).symm
+  rw [hsign]
+  simp [rrel, crel, Equiv.Perm.sign_trans, Equiv.Perm.sign_sumCongr,
+    mul_assoc, mul_comm, mul_left_comm]
+
+lemma HodgeRowSplit.splitSignFactor_mul_blockSigns {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    {R : Type*} [CommRing R]
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.splitSignFactor (R := R) *
+        (equivPermSign (R := R) τ * equivPermSign (R := R) σ) =
+      equivPermSign (R := R) (S.leibnizPerm τ σ) := by
+  unfold HodgeRowSplit.splitSignFactor equivPermSign
+  rw [S.sign_leibnizPerm τ σ]
+  simp only [Units.val_mul, Int.cast_mul]
+  ring
+
+@[simp] lemma HodgeRowSplit.leibnizPerm_colSlots {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin S.rowSlots.card) :
+    S.leibnizPerm τ σ (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+      S.rowSlots.orderEmbOfFin rfl (τ j) := by
+  classical
+  have hleft :
+      S.colSplit.symm
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j) =
+        Sum.inl j := by
+    simpa [HodgeRowSplit.colSplit] using S.colSplit.left_inv (Sum.inl j)
+  simp [HodgeRowSplit.leibnizPerm, hleft, HodgeRowSplit.rowSplit]
+
+@[simp] lemma HodgeRowSplit.leibnizPerm_colSlots_compl {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (j : Fin (P.p + P.q - S.rowSlots.card)) :
+    S.leibnizPerm τ σ
+        (S.colSlotsᶜ.orderEmbOfFin (by
+          rw [Finset.card_compl, Fintype.card_fin]
+          simp) j) =
+      S.rowSlotsᶜ.orderEmbOfFin (by
+        rw [Finset.card_compl, Fintype.card_fin]) (σ j) := by
+  classical
+  have hright :
+      S.colSplit.symm
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp) j) =
+        Sum.inr j := by
+    simpa [HodgeRowSplit.colSplit] using S.colSplit.left_inv (Sum.inr j)
+  simp [HodgeRowSplit.leibnizPerm, hright, HodgeRowSplit.rowSplit]
+
+lemma HodgeRowSplit.leibnizPerm_product_split {m n : ℕ}
+    {Rng : Type*} [CommMonoid Rng] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    (∏ j : Fin (P.p + P.q), M (S.leibnizPerm τ σ j) j) =
+      (∏ j : Fin S.rowSlots.card,
+        M (S.rowSlots.orderEmbOfFin rfl (τ j))
+          (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+      (∏ j : Fin (P.p + P.q - S.rowSlots.card),
+        M (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp) j)) := by
+  classical
+  rw [← Equiv.prod_comp
+    S.colSplit
+    (fun j : Fin (P.p + P.q) => M (S.leibnizPerm τ σ j) j)]
+  rw [Fintype.prod_sum_type]
+  apply congrArg₂ (· * ·)
+  · apply Finset.prod_congr rfl
+    intro j _hj
+    have hcol :
+        S.colSplit (Sum.inl j) =
+          S.colSlots.orderEmbOfFin S.card_eq.symm j := by
+      simp [HodgeRowSplit.colSplit]
+    rw [hcol, HodgeRowSplit.leibnizPerm_colSlots]
+  · apply Finset.prod_congr rfl
+    intro j _hj
+    have hcol :
+        S.colSplit (Sum.inr j) =
+          S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp) j := by
+      simp [HodgeRowSplit.colSplit]
+    rw [hcol, HodgeRowSplit.leibnizPerm_colSlots_compl]
+
+lemma HodgeRowSplit.det_mul_det_eq_sum_leibnizPerm_terms {m n : ℕ}
+    {Rng : Type*} [CommRing Rng] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (M : Matrix (Fin (P.p + P.q)) (Fin (P.p + P.q)) Rng) :
+    Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlots.orderEmbOfFin rfl)
+          (S.colSlots.orderEmbOfFin S.card_eq.symm)) *
+      Matrix.det
+        (Matrix.submatrix M
+          (S.rowSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]))
+          (S.colSlotsᶜ.orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]
+            simp))) =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        ((Equiv.Perm.sign p.1 : Rng) *
+            (Equiv.Perm.sign p.2 : Rng)) *
+          ∏ j : Fin (P.p + P.q), M (S.leibnizPerm p.1 p.2 j) j := by
+  classical
+  rw [Matrix.det_apply', Matrix.det_apply']
+  simp_rw [Finset.sum_mul, Finset.mul_sum]
+  simp only [Matrix.submatrix_apply]
+  rw [← Fintype.sum_prod_type' (γ := Rng)
+    (f := fun τ σ =>
+      ((Equiv.Perm.sign τ : Rng) *
+          ∏ j : Fin S.rowSlots.card,
+            M (S.rowSlots.orderEmbOfFin rfl (τ j))
+              (S.colSlots.orderEmbOfFin S.card_eq.symm j)) *
+        ((Equiv.Perm.sign σ : Rng) *
+          ∏ j : Fin (P.p + P.q - S.rowSlots.card),
+            M (S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]) (σ j))
+              (S.colSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin]
+                simp) j)))]
+  refine Finset.sum_congr rfl ?_
+  rintro ⟨τ, σ⟩ _hp
+  have hprod := S.leibnizPerm_product_split τ σ M
+  rw [hprod]
+  ring
+
+lemma HodgeRowSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    {m n : ℕ} {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair =
+      ∑ p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+        MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign p.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign p.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (P.p + P.q),
+              slotMatrix (k := k) P (S.leibnizPerm p.1 p.2 j) j) := by
+  classical
+  rw [HodgeRowSplit.toBiReshuffle_toPair_laplacePolynomial (k := k) S]
+  rw [HodgeRowSplit.det_mul_det_eq_sum_leibnizPerm_terms
+    (S := S) (M := slotMatrix (k := k) P)]
+  rw [Finset.mul_sum]
+
+/-- One Leibniz term occurring after expanding both determinant blocks attached
+to a row-side Hodge split. -/
+abbrev HodgeRowSplit.LeibnizTerm {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :=
+  Σ S : HodgeRowSplit P ν hνp,
+    Equiv.Perm (Fin S.rowSlots.card) ×
+      Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))
+
+namespace HodgeRowSplit.LeibnizTerm
+
+noncomputable def ambientPerm {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeRowSplit.LeibnizTerm P ν hνp) :
+    Equiv.Perm (Fin (P.p + P.q)) :=
+  X.1.leibnizPerm X.2.1 X.2.2
+
+@[simp] lemma ambientPerm_apply {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeRowSplit.LeibnizTerm P ν hνp) (j : Fin (P.p + P.q)) :
+    X.ambientPerm j = X.1.leibnizPerm X.2.1 X.2.2 j := rfl
+
+end HodgeRowSplit.LeibnizTerm
+
+lemma HodgeRowSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    {m n : ℕ} {k : Type*} [Field k] {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (coeff : HodgeRowSplit P ν hνp → k) :
+    (∑ S : HodgeRowSplit P ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) =
+      ∑ X : HodgeRowSplit.LeibnizTerm P ν hνp,
+        MvPolynomial.C (coeff X.1) *
+          (MvPolynomial.C
+              (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+            (((Equiv.Perm.sign X.2.1 :
+                MvPolynomial (Fin m × Fin n) k) *
+              (Equiv.Perm.sign X.2.2 :
+                MvPolynomial (Fin m × Fin n) k)) *
+              ∏ j : Fin (P.p + P.q),
+                slotMatrix (k := k) P (X.ambientPerm j) j)) := by
+  classical
+  rw [Fintype.sum_sigma]
+  apply Finset.sum_congr rfl
+  intro S _hS
+  rw [HodgeRowSplit.toBiReshuffle_toPair_laplacePolynomial_eq_sum_leibnizPerm_terms
+    (k := k) S]
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  rintro ⟨τ, σ⟩ _hτσ
+  simp [HodgeRowSplit.LeibnizTerm.ambientPerm]
+
+lemma HodgeRowSplit.leibnizPerm_pair_injective {m n : ℕ}
+    {P : RawMinorPair m n} {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    Function.Injective
+      (fun p : Equiv.Perm (Fin S.rowSlots.card) ×
+          Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) =>
+        S.leibnizPerm p.1 p.2) := by
+  classical
+  intro a b hab
+  cases a with
+  | mk τa σa =>
+      cases b with
+      | mk τb σb =>
+          change S.leibnizPerm τa σa = S.leibnizPerm τb σb at hab
+          congr
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e (S.colSlots.orderEmbOfFin S.card_eq.symm j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlots.orderEmbOfFin rfl).injective (by
+                simpa using h))
+          · ext j
+            have h :=
+              congrArg
+                (fun e : Equiv.Perm (Fin (P.p + P.q)) =>
+                  e
+                    (S.colSlotsᶜ.orderEmbOfFin (by
+                      rw [Finset.card_compl, Fintype.card_fin]
+                      simp) j)) hab
+            exact congrArg Fin.val
+              ((S.rowSlotsᶜ.orderEmbOfFin (by
+                rw [Finset.card_compl, Fintype.card_fin])).injective (by
+                  simpa using h))
+
+lemma HodgeRowSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π) :
+    S.rowSlots = S.colSlots.map π.toEmbedding := by
+  classical
+  subst π
+  ext x
+  constructor
+  · intro hx
+    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
+    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
+      exact congrArg Subtype.val
+        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
+    refine Finset.mem_map.mpr ?_
+    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
+    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
+    · change S.leibnizPerm τ σ
+          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
+      rw [HodgeRowSplit.leibnizPerm_colSlots]
+      simp [hxj]
+  · intro hx
+    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
+    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
+    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
+    have hrow :
+        S.leibnizPerm τ σ y ∈ S.rowSlots := by
+      rw [← hyj, HodgeRowSplit.leibnizPerm_colSlots]
+      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
+    have hyx' : S.leibnizPerm τ σ y = x := by
+      simpa using hyx
+    simpa [hyx'] using hrow
+
+lemma HodgeRowSplit.eq_of_W_eq_of_leibnizPerm_eq
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    {S S' : HodgeRowSplit P ν hνp}
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    (τ' : Equiv.Perm (Fin S'.rowSlots.card))
+    (σ' : Equiv.Perm (Fin (P.p + P.q - S'.rowSlots.card)))
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hπ : S.leibnizPerm τ σ = π)
+    (hπ' : S'.leibnizPerm τ' σ' = π)
+    (hW : S.W = S'.W) :
+    S = S' := by
+  have hrow : S.rowSlots = S'.rowSlots := by
+    simp [HodgeRowSplit.rowSlots, hW]
+  have hmap :
+      S.colSlots.map π.toEmbedding = S'.colSlots.map π.toEmbedding := by
+    rw [← S.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ σ π hπ,
+      ← S'.rowSlots_eq_colSlots_image_of_leibnizPerm_eq τ' σ' π hπ',
+      hrow]
+  have hcol : S.colSlots = S'.colSlots :=
+    Finset.map_injective π.toEmbedding hmap
+  cases S with
+  | mk W colSlots W_subset leftCols card_eq =>
+      cases S' with
+      | mk W' colSlots' W_subset' leftCols' card_eq' =>
+          simp only at hW hcol
+          subst W'
+          subst colSlots'
+          rfl
+
+lemma HodgeRowSplit.leibnizPerm_mem_rowSlots_of_mem_colSlots
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)))
+    {x : Fin (P.p + P.q)} (hx : x ∈ S.colSlots) :
+    S.leibnizPerm τ σ x ∈ S.rowSlots := by
+  classical
+  let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
+  let j : Fin S.rowSlots.card :=
+    (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
+  have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
+    exact congrArg Subtype.val
+      ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
+  rw [← hxj, HodgeRowSplit.leibnizPerm_colSlots]
+  exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
+
+lemma HodgeRowSplit.W_subset_rowSlots_compl
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp) :
+    S.W ⊆ S.rowSlotsᶜ := by
+  intro x hxW
+  rw [Finset.mem_compl]
+  intro hxrow
+  exact (Finset.mem_sdiff.mp hxrow).2 hxW
+
+lemma HodgeRowSplit.permPreimageLeftSlotFinset_symm_subset_hodgeD
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    permPreimageLeftSlotFinset P (S.leibnizPerm τ σ).symm ⊆
+      Hodge.hodgeD P ν := by
+  intro x hxpre
+  have hleft :
+      (S.leibnizPerm τ σ).symm x ∈ leftSlotFinset P :=
+    (mem_permPreimageLeftSlotFinset_iff P
+      (S.leibnizPerm τ σ).symm x).mp hxpre
+  have hcol : (S.leibnizPerm τ σ).symm x ∈ S.colSlots :=
+    S.leftCols hleft
+  have hrow :
+      S.leibnizPerm τ σ ((S.leibnizPerm τ σ).symm x) ∈ S.rowSlots :=
+    S.leibnizPerm_mem_rowSlots_of_mem_colSlots τ σ hcol
+  have hxrow : x ∈ S.rowSlots := by
+    simpa using hrow
+  exact (Finset.mem_sdiff.mp hxrow).1
+
+lemma HodgeRowSplit.W_mem_powerset_hodgeC_sdiff_permPreimage_symm
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (τ : Equiv.Perm (Fin S.rowSlots.card))
+    (σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card))) :
+    S.W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P (S.leibnizPerm τ σ).symm).powerset := by
+  classical
+  refine Finset.mem_powerset.mpr ?_
+  intro x hxW
+  refine Finset.mem_sdiff.mpr ⟨S.W_subset hxW, ?_⟩
+  intro hxpre
+  have hxrowcomp : x ∈ S.rowSlotsᶜ := S.W_subset_rowSlots_compl hxW
+  have hleft :
+      (S.leibnizPerm τ σ).symm x ∈ leftSlotFinset P :=
+    (mem_permPreimageLeftSlotFinset_iff P
+      (S.leibnizPerm τ σ).symm x).mp hxpre
+  have hcol : (S.leibnizPerm τ σ).symm x ∈ S.colSlots :=
+    S.leftCols hleft
+  have hrow :
+      S.leibnizPerm τ σ ((S.leibnizPerm τ σ).symm x) ∈ S.rowSlots :=
+    S.leibnizPerm_mem_rowSlots_of_mem_colSlots τ σ hcol
+  exact (Finset.mem_compl.mp hxrowcomp) (by simpa using hrow)
+
+noncomputable def HodgeRowSplit.ofWPerm
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π.symm).powerset) :
+    HodgeRowSplit P ν hνp where
+  W := W
+  colSlots := (Hodge.hodgeD P ν \ W).map π.symm.toEmbedding
+  W_subset := by
+    intro x hxW
+    exact (Finset.mem_sdiff.mp ((Finset.mem_powerset.mp hW) hxW)).1
+  leftCols := by
+    intro x hxleft
+    have hxpre :
+        π x ∈ permPreimageLeftSlotFinset P π.symm := by
+      rw [mem_permPreimageLeftSlotFinset_iff]
+      simpa using hxleft
+    have hxD : π x ∈ Hodge.hodgeD P ν := hpreD hxpre
+    have hxnotW : π x ∉ W := by
+      intro hxW
+      have hxsdiff :
+          π x ∈ Hodge.hodgeC P ν hνp \
+            permPreimageLeftSlotFinset P π.symm :=
+        (Finset.mem_powerset.mp hW) hxW
+      exact (Finset.mem_sdiff.mp hxsdiff).2 hxpre
+    refine Finset.mem_map.mpr ?_
+    exact ⟨π x, Finset.mem_sdiff.mpr ⟨hxD, hxnotW⟩, by simp⟩
+  card_eq := by
+    simp
+
+@[simp] lemma HodgeRowSplit.ofWPerm_W
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π.symm).powerset) :
+    (HodgeRowSplit.ofWPerm P ν hνp π W hpreD hW).W = W := rfl
+
+@[simp] lemma HodgeRowSplit.ofWPerm_rowSlots
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π.symm).powerset) :
+    (HodgeRowSplit.ofWPerm P ν hνp π W hpreD hW).rowSlots =
+      Hodge.hodgeD P ν \ W := rfl
+
+lemma HodgeRowSplit.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image
+    {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : HodgeRowSplit P ν hνp)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (hrow : S.rowSlots = S.colSlots.map π.toEmbedding) :
+    ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+    ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+      S.leibnizPerm τ σ = π := by
+  classical
+  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
+    (S.rowSlots.orderIsoOfFin rfl).symm
+      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+        have hmem :
+            π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
+              S.colSlots.map π.toEmbedding :=
+          Finset.mem_map.mpr
+            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
+        simpa only [hrow] using hmem⟩
+  have hτFun :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τFun j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
+        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
+          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
+            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
+          have hmem :
+              π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
+                S.colSlots.map π.toEmbedding :=
+            Finset.mem_map.mpr
+              ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
+          simpa only [hrow] using hmem⟩)
+  have hτInj : Function.Injective τFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
+    simp only at h
+    rw [hτFun a, hτFun b] at h
+    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
+  have hτBij : Function.Bijective τFun :=
+    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
+  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
+  have hτ :
+      ∀ j : Fin S.rowSlots.card,
+        S.rowSlots.orderEmbOfFin rfl (τ j) =
+          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
+    intro j
+    exact hτFun j
+  let hrowCompl :
+      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+  let hcolCompl :
+      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+    simp
+  let σFun :
+      Fin (P.p + P.q - S.rowSlots.card) →
+        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
+    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
+      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+        have hjc :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+        rw [Finset.mem_compl] at hjc
+        rw [Finset.mem_compl]
+        intro hrowmem
+        have hrowmem' :
+            π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
+              S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
+        rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
+        have hxy :
+            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+          π.injective hyπ.symm
+        exact hjc (by rw [hxy]; exact hy)⟩
+  have hσFun :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
+        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
+          have hjc :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
+            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
+          rw [Finset.mem_compl] at hjc
+          rw [Finset.mem_compl]
+          intro hrowmem
+          have hrowmem' :
+              π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
+                S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
+          rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
+          have hxy :
+              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
+            π.injective hyπ.symm
+          exact hjc (by rw [hxy]; exact hy)⟩)
+  have hσInj : Function.Injective σFun := by
+    intro a b hab
+    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
+    simp only at h
+    rw [hσFun a, hσFun b] at h
+    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
+  have hσBij : Function.Bijective σFun :=
+    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
+  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
+    Equiv.ofBijective σFun hσBij
+  have hσ :
+      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
+        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
+          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact hσFun j
+  refine ⟨τ, σ, ?_⟩
+  ext x
+  by_cases hx : x ∈ S.colSlots
+  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
+    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
+    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
+    rw [← hxj]
+    rw [HodgeRowSplit.leibnizPerm_colSlots]
+    simpa using congrArg Fin.val (hτ j)
+  · have hxc : x ∈ S.colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hx
+    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
+    let j : Fin (P.p + P.q - S.rowSlots.card) :=
+      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
+    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
+      exact congrArg Subtype.val
+        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
+    rw [← hxj]
+    rw [HodgeRowSplit.leibnizPerm_colSlots_compl]
+    simpa using congrArg Fin.val (hσ j)
+
+lemma HodgeRowSplit.exists_leibnizPerm_eq_of_W_mem_powerset
+    {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p)
+    (π : Equiv.Perm (Fin (P.p + P.q)))
+    (W : Finset (Fin (P.p + P.q)))
+    (hpreD : permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν)
+    (hW : W ∈ (Hodge.hodgeC P ν hνp \
+      permPreimageLeftSlotFinset P π.symm).powerset) :
+    ∃ S : HodgeRowSplit P ν hνp,
+    ∃ τ : Equiv.Perm (Fin S.rowSlots.card),
+    ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
+      S.W = W ∧ S.leibnizPerm τ σ = π := by
+  classical
+  let S : HodgeRowSplit P ν hνp :=
+    HodgeRowSplit.ofWPerm P ν hνp π W hpreD hW
+  have hrow : S.rowSlots = S.colSlots.map π.toEmbedding := by
+    ext x
+    simp [S, HodgeRowSplit.ofWPerm, HodgeRowSplit.rowSlots]
+  rcases S.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image π hrow with
+    ⟨τ, σ, hπ⟩
+  exact ⟨S, τ, σ, rfl, hπ⟩
+
+namespace HodgeRowSplit.LeibnizTerm
+
+abbrev AmbientW {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :=
+  { pw : Equiv.Perm (Fin (P.p + P.q)) × Finset (Fin (P.p + P.q)) //
+    permPreimageLeftSlotFinset P pw.1.symm ⊆ Hodge.hodgeD P ν ∧
+      pw.2 ∈ (Hodge.hodgeC P ν hνp \
+        permPreimageLeftSlotFinset P pw.1.symm).powerset }
+
+noncomputable def toAmbientWFlat {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (X : HodgeRowSplit.LeibnizTerm P ν hνp) :
+    AmbientW P ν hνp :=
+  ⟨(X.ambientPerm, X.1.W),
+    X.1.permPreimageLeftSlotFinset_symm_subset_hodgeD X.2.1 X.2.2,
+    X.1.W_mem_powerset_hodgeC_sdiff_permPreimage_symm X.2.1 X.2.2⟩
+
+lemma toAmbientWFlat_injective {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p} :
+    Function.Injective
+      (@HodgeRowSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp) := by
+  classical
+  intro X Y h
+  cases X with
+  | mk S p =>
+      cases p with
+      | mk τ σ =>
+          cases Y with
+          | mk S' p' =>
+              cases p' with
+              | mk τ' σ' =>
+                  have hπ :
+                      S.leibnizPerm τ σ = S'.leibnizPerm τ' σ' :=
+                    congrArg (fun z : AmbientW P ν hνp => z.1.1) h
+                  have hW : S.W = S'.W :=
+                    congrArg (fun z : AmbientW P ν hνp => z.1.2) h
+                  have hS : S = S' :=
+                    HodgeRowSplit.eq_of_W_eq_of_leibnizPerm_eq
+                      (S := S) (S' := S') τ σ τ' σ'
+                      (S.leibnizPerm τ σ) rfl hπ.symm hW
+                  cases hS
+                  have hp : (τ, σ) = (τ', σ') :=
+                    S.leibnizPerm_pair_injective hπ
+                  cases hp
+                  rfl
+
+lemma toAmbientWFlat_surjective {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    Function.Surjective
+      (@HodgeRowSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp) := by
+  classical
+  intro Y
+  rcases Y with ⟨⟨π, W⟩, hpreD, hW⟩
+  rcases HodgeRowSplit.exists_leibnizPerm_eq_of_W_mem_powerset
+      P ν hνp π W hpreD hW with ⟨S, τ, σ, hSW, hπ⟩
+  refine ⟨⟨S, (τ, σ)⟩, ?_⟩
+  apply Subtype.ext
+  simp [HodgeRowSplit.LeibnizTerm.toAmbientWFlat,
+    HodgeRowSplit.LeibnizTerm.ambientPerm, hπ, hSW]
+
+noncomputable def equivAmbientWFlat {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeRowSplit.LeibnizTerm P ν hνp ≃ AmbientW P ν hνp :=
+  Equiv.ofBijective
+    (@HodgeRowSplit.LeibnizTerm.toAmbientWFlat m n P ν hνp)
+    ⟨toAmbientWFlat_injective, toAmbientWFlat_surjective P ν hνp⟩
+
+noncomputable def ambientWEquivSigma {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    AmbientW P ν hνp ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π.symm).powerset } where
+  toFun z := ⟨z.1.1, ⟨z.1.2, z.2⟩⟩
+  invFun z := ⟨(z.1, z.2.1), z.2.2⟩
+  left_inv := by
+    intro z
+    rfl
+  right_inv := by
+    intro z
+    rfl
+
+noncomputable def equivAmbientW {m n : ℕ} (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    HodgeRowSplit.LeibnizTerm P ν hνp ≃
+      Σ π : Equiv.Perm (Fin (P.p + P.q)),
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π.symm).powerset } :=
+  (equivAmbientWFlat P ν hνp).trans (ambientWEquivSigma P ν hνp)
+
+lemma sum_eq_sum_ambientW {m n : ℕ} {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    {M : Type*} [AddCommMonoid M]
+    (f : HodgeRowSplit.LeibnizTerm P ν hνp → M)
+    (g :
+      (π : Equiv.Perm (Fin (P.p + P.q))) →
+        { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π.symm).powerset } → M)
+    (h :
+      ∀ X : HodgeRowSplit.LeibnizTerm P ν hνp,
+        f X =
+          g X.ambientPerm
+            ⟨X.1.W,
+              X.1.permPreimageLeftSlotFinset_symm_subset_hodgeD X.2.1 X.2.2,
+              X.1.W_mem_powerset_hodgeC_sdiff_permPreimage_symm X.2.1 X.2.2⟩) :
+    (∑ X : HodgeRowSplit.LeibnizTerm P ν hνp, f X) =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ W : { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π.symm).powerset },
+          g π W := by
+  classical
+  calc
+    (∑ X : HodgeRowSplit.LeibnizTerm P ν hνp, f X)
+        =
+      ∑ Y :
+          (Σ π : Equiv.Perm (Fin (P.p + P.q)),
+            { W : Finset (Fin (P.p + P.q)) //
+              permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+                W ∈ (Hodge.hodgeC P ν hνp \
+                  permPreimageLeftSlotFinset P π.symm).powerset }),
+        g Y.1 Y.2 := by
+          refine Fintype.sum_equiv
+            (HodgeRowSplit.LeibnizTerm.equivAmbientW P ν hνp)
+            f (fun Y => g Y.1 Y.2) ?_
+          intro X
+          simpa [HodgeRowSplit.LeibnizTerm.equivAmbientW,
+            HodgeRowSplit.LeibnizTerm.equivAmbientWFlat,
+            HodgeRowSplit.LeibnizTerm.ambientWEquivSigma,
+            HodgeRowSplit.LeibnizTerm.toAmbientWFlat] using h X
+    _ =
+      ∑ π : Equiv.Perm (Fin (P.p + P.q)),
+        ∑ W : { W : Finset (Fin (P.p + P.q)) //
+          permPreimageLeftSlotFinset P π.symm ⊆ Hodge.hodgeD P ν ∧
+            W ∈ (Hodge.hodgeC P ν hνp \
+              permPreimageLeftSlotFinset P π.symm).powerset },
+          g π W := by
+          rw [Fintype.sum_sigma]
+
+end HodgeRowSplit.LeibnizTerm
+
+lemma ContainingSplit.pivot_toBiReshuffle_toPair_left_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorIndex.toPolynomial (k := k)
+        (ContainingSplit.pivot P).toBiReshuffle.toPair.left =
+      RawMinorIndex.toPolynomial (k := k) P.left := by
+  classical
+  unfold RawMinorIndex.toPolynomial
+  let r : ℕ := (leftSlotFinset P).card
+  let hp : r = P.p := card_leftSlotFinset P
+  let e : Fin r ≃ Fin P.p := finCongr hp
+  let A : Matrix (Fin P.p) (Fin P.p) (MvPolynomial (Fin m × Fin n) k) :=
+    Matrix.submatrix (genericMatrix m n k) P.left.row P.left.col
+  have hmatrix :
+      Matrix.submatrix (genericMatrix m n k)
+          (ContainingSplit.pivot P).toBiReshuffle.toPair.left.row
+          (ContainingSplit.pivot P).toBiReshuffle.toPair.left.col =
+        Matrix.submatrix A e e := by
+    change
+      Matrix.submatrix (genericMatrix m n k)
+          (fun i : Fin r =>
+            P.slotRow
+              ((ofFinsets P (leftSlotFinset P) (leftSlotFinset P) rfl).rowEquiv
+                (Sum.inl i)))
+          (fun j : Fin r =>
+            P.slotCol
+              ((ofFinsets P (leftSlotFinset P) (leftSlotFinset P) rfl).colEquiv
+                (Sum.inl j))) =
+        Matrix.submatrix A e e
+    ext i j
+    simp only [A, e, Matrix.submatrix_apply, ofFinsets_rowEquiv_inl,
+      ofFinsets_colEquiv_inl, RawMinorPair.slotRow, RawMinorPair.slotCol]
+    have hrow :
+        (leftSlotFinset P).orderEmbOfFin rfl i =
+          Fin.castAdd P.q (e i) := by
+      exact leftSlotFinset_orderEmbOfFin_cast P rfl hp i
+    have hcolj :
+        (leftSlotFinset P).orderEmbOfFin rfl j =
+          Fin.castAdd P.q (e j) := by
+      exact leftSlotFinset_orderEmbOfFin_cast P rfl hp j
+    rw [hrow, hcolj]
+    simp [finSumFinEquiv_symm_apply_castAdd, e]
+  rw [hmatrix]
+  exact Matrix.det_submatrix_equiv_self e A
+
+lemma ContainingSplit.pivot_toBiReshuffle_toPair_right_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorIndex.toPolynomial (k := k)
+        (ContainingSplit.pivot P).toBiReshuffle.toPair.right =
+      RawMinorIndex.toPolynomial (k := k) P.right := by
+  classical
+  unfold RawMinorIndex.toPolynomial
+  let r : ℕ := P.p + P.q - (leftSlotFinset P).card
+  let hq : r = P.q := by
+    simp [r]
+  let e : Fin r ≃ Fin P.q := finCongr hq
+  let A : Matrix (Fin P.q) (Fin P.q) (MvPolynomial (Fin m × Fin n) k) :=
+    Matrix.submatrix (genericMatrix m n k) P.right.row P.right.col
+  have hmatrix :
+      Matrix.submatrix (genericMatrix m n k)
+          (ContainingSplit.pivot P).toBiReshuffle.toPair.right.row
+          (ContainingSplit.pivot P).toBiReshuffle.toPair.right.col =
+        Matrix.submatrix A e e := by
+    change
+      Matrix.submatrix (genericMatrix m n k)
+          (fun i : Fin r =>
+            P.slotRow
+              ((ofFinsets P (leftSlotFinset P) (leftSlotFinset P) rfl).rowEquiv
+                (Sum.inr i)))
+          (fun j : Fin r =>
+            P.slotCol
+              ((ofFinsets P (leftSlotFinset P) (leftSlotFinset P) rfl).colEquiv
+                (Sum.inr j))) =
+        Matrix.submatrix A e e
+    ext i j
+    simp only [A, e, Matrix.submatrix_apply, ofFinsets_rowEquiv_inr,
+      ofFinsets_colEquiv_inr, RawMinorPair.slotRow, RawMinorPair.slotCol]
+    have hrow :
+        ((leftSlotFinset P)ᶜ).orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]) i =
+          Fin.natAdd P.p (e i) := by
+      exact leftSlotFinset_compl_orderEmbOfFin_cast P
+        (by rw [Finset.card_compl, Fintype.card_fin])
+        hq i
+    have hcolj :
+        ((leftSlotFinset P)ᶜ).orderEmbOfFin (by
+            rw [Finset.card_compl, Fintype.card_fin]) j =
+          Fin.natAdd P.p (e j) := by
+      exact leftSlotFinset_compl_orderEmbOfFin_cast P
+        (by rw [Finset.card_compl, Fintype.card_fin])
+        hq j
+    rw [hrow, hcolj]
+    simp [finSumFinEquiv_symm_apply_natAdd, e]
+  rw [hmatrix]
+  exact Matrix.det_submatrix_equiv_self e A
+
+lemma ContainingSplit.pivot_toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.toPolynomial (k := k)
+        (ContainingSplit.pivot P).toBiReshuffle.toPair =
+      RawMinorPair.toPolynomial (k := k) P := by
+  rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
+    ContainingSplit.pivot_toBiReshuffle_toPair_left_toPolynomial (k := k) P,
+    ContainingSplit.pivot_toBiReshuffle_toPair_right_toPolynomial (k := k) P]
+
+def permuteBlocks {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P)
+    (ρL : Equiv.Perm (Fin E.r))
+    (ρR : Equiv.Perm (Fin (P.p + P.q - E.r)))
+    (κL : Equiv.Perm (Fin E.r))
+    (κR : Equiv.Perm (Fin (P.p + P.q - E.r))) :
+    BiReshuffle P where
+  r := E.r
+  hle := E.hle
+  rowEquiv := (Equiv.sumCongr ρL ρR).trans E.rowEquiv
+  colEquiv := (Equiv.sumCongr κL κR).trans E.colEquiv
+
+lemma toPair_permuteBlocks {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P)
+    (ρL : Equiv.Perm (Fin E.r))
+    (ρR : Equiv.Perm (Fin (P.p + P.q - E.r)))
+    (κL : Equiv.Perm (Fin E.r))
+    (κR : Equiv.Perm (Fin (P.p + P.q - E.r))) :
+    (E.permuteBlocks ρL ρR κL κR).toPair =
+      E.toPair.permute ρL κL ρR κR := by
+  rfl
+
+noncomputable def sorted {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) : BiReshuffle P :=
+  E.permuteBlocks
+    (Tuple.sort E.toPair.left.row)
+    (Tuple.sort E.toPair.right.row)
+    (Tuple.sort E.toPair.left.col)
+    (Tuple.sort E.toPair.right.col)
+
+lemma toPair_sorted {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    E.sorted.toPair = E.toPair.sorted := by
+  rfl
+
+lemma rowContent_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.rowContent E.toPair = RawMinorPair.rowContent P := by
+  classical
+  rw [RawMinorPair.rowContent_eq_sum_slots,
+    RawMinorPair.rowContent_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (E.toPair.slotRow s) 1) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (P.slotRow (E.rowEquiv s)) 1 := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (E.toPair.slotRow s) 1)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (P.slotRow (E.rowEquiv s)) 1 := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotRow s) 1 := by
+        simpa using
+          (Fintype.sum_equiv E.rowEquiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              Finsupp.single (P.slotRow (E.rowEquiv s)) 1)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              Finsupp.single (P.slotRow s) 1)
+            (by intro s; rfl))
+
+lemma colContent_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.colContent E.toPair = RawMinorPair.colContent P := by
+  classical
+  rw [RawMinorPair.colContent_eq_sum_slots,
+    RawMinorPair.colContent_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (E.toPair.slotCol s) 1) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          Finsupp.single (P.slotCol (E.colEquiv s)) 1 := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (E.toPair.slotCol s) 1)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        Finsupp.single (P.slotCol (E.colEquiv s)) 1 := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        Finsupp.single (P.slotCol s) 1 := by
+        simpa using
+          (Fintype.sum_equiv E.colEquiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              Finsupp.single (P.slotCol (E.colEquiv s)) 1)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              Finsupp.single (P.slotCol s) 1)
+            (by intro s; rfl))
+
+lemma rowIndexSum_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.rowIndexSum E.toPair = RawMinorPair.rowIndexSum P := by
+  classical
+  rw [RawMinorPair.rowIndexSum_eq_sum_slots,
+    RawMinorPair.rowIndexSum_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          (E.toPair.slotRow s).val) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          (P.slotRow (E.rowEquiv s)).val := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        (E.toPair.slotRow s).val)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        (P.slotRow (E.rowEquiv s)).val := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        (P.slotRow s).val := by
+        simpa using
+          (Fintype.sum_equiv E.rowEquiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              (P.slotRow (E.rowEquiv s)).val)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              (P.slotRow s).val)
+            (by intro s; rfl))
+
+lemma colIndexSum_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.colIndexSum E.toPair = RawMinorPair.colIndexSum P := by
+  classical
+  rw [RawMinorPair.colIndexSum_eq_sum_slots,
+    RawMinorPair.colIndexSum_eq_sum_slots]
+  have hleft :
+      (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          (E.toPair.slotCol s).val) =
+        ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+          (P.slotCol (E.colEquiv s)).val := by
+    apply Finset.sum_congr rfl
+    intro s _hs
+    cases s <;> rfl
+  calc
+    (∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        (E.toPair.slotCol s).val)
+        =
+      ∑ s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)),
+        (P.slotCol (E.colEquiv s)).val := hleft
+    _ =
+      ∑ s : Sum (Fin P.p) (Fin P.q),
+        (P.slotCol s).val := by
+        simpa using
+          (Fintype.sum_equiv E.colEquiv
+            (fun s : Sum (Fin E.r) (Fin (P.p + P.q - E.r)) =>
+              (P.slotCol (E.colEquiv s)).val)
+            (fun s : Sum (Fin P.p) (Fin P.q) =>
+              (P.slotCol s).val)
+            (by intro s; rfl))
+
+lemma laplaceSignExponent_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.laplaceSignExponent E.toPair =
+      RawMinorPair.laplaceSignExponent P := by
+  simp [RawMinorPair.laplaceSignExponent, E.rowIndexSum_toPair,
+    E.colIndexSum_toPair]
+
+lemma laplaceCoeff_toPair {m n : ℕ} {P : RawMinorPair m n}
+    {k : Type*} [CommRing k] (E : BiReshuffle P) :
+    RawMinorPair.laplaceCoeff (k := k) E.toPair =
+      RawMinorPair.laplaceCoeff (k := k) P := by
+  simp [RawMinorPair.laplaceCoeff, E.laplaceSignExponent_toPair]
+
+lemma laplacePolynomial_toPair {m n : ℕ} {P : RawMinorPair m n}
+    {k : Type*} [CommRing k] (E : BiReshuffle P) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair =
+      MvPolynomial.C (RawMinorPair.laplaceCoeff (k := k) P) *
+        RawMinorPair.toPolynomial (k := k) E.toPair := by
+  simp [RawMinorPair.laplacePolynomial, E.laplaceCoeff_toPair]
+
+lemma ContainingSplit.pivot_toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplacePolynomial (k := k)
+        (ContainingSplit.pivot P).toBiReshuffle.toPair =
+      RawMinorPair.laplacePolynomial (k := k) P := by
+  rw [RawMinorPair.BiReshuffle.laplacePolynomial_toPair]
+  rw [ContainingSplit.pivot_toBiReshuffle_toPair_toPolynomial (k := k) P]
+  rfl
+
+lemma HodgeColSplit.pivot_toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    RawMinorPair.toPolynomial (k := k)
+        (HodgeColSplit.pivot P ν hνp).toBiReshuffle.toPair =
+      RawMinorPair.toPolynomial (k := k) P := by
+  simpa [HodgeColSplit.toBiReshuffle, HodgeColSplit.pivot,
+    HodgeColSplit.colSlots, Hodge.hodgeD_sdiff_rightPrefix] using
+      ContainingSplit.pivot_toBiReshuffle_toPair_toPolynomial (k := k) P
+
+lemma HodgeRowSplit.pivot_toBiReshuffle_toPair_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    RawMinorPair.toPolynomial (k := k)
+        (HodgeRowSplit.pivot P ν hνp).toBiReshuffle.toPair =
+      RawMinorPair.toPolynomial (k := k) P := by
+  simpa [HodgeRowSplit.toBiReshuffle, HodgeRowSplit.pivot,
+    HodgeRowSplit.rowSlots, Hodge.hodgeD_sdiff_rightPrefix] using
+      ContainingSplit.pivot_toBiReshuffle_toPair_toPolynomial (k := k) P
+
+lemma HodgeColSplit.pivot_toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    RawMinorPair.laplacePolynomial (k := k)
+        (HodgeColSplit.pivot P ν hνp).toBiReshuffle.toPair =
+      RawMinorPair.laplacePolynomial (k := k) P := by
+  rw [RawMinorPair.BiReshuffle.laplacePolynomial_toPair]
+  rw [HodgeColSplit.pivot_toBiReshuffle_toPair_toPolynomial (k := k) P ν hνp]
+  rfl
+
+lemma HodgeRowSplit.pivot_toBiReshuffle_toPair_laplacePolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (ν : Fin P.q) (hνp : ν.val < P.p) :
+    RawMinorPair.laplacePolynomial (k := k)
+        (HodgeRowSplit.pivot P ν hνp).toBiReshuffle.toPair =
+      RawMinorPair.laplacePolynomial (k := k) P := by
+  rw [RawMinorPair.BiReshuffle.laplacePolynomial_toPair]
+  rw [HodgeRowSplit.pivot_toBiReshuffle_toPair_toPolynomial (k := k) P ν hνp]
+  rfl
+
+lemma sorted_toPair_left_row_strictMono_of_injective {m n : ℕ}
+    {P : RawMinorPair m n} (E : BiReshuffle P)
+    (h : Function.Injective E.toPair.left.row) :
+    StrictMono E.sorted.toPair.left.row := by
+  rw [E.toPair_sorted]
+  exact RawMinorPair.sorted_left_row_strictMono E.toPair h
+
+lemma sorted_toPair_left_col_strictMono_of_injective {m n : ℕ}
+    {P : RawMinorPair m n} (E : BiReshuffle P)
+    (h : Function.Injective E.toPair.left.col) :
+    StrictMono E.sorted.toPair.left.col := by
+  rw [E.toPair_sorted]
+  exact RawMinorPair.sorted_left_col_strictMono E.toPair h
+
+lemma sorted_toPair_right_row_strictMono_of_injective {m n : ℕ}
+    {P : RawMinorPair m n} (E : BiReshuffle P)
+    (h : Function.Injective E.toPair.right.row) :
+    StrictMono E.sorted.toPair.right.row := by
+  rw [E.toPair_sorted]
+  exact RawMinorPair.sorted_right_row_strictMono E.toPair h
+
+lemma sorted_toPair_right_col_strictMono_of_injective {m n : ℕ}
+    {P : RawMinorPair m n} (E : BiReshuffle P)
+    (h : Function.Injective E.toPair.right.col) :
+    StrictMono E.sorted.toPair.right.col := by
+  rw [E.toPair_sorted]
+  exact RawMinorPair.sorted_right_col_strictMono E.toPair h
+
+lemma rowContent_sorted_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.rowContent E.sorted.toPair = RawMinorPair.rowContent P := by
+  rw [E.toPair_sorted, RawMinorPair.rowContent_sorted, E.rowContent_toPair]
+
+lemma colContent_sorted_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    RawMinorPair.colContent E.sorted.toPair = RawMinorPair.colContent P := by
+  rw [E.toPair_sorted, RawMinorPair.colContent_sorted, E.colContent_toPair]
+
+lemma laplacePolynomial_sorted_toPair {m n : ℕ} {P : RawMinorPair m n}
+    {k : Type*} [CommRing k] (E : BiReshuffle P) :
+    RawMinorPair.laplacePolynomial (k := k) E.sorted.toPair =
+      E.toPair.sortSign (k := k) *
+        RawMinorPair.laplacePolynomial (k := k) E.toPair := by
+  rw [E.toPair_sorted, RawMinorPair.laplacePolynomial_sorted]
+
+noncomputable def code {m n : ℕ} {P : RawMinorPair m n}
+    (E : BiReshuffle P) :
+    Sigma (fun r : Fin (P.p + P.q + 1) =>
+      (Sum (Fin r.1) (Fin (P.p + P.q - r.1)) ≃
+        Sum (Fin P.p) (Fin P.q)) ×
+      (Sum (Fin r.1) (Fin (P.p + P.q - r.1)) ≃
+        Sum (Fin P.p) (Fin P.q))) :=
+  ⟨⟨E.r, Nat.lt_succ_of_le E.hle⟩, (E.rowEquiv, E.colEquiv)⟩
+
+lemma code_injective {m n : ℕ} {P : RawMinorPair m n} :
+    Function.Injective (BiReshuffle.code (P := P)) := by
+  intro E E' h
+  cases E
+  cases h
+  rfl
+
+instance instFinite {m n : ℕ} {P : RawMinorPair m n} :
+    Finite (BiReshuffle P) := by
+  classical
+  exact Finite.of_injective (BiReshuffle.code (P := P)) BiReshuffle.code_injective
+
+noncomputable instance instFintype {m n : ℕ} {P : RawMinorPair m n} :
+    Fintype (BiReshuffle P) := by
+  classical
+  exact Fintype.ofFinite (BiReshuffle P)
+
+end BiReshuffle
+
+def ofMinorPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    RawMinorPair m n where
+  p := p
+  q := q
+  left := RawMinorIndex.ofMinorIndex I
+  right := RawMinorIndex.ofMinorIndex J
+
+@[simp] lemma toPolynomial_ofMinorPair {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    RawMinorPair.toPolynomial (k := k) (RawMinorPair.ofMinorPair I J) =
+      genericMinor (k := k) I * genericMinor (k := k) J := by
+  rfl
+
+@[simp] lemma rowContent_ofMinorPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    RawMinorPair.rowContent (RawMinorPair.ofMinorPair I J) =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  rfl
+
+@[simp] lemma colContent_ofMinorPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    RawMinorPair.colContent (RawMinorPair.ofMinorPair I J) =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  rfl
+
+lemma toPolynomial_eq_zero_of_left_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (h : ¬ Function.Injective P.left.row) :
+    RawMinorPair.toPolynomial (k := k) P = 0 := by
+  simp [RawMinorPair.toPolynomial,
+    RawMinorIndex.toPolynomial_eq_zero_of_not_injective_row (k := k) P.left h]
+
+lemma toPolynomial_eq_zero_of_left_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (h : ¬ Function.Injective P.left.col) :
+    RawMinorPair.toPolynomial (k := k) P = 0 := by
+  simp [RawMinorPair.toPolynomial,
+    RawMinorIndex.toPolynomial_eq_zero_of_not_injective_col (k := k) P.left h]
+
+lemma toPolynomial_eq_zero_of_right_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (h : ¬ Function.Injective P.right.row) :
+    RawMinorPair.toPolynomial (k := k) P = 0 := by
+  simp [RawMinorPair.toPolynomial,
+    RawMinorIndex.toPolynomial_eq_zero_of_not_injective_row (k := k) P.right h]
+
+lemma toPolynomial_eq_zero_of_right_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (h : ¬ Function.Injective P.right.col) :
+    RawMinorPair.toPolynomial (k := k) P = 0 := by
+  simp [RawMinorPair.toPolynomial,
+    RawMinorIndex.toPolynomial_eq_zero_of_not_injective_col (k := k) P.right h]
+
+end RawMinorPair
+
+/-- One minor factor in a local straightening word.
+
+Unlike `YoungBitableau`, this deliberately allows `t = 0`, so Swan's unit
+factor `(∅|∅) = 1` can be represented without forcing it into the dependent
+Young-bitableau shape. -/
+structure MinorFactor (m n : ℕ) where
+  t : ℕ
+  idx : MinorIndex m n t
+
+namespace MinorFactor
+
+noncomputable def toPolynomial {m n : ℕ} {k : Type*} [CommRing k]
+    (F : MinorFactor m n) : MvPolynomial (Fin m × Fin n) k :=
+  genericMinor (k := k) F.idx
+
+lemma toPolynomial_eq_one_of_size_zero {m n : ℕ} {k : Type*} [CommRing k]
+    (F : MinorFactor m n) (hF : F.t = 0) :
+    MinorFactor.toPolynomial (k := k) F = 1 := by
+  cases F with
+  | mk t idx =>
+      subst hF
+      simp [MinorFactor.toPolynomial]
+
+def degree {m n : ℕ} (F : MinorFactor m n) : ℕ := F.t
+
+def length {m n : ℕ} (F : MinorFactor m n) : ℕ := F.t
+
+noncomputable def rowContent {m n : ℕ} (F : MinorFactor m n) : Fin m →₀ ℕ :=
+  MinorIndex.rowContent F.idx
+
+/-- Total row-content multiplicity of a minor factor is its size. -/
+lemma rowContent_total {m n : ℕ} (F : MinorFactor m n) :
+    (∑ i : Fin m, MinorFactor.rowContent F i) = F.t := by
+  cases F with
+  | mk t idx =>
+      simpa [MinorFactor.rowContent] using MinorIndex.rowContent_total idx
+
+noncomputable def colContent {m n : ℕ} (F : MinorFactor m n) : Fin n →₀ ℕ :=
+  MinorIndex.colContent F.idx
+
+/-- Total column-content multiplicity of a minor factor is its size. -/
+lemma colContent_total {m n : ℕ} (F : MinorFactor m n) :
+    (∑ j : Fin n, MinorFactor.colContent F j) = F.t := by
+  cases F with
+  | mk t idx =>
+      simpa [MinorFactor.colContent] using MinorIndex.colContent_total idx
+
+/-- Two minor factors are equal if they are mutually comparable in Swan's
+minor-index order. -/
+lemma eq_of_pairLE_pairLE {m n : ℕ} {F G : MinorFactor m n}
+    (hFG : MinorIndex.PairLE F.idx G.idx)
+    (hGF : MinorIndex.PairLE G.idx F.idx) :
+    F = G := by
+  cases F with
+  | mk Ft Fidx =>
+      cases G with
+      | mk Gt Gidx =>
+          have hsize : Gt = Ft := le_antisymm hFG.size_le hGF.size_le
+          subst Gt
+          have hrow : Fidx.row = Gidx.row := by
+            ext i
+            apply le_antisymm
+            · simpa using hFG.row_le i
+            · simpa using hGF.row_le i
+          have hcol : Fidx.col = Gidx.col := by
+            ext i
+            apply le_antisymm
+            · simpa using hFG.col_le i
+            · simpa using hGF.col_le i
+          have hidx : Fidx = Gidx := by
+            cases Fidx
+            cases Gidx
+            simp_all
+          subst hidx
+          rfl
+
+lemma eq_of_rowContent_eq_colContent {m n : ℕ} {F G : MinorFactor m n}
+    (hrow : MinorFactor.rowContent F = MinorFactor.rowContent G)
+    (hcol : MinorFactor.colContent F = MinorFactor.colContent G) :
+    F = G := by
+  cases F with
+  | mk Ft Fidx =>
+      cases G with
+      | mk Gt Gidx =>
+          have hsize : Ft = Gt := by
+            have hsum :=
+              congrArg (fun c : Fin m →₀ ℕ => ∑ i : Fin m, c i) hrow
+            simpa [MinorFactor.rowContent,
+              MinorIndex.rowContent_total] using hsum
+          subst Gt
+          have hidx :
+              Fidx = Gidx :=
+            MinorIndex.eq_of_rowContent_eq_colContent
+              (by simpa [MinorFactor.rowContent] using hrow)
+              (by simpa [MinorFactor.colContent] using hcol)
+          subst hidx
+          rfl
+
+/-- Strict order on minor factors induced by Swan's strict minor-pair order. -/
+def PairLT {m n : ℕ} (F G : MinorFactor m n) : Prop :=
+  MinorIndex.PairLT F.idx G.idx
+
+lemma PairLT.irrefl {m n : ℕ} (F : MinorFactor m n) : ¬ PairLT F F := by
+  intro h
+  exact h.not_pairLE_symm h.pairLE
+
+lemma PairLT.trans {m n : ℕ} {F G H : MinorFactor m n}
+    (hFG : PairLT F G) (hGH : PairLT G H) : PairLT F H := by
+  refine ⟨MinorIndex.PairLE.trans hFG.pairLE hGH.pairLE, ?_⟩
+  intro hHF
+  exact hGH.not_pairLE_symm (MinorIndex.PairLE.trans hHF hFG.pairLE)
+
+instance instIsTransPairLT {m n : ℕ} : IsTrans (MinorFactor m n) PairLT where
+  trans := fun _ _ _ => PairLT.trans
+
+instance instIrreflPairLT {m n : ℕ} : Std.Irrefl (@PairLT m n) where
+  irrefl := PairLT.irrefl
+
+private lemma size_le_min_of_minorIndex {m n t : ℕ} (I : MinorIndex m n t) :
+    t ≤ min m n := by
+  have hm : t ≤ m := by
+    simpa using Fintype.card_le_of_injective I.row I.row.injective
+  have hn : t ≤ n := by
+    simpa using Fintype.card_le_of_injective I.col I.col.injective
+  exact le_min hm hn
+
+private def finiteCode {m n : ℕ} (F : MinorFactor m n) :
+    Sigma (fun t : Fin (min m n + 1) => MinorIndex m n t.val) :=
+  ⟨⟨F.t, Nat.lt_succ_of_le (size_le_min_of_minorIndex F.idx)⟩, F.idx⟩
+
+private lemma finiteCode_injective {m n : ℕ} :
+    Function.Injective (@finiteCode m n) := by
+  intro F G h
+  cases F with
+  | mk Ft Fidx =>
+      cases G with
+      | mk Gt Gidx =>
+          cases h
+          rfl
+
+instance instFiniteMinorFactor {m n : ℕ} : Finite (MinorFactor m n) := by
+  classical
+  exact Finite.of_injective (@finiteCode m n) finiteCode_injective
+
+/-- Swan's strict first-factor order is well-founded on minor factors. -/
+theorem pairLT_wellFounded {m n : ℕ} :
+    WellFounded (@PairLT m n) := by
+  classical
+  exact Finite.wellFounded_of_trans_of_irrefl (@PairLT m n)
+
+instance instWellFoundedRelationPairLT {m n : ℕ} :
+    WellFoundedRelation (MinorFactor m n) where
+  rel := PairLT
+  wf := pairLT_wellFounded
+
+end MinorFactor
+
+/-- A local product of minors used for Swan's two-minor straightening step.
+
+This is intentionally lighter than `YoungBitableau`: it is just a list of minor
+factors and permits zero-size factors, which evaluate to `1`. -/
+structure MinorWord (m n : ℕ) where
+  factors : List (MinorFactor m n)
+
+namespace MinorWord
+
+noncomputable def toPolynomial {m n : ℕ} {k : Type*} [CommRing k]
+    (W : MinorWord m n) : MvPolynomial (Fin m × Fin n) k :=
+  (W.factors.map fun F => MinorFactor.toPolynomial (k := k) F).prod
+
+@[simp] lemma toPolynomial_nil {m n : ℕ} {k : Type*} [CommRing k] :
+    MinorWord.toPolynomial (k := k) ⟨([] : List (MinorFactor m n))⟩ = 1 := by
+  simp [MinorWord.toPolynomial]
+
+@[simp] lemma toPolynomial_cons {m n : ℕ} {k : Type*} [CommRing k]
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.toPolynomial (k := k) ⟨F :: Fs⟩ =
+      MinorFactor.toPolynomial (k := k) F *
+        MinorWord.toPolynomial (k := k) ⟨Fs⟩ := by
+  simp [MinorWord.toPolynomial]
+
+@[simp] lemma toPolynomial_append {m n : ℕ} {k : Type*} [CommRing k]
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.toPolynomial (k := k) ⟨Fs ++ Gs⟩ =
+      MinorWord.toPolynomial (k := k) ⟨Fs⟩ *
+        MinorWord.toPolynomial (k := k) ⟨Gs⟩ := by
+  induction Fs with
+  | nil =>
+      simp
+  | cons F Fs ih =>
+      simp [ih, mul_assoc]
+
+/-- Remove zero-size factors, which are polynomial units by `genericMinor_zero`. -/
+def eraseUnits {m n : ℕ} (W : MinorWord m n) : MinorWord m n :=
+  ⟨W.factors.filter fun F => F.t ≠ 0⟩
+
+def degree {m n : ℕ} (W : MinorWord m n) : ℕ :=
+  W.factors.foldr (fun F d => F.degree + d) 0
+
+@[simp] lemma degree_nil {m n : ℕ} :
+    MinorWord.degree ⟨([] : List (MinorFactor m n))⟩ = 0 := by
+  rfl
+
+@[simp] lemma degree_cons {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.degree ⟨F :: Fs⟩ =
+      F.degree + MinorWord.degree ⟨Fs⟩ := by
+  rfl
+
+@[simp] lemma degree_append {m n : ℕ}
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.degree ⟨Fs ++ Gs⟩ =
+      MinorWord.degree ⟨Fs⟩ + MinorWord.degree ⟨Gs⟩ := by
+  induction Fs with
+  | nil =>
+      simp
+  | cons F Fs ih =>
+      simp [ih, Nat.add_assoc]
+
+def length {m n : ℕ} (W : MinorWord m n) : ℕ :=
+  W.factors.foldr (fun F r => max F.length r) 0
+
+def factorCount {m n : ℕ} (W : MinorWord m n) : ℕ :=
+  W.factors.length
+
+@[simp] lemma factorCount_nil {m n : ℕ} :
+    MinorWord.factorCount ⟨([] : List (MinorFactor m n))⟩ = 0 := by
+  rfl
+
+@[simp] lemma factorCount_cons {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.factorCount ⟨F :: Fs⟩ =
+      (MinorWord.factorCount ⟨Fs⟩) + 1 := by
+  simp [MinorWord.factorCount]
+
+@[simp] lemma factorCount_append {m n : ℕ}
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.factorCount ⟨Fs ++ Gs⟩ =
+      MinorWord.factorCount ⟨Fs⟩ + MinorWord.factorCount ⟨Gs⟩ := by
+  simp [MinorWord.factorCount]
+
+@[simp] lemma length_nil {m n : ℕ} :
+    MinorWord.length ⟨([] : List (MinorFactor m n))⟩ = 0 := by
+  rfl
+
+@[simp] lemma length_cons {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.length ⟨F :: Fs⟩ =
+      max F.length (MinorWord.length ⟨Fs⟩) := by
+  rfl
+
+@[simp] lemma length_append {m n : ℕ}
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.length ⟨Fs ++ Gs⟩ =
+      max (MinorWord.length ⟨Fs⟩) (MinorWord.length ⟨Gs⟩) := by
+  induction Fs with
+  | nil =>
+      simp
+  | cons F Fs ih =>
+      simp [ih, max_assoc]
+
+lemma length_le_of_mem_factor {m n : ℕ}
+    {F : MinorFactor m n} {W : MinorWord m n}
+    (hF : F ∈ W.factors) :
+    F.t ≤ MinorWord.length W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp at hF
+      | cons G Gs ih =>
+          rw [MinorWord.length_cons]
+          rw [List.mem_cons] at hF
+          rcases hF with rfl | hF
+          · exact le_max_left F.t (MinorWord.length ⟨Gs⟩)
+          · exact le_trans (ih hF) (le_max_right G.t (MinorWord.length ⟨Gs⟩))
+
+lemma length_le_of_forall_mem_factor_le {m n : ℕ}
+    {W : MinorWord m n} {r : ℕ}
+    (h : ∀ F ∈ W.factors, F.t ≤ r) :
+    MinorWord.length W ≤ r := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp
+      | cons F Fs ih =>
+          rw [MinorWord.length_cons]
+          exact max_le (h F (by simp)) (ih (by
+            intro G hG
+            exact h G (by simp [hG])))
+
+noncomputable def rowContent {m n : ℕ} (W : MinorWord m n) : Fin m →₀ ℕ :=
+  W.factors.foldr (fun F c => F.rowContent + c) 0
+
+@[simp] lemma rowContent_nil {m n : ℕ} :
+    MinorWord.rowContent ⟨([] : List (MinorFactor m n))⟩ = 0 := by
+  rfl
+
+@[simp] lemma rowContent_cons {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.rowContent ⟨F :: Fs⟩ =
+      F.rowContent + MinorWord.rowContent ⟨Fs⟩ := by
+  rfl
+
+@[simp] lemma rowContent_append {m n : ℕ}
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.rowContent ⟨Fs ++ Gs⟩ =
+      MinorWord.rowContent ⟨Fs⟩ + MinorWord.rowContent ⟨Gs⟩ := by
+  induction Fs with
+  | nil =>
+      simp
+  | cons F Fs ih =>
+      simp [ih, add_assoc]
+
+/-- Total row-content multiplicity of a minor word is its degree. -/
+lemma rowContent_total {m n : ℕ} (W : MinorWord m n) :
+    (∑ i : Fin m, MinorWord.rowContent W i) = MinorWord.degree W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.rowContent, MinorWord.degree]
+      | cons F Fs ih =>
+          change
+            (∑ i : Fin m,
+              (MinorFactor.rowContent F +
+                ({ factors := Fs } : MinorWord m n).rowContent) i) =
+              MinorFactor.degree F + ({ factors := Fs } : MinorWord m n).degree
+          simp [Finset.sum_add_distrib, MinorFactor.rowContent_total,
+            MinorFactor.degree, ih]
+
+noncomputable def colContent {m n : ℕ} (W : MinorWord m n) : Fin n →₀ ℕ :=
+  W.factors.foldr (fun F c => F.colContent + c) 0
+
+@[simp] lemma colContent_nil {m n : ℕ} :
+    MinorWord.colContent ⟨([] : List (MinorFactor m n))⟩ = 0 := by
+  rfl
+
+@[simp] lemma colContent_cons {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.colContent ⟨F :: Fs⟩ =
+      F.colContent + MinorWord.colContent ⟨Fs⟩ := by
+  rfl
+
+@[simp] lemma colContent_append {m n : ℕ}
+    (Fs Gs : List (MinorFactor m n)) :
+    MinorWord.colContent ⟨Fs ++ Gs⟩ =
+      MinorWord.colContent ⟨Fs⟩ + MinorWord.colContent ⟨Gs⟩ := by
+  induction Fs with
+  | nil =>
+      simp
+  | cons F Fs ih =>
+      simp [ih, add_assoc]
+
+lemma eraseUnits_toPolynomial {m n : ℕ} {k : Type*} [CommRing k]
+    (W : MinorWord m n) :
+    MinorWord.toPolynomial (k := k) (MinorWord.eraseUnits W) =
+      MinorWord.toPolynomial (k := k) W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.eraseUnits]
+      | cons F Fs ih =>
+          by_cases hF : F.t = 0
+          · have hFpoly :
+                MinorFactor.toPolynomial (k := k) F = 1 :=
+              MinorFactor.toPolynomial_eq_one_of_size_zero F hF
+            simp [MinorWord.eraseUnits, hF, hFpoly]
+            simpa [MinorWord.eraseUnits] using ih
+          · simp only [eraseUnits, ne_eq, decide_not, hF, decide_false, Bool.not_false,
+            List.filter_cons_of_pos, toPolynomial_cons]
+            exact congrArg (fun P => MinorFactor.toPolynomial (k := k) F * P)
+              (by simpa [MinorWord.eraseUnits] using ih)
+
+lemma eraseUnits_degree {m n : ℕ} (W : MinorWord m n) :
+    MinorWord.degree (MinorWord.eraseUnits W) = MinorWord.degree W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.eraseUnits]
+      | cons F Fs ih =>
+          by_cases hF : F.t = 0
+          · simp [MinorWord.eraseUnits, hF, MinorFactor.degree]
+            simpa [MinorWord.eraseUnits] using ih
+          · simp [MinorWord.eraseUnits, hF]
+            simpa [MinorWord.eraseUnits] using ih
+
+lemma eraseUnits_length_le {m n : ℕ} (W : MinorWord m n) :
+    MinorWord.length (MinorWord.eraseUnits W) ≤ MinorWord.length W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.eraseUnits]
+      | cons F Fs ih =>
+          by_cases hF : F.t = 0
+          · simp [MinorWord.eraseUnits, hF, MinorFactor.length]
+            simpa [MinorWord.eraseUnits] using ih
+          · simp only [eraseUnits, ne_eq, decide_not, hF, decide_false, Bool.not_false,
+            List.filter_cons_of_pos, length_cons, MinorFactor.length, le_sup_iff, sup_le_iff,
+            le_refl, true_and]
+            by_cases htail :
+                MinorWord.length (MinorWord.eraseUnits ⟨Fs⟩) ≤ F.t
+            · exact Or.inl (by simpa [MinorWord.eraseUnits] using htail)
+            · refine Or.inr ⟨?_, by simpa [MinorWord.eraseUnits] using ih⟩
+              have hlt :
+                  F.t < MinorWord.length (MinorWord.eraseUnits ⟨Fs⟩) :=
+                Nat.lt_of_not_ge htail
+              exact le_trans hlt.le ih
+
+lemma eraseUnits_length_eq {m n : ℕ} (W : MinorWord m n) :
+    MinorWord.length (MinorWord.eraseUnits W) = MinorWord.length W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.eraseUnits]
+      | cons F Fs ih =>
+          by_cases hF : F.t = 0
+          · simp [MinorWord.eraseUnits, hF, MinorFactor.length]
+            simpa [MinorWord.eraseUnits] using ih
+          · simp only [eraseUnits, ne_eq, decide_not, hF, decide_false, Bool.not_false,
+            List.filter_cons_of_pos, length_cons, MinorFactor.length]
+            have ih' :
+                MinorWord.length
+                    ⟨List.filter (fun F => !decide (F.t = 0)) Fs⟩ =
+                  MinorWord.length ⟨Fs⟩ := by
+              simpa [MinorWord.eraseUnits] using ih
+            exact congrArg (fun r => max F.t r) ih'
+
+lemma eraseUnits_factorCount_le {m n : ℕ} (W : MinorWord m n) :
+    MinorWord.factorCount (MinorWord.eraseUnits W) ≤ MinorWord.factorCount W := by
+  cases W with
+  | mk factors =>
+      induction factors with
+      | nil =>
+          simp [MinorWord.eraseUnits, MinorWord.factorCount]
+      | cons F Fs ih =>
+          by_cases hF : F.t = 0
+          · simp only [factorCount, eraseUnits, ne_eq, decide_not, hF, decide_true, Bool.not_true,
+            Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, List.length_cons]
+            have ih' :
+                (List.filter (fun F => !decide (F.t = 0)) Fs).length ≤
+                  Fs.length := by
+              simpa [MinorWord.eraseUnits, MinorWord.factorCount] using ih
+            exact Nat.le_trans ih' (Nat.le_succ Fs.length)
+          · simp [MinorWord.eraseUnits, MinorWord.factorCount, hF]
+            simpa [MinorWord.eraseUnits, MinorWord.factorCount] using ih
+
+lemma factorCount_pos_iff_factors_nonempty {m n : ℕ} (W : MinorWord m n) :
+    0 < MinorWord.factorCount W ↔ W.factors ≠ [] := by
+  cases W with
+  | mk factors =>
+      cases factors with
+      | nil =>
+          simp [MinorWord.factorCount]
+      | cons F Fs =>
+          simp [MinorWord.factorCount]
+
+lemma exists_cons_of_factorCount_pos {m n : ℕ} {W : MinorWord m n}
+    (hW : 0 < MinorWord.factorCount W) :
+    ∃ F Fs, W.factors = F :: Fs := by
+  cases W with
+  | mk factors =>
+      cases factors with
+      | nil =>
+          simp [MinorWord.factorCount] at hW
+      | cons F Fs =>
+          exact ⟨F, Fs, rfl⟩
+
+/-- The local word is standard if every earlier factor is below every later
+factor in Swan's pair order.  This is stored as `List.Pairwise`; the adjacent
+chain condition implies it by transitivity, but this predicate is the stronger
+all-pairs form. -/
+def PairwisePairLE {m n : ℕ} (W : MinorWord m n) : Prop :=
+  W.factors.Pairwise fun F G => MinorIndex.PairLE F.idx G.idx
+
+@[simp] lemma PairwisePairLE_nil {m n : ℕ} :
+    MinorWord.PairwisePairLE ⟨([] : List (MinorFactor m n))⟩ := by
+  simp [MinorWord.PairwisePairLE]
+
+@[simp] lemma PairwisePairLE_singleton {m n : ℕ} (F : MinorFactor m n) :
+    MinorWord.PairwisePairLE ⟨[F]⟩ := by
+  simp [MinorWord.PairwisePairLE]
+
+lemma PairwisePairLE_cons_iff {m n : ℕ}
+    (F : MinorFactor m n) (Fs : List (MinorFactor m n)) :
+    MinorWord.PairwisePairLE ⟨F :: Fs⟩ ↔
+      (∀ G ∈ Fs, MinorIndex.PairLE F.idx G.idx) ∧
+        MinorWord.PairwisePairLE ⟨Fs⟩ := by
+  simp [MinorWord.PairwisePairLE, List.pairwise_cons]
+
+lemma PairwisePairLE.eraseUnits {m n : ℕ} {W : MinorWord m n}
+    (hW : MinorWord.PairwisePairLE W) :
+    MinorWord.PairwisePairLE (MinorWord.eraseUnits W) := by
+  cases W with
+  | mk factors =>
+      simpa [MinorWord.PairwisePairLE, MinorWord.eraseUnits] using
+        hW.filter (fun F => F.t ≠ 0)
+
+lemma eraseUnits_pairwisePairLE {m n : ℕ} (W : MinorWord m n)
+    (hW : MinorWord.PairwisePairLE W) :
+    MinorWord.PairwisePairLE (MinorWord.eraseUnits W) :=
+  hW.eraseUnits
+
+lemma PairwisePairLE.cons_of_head_le_first {m n : ℕ}
+    {F G : MinorFactor m n} {rest : List (MinorFactor m n)}
+    (hFG : MinorIndex.PairLE F.idx G.idx)
+    (hTail : MinorWord.PairwisePairLE ⟨G :: rest⟩) :
+    MinorWord.PairwisePairLE ⟨F :: G :: rest⟩ := by
+  rw [MinorWord.PairwisePairLE_cons_iff]
+  constructor
+  · intro K hK
+    simp only [List.mem_cons] at hK
+    rcases hK with rfl | hKrest
+    · exact hFG
+    · have hGK : MinorIndex.PairLE G.idx K.idx := by
+        exact (MinorWord.PairwisePairLE_cons_iff G rest).mp hTail |>.1 K hKrest
+      exact MinorIndex.PairLE.trans hFG hGK
+  · exact hTail
+
+lemma PairwisePairLE_of_factorCount_le_one {m n : ℕ}
+    {W : MinorWord m n} (hW : MinorWord.factorCount W ≤ 1) :
+    MinorWord.PairwisePairLE W := by
+  cases W with
+  | mk factors =>
+      cases factors with
+      | nil =>
+          simp [MinorWord.PairwisePairLE]
+      | cons F Fs =>
+          cases Fs with
+          | nil =>
+              simp [MinorWord.PairwisePairLE]
+          | cons G Gs =>
+              simp [MinorWord.factorCount] at hW
+
+lemma two_le_factorCount_of_not_pairwisePairLE {m n : ℕ}
+    {W : MinorWord m n} (hW : ¬ MinorWord.PairwisePairLE W) :
+    2 ≤ MinorWord.factorCount W := by
+  by_contra hlt
+  have hlt' : MinorWord.factorCount W < 2 := Nat.lt_of_not_ge hlt
+  have hle : MinorWord.factorCount W ≤ 1 := Nat.le_of_lt_succ hlt'
+  exact hW (MinorWord.PairwisePairLE_of_factorCount_le_one hle)
+
+lemma exists_two_cons_of_two_le_factorCount {m n : ℕ}
+    {W : MinorWord m n} (hW : 2 ≤ MinorWord.factorCount W) :
+    ∃ F G rest, W.factors = F :: G :: rest := by
+  cases W with
+  | mk factors =>
+      cases factors with
+      | nil =>
+          simp [MinorWord.factorCount] at hW
+      | cons F Fs =>
+          cases Fs with
+          | nil =>
+              simp [MinorWord.factorCount] at hW
+          | cons G rest =>
+              exact ⟨F, G, rest, rfl⟩
+
+lemma tail_not_pairwisePairLE_of_cons_cons_not_pairwise_of_head_le
+    {m n : ℕ} {F G : MinorFactor m n} {rest : List (MinorFactor m n)}
+    (hFG : MinorIndex.PairLE F.idx G.idx)
+    (hW : ¬ MinorWord.PairwisePairLE ⟨F :: G :: rest⟩) :
+    ¬ MinorWord.PairwisePairLE ⟨G :: rest⟩ := by
+  intro hTail
+  exact hW (MinorWord.PairwisePairLE.cons_of_head_le_first hFG hTail)
+
+/-- The two-factor word attached to an adjacent product of minors. -/
+def ofPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) : MinorWord m n :=
+  ⟨[{ t := p, idx := I }, { t := q, idx := J }]⟩
+
+@[simp] lemma ofPair_factors {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    (MinorWord.ofPair I J).factors =
+      [{ t := p, idx := I }, { t := q, idx := J }] := by
+  rfl
+
+@[simp] lemma toPolynomial_ofPair {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    MinorWord.toPolynomial (k := k) (MinorWord.ofPair I J) =
+      genericMinor (k := k) I * genericMinor (k := k) J := by
+  simp [MinorWord.ofPair, MinorFactor.toPolynomial]
+
+@[simp] lemma degree_ofPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    MinorWord.degree (MinorWord.ofPair I J) = p + q := by
+  simp [MinorWord.ofPair, MinorFactor.degree]
+
+@[simp] lemma rowContent_ofPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    MinorWord.rowContent (MinorWord.ofPair I J) =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  simp [MinorWord.ofPair, MinorFactor.rowContent]
+
+@[simp] lemma colContent_ofPair {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    MinorWord.colContent (MinorWord.ofPair I J) =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  simp [MinorWord.ofPair, MinorFactor.colContent]
+
+lemma pairwisePairLE_ofPair {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hIJ : MinorIndex.PairLE I J) :
+    MinorWord.PairwisePairLE (MinorWord.ofPair I J) := by
+  simp [MinorWord.PairwisePairLE, MinorWord.ofPair, hIJ]
+
+end MinorWord
+
+namespace RawMinorPair
+
+/-- Promote the left raw factor of a raw pair to a `MinorFactor` when its row
+and column slots are already strictly increasing. -/
+def leftFactorOfStrictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hrow : StrictMono P.left.row) (hcol : StrictMono P.left.col) :
+    MinorFactor m n where
+  t := P.p
+  idx := P.left.toMinorIndexOfStrictMono hrow hcol
+
+/-- Promote the right raw factor of a raw pair to a `MinorFactor` when its row
+and column slots are already strictly increasing. -/
+def rightFactorOfStrictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hrow : StrictMono P.right.row) (hcol : StrictMono P.right.col) :
+    MinorFactor m n where
+  t := P.q
+  idx := P.right.toMinorIndexOfStrictMono hrow hcol
+
+/-- Promote a raw two-minor product to a two-factor minor word when both raw
+factors are already in increasing row and column order. -/
+def toMinorWordOfStrictMono {m n : ℕ} (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord m n :=
+  { factors :=
+      [P.leftFactorOfStrictMono hLrow hLcol,
+        P.rightFactorOfStrictMono hRrow hRcol] }
+
+@[simp] lemma toMinorWordOfStrictMono_factors {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol).factors =
+      [P.leftFactorOfStrictMono hLrow hLcol,
+        P.rightFactorOfStrictMono hRrow hRcol] := by
+  rfl
+
+lemma toPolynomial_toMinorWordOfStrictMono {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord.toPolynomial (k := k)
+        (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.toPolynomial (k := k) P := by
+  simp only [MinorWord.toPolynomial, MinorFactor.toPolynomial, toMinorWordOfStrictMono,
+    leftFactorOfStrictMono, rightFactorOfStrictMono, List.map_cons, List.map_nil, List.prod_cons,
+    List.prod_nil, mul_one, toPolynomial]
+  rw [RawMinorIndex.toPolynomial_toMinorIndexOfStrictMono (k := k) P.left hLrow hLcol,
+    RawMinorIndex.toPolynomial_toMinorIndexOfStrictMono (k := k) P.right hRrow hRcol]
+
+lemma rowContent_toMinorWordOfStrictMono {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord.rowContent
+        (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.rowContent P := by
+  simp [RawMinorPair.toMinorWordOfStrictMono,
+    RawMinorPair.leftFactorOfStrictMono, RawMinorPair.rightFactorOfStrictMono,
+    MinorWord.rowContent, MinorFactor.rowContent, RawMinorPair.rowContent]
+
+lemma colContent_toMinorWordOfStrictMono {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord.colContent
+        (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.colContent P := by
+  simp [RawMinorPair.toMinorWordOfStrictMono,
+    RawMinorPair.leftFactorOfStrictMono, RawMinorPair.rightFactorOfStrictMono,
+    MinorWord.colContent, MinorFactor.colContent, RawMinorPair.colContent]
+
+lemma degree_toMinorWordOfStrictMono {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord.degree
+        (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      P.p + P.q := by
+  simp [RawMinorPair.toMinorWordOfStrictMono,
+    RawMinorPair.leftFactorOfStrictMono, RawMinorPair.rightFactorOfStrictMono,
+    MinorWord.degree, MinorFactor.degree]
+
+lemma length_toMinorWordOfStrictMono {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col) :
+    MinorWord.length
+        (P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      max P.p P.q := by
+  simp [RawMinorPair.toMinorWordOfStrictMono,
+    RawMinorPair.leftFactorOfStrictMono, RawMinorPair.rightFactorOfStrictMono,
+    MinorWord.length, MinorFactor.length]
+
+noncomputable def toMinorWordOfSortedOfInjective {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord m n :=
+  P.sorted.toMinorWordOfStrictMono
+    (P.sorted_left_row_strictMono hLrow)
+    (P.sorted_left_col_strictMono hLcol)
+    (P.sorted_right_row_strictMono hRrow)
+    (P.sorted_right_col_strictMono hRcol)
+
+lemma toPolynomial_toMinorWordOfSortedOfInjective {m n : ℕ}
+    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord.toPolynomial (k := k)
+        (P.toMinorWordOfSortedOfInjective hLrow hLcol hRrow hRcol) =
+      P.sortSign (k := k) * RawMinorPair.toPolynomial (k := k) P := by
+  rw [RawMinorPair.toMinorWordOfSortedOfInjective,
+    RawMinorPair.toPolynomial_toMinorWordOfStrictMono,
+    RawMinorPair.toPolynomial_sorted]
+
+lemma rowContent_toMinorWordOfSortedOfInjective {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord.rowContent
+        (P.toMinorWordOfSortedOfInjective hLrow hLcol hRrow hRcol) =
+      RawMinorPair.rowContent P := by
+  rw [RawMinorPair.toMinorWordOfSortedOfInjective,
+    RawMinorPair.rowContent_toMinorWordOfStrictMono,
+    RawMinorPair.rowContent_sorted]
+
+lemma colContent_toMinorWordOfSortedOfInjective {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord.colContent
+        (P.toMinorWordOfSortedOfInjective hLrow hLcol hRrow hRcol) =
+      RawMinorPair.colContent P := by
+  rw [RawMinorPair.toMinorWordOfSortedOfInjective,
+    RawMinorPair.colContent_toMinorWordOfStrictMono,
+    RawMinorPair.colContent_sorted]
+
+lemma degree_toMinorWordOfSortedOfInjective {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord.degree
+        (P.toMinorWordOfSortedOfInjective hLrow hLcol hRrow hRcol) =
+      P.p + P.q := by
+  rw [RawMinorPair.toMinorWordOfSortedOfInjective,
+    RawMinorPair.degree_toMinorWordOfStrictMono]
+  simp [RawMinorPair.sorted]
+
+lemma length_toMinorWordOfSortedOfInjective {m n : ℕ}
+    (P : RawMinorPair m n)
+    (hLrow : Function.Injective P.left.row)
+    (hLcol : Function.Injective P.left.col)
+    (hRrow : Function.Injective P.right.row)
+    (hRcol : Function.Injective P.right.col) :
+    MinorWord.length
+        (P.toMinorWordOfSortedOfInjective hLrow hLcol hRrow hRcol) =
+      max P.p P.q := by
+  rw [RawMinorPair.toMinorWordOfSortedOfInjective,
+    RawMinorPair.length_toMinorWordOfStrictMono]
+  simp [RawMinorPair.sorted]
+
+namespace Reshuffle
+
+lemma rowContent_toMinorWord_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.Reshuffle P)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col) :
+    MinorWord.rowContent
+        (E.toPair.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.rowContent P := by
+  rw [RawMinorPair.rowContent_toMinorWordOfStrictMono, E.rowContent_toPair]
+
+lemma colContent_toMinorWord_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.Reshuffle P)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col) :
+    MinorWord.colContent
+        (E.toPair.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.colContent P := by
+  rw [RawMinorPair.colContent_toMinorWordOfStrictMono, E.colContent_toPair]
+
+end Reshuffle
+
+namespace BiReshuffle
+
+def AllInjective {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P) : Prop :=
+  Function.Injective E.toPair.left.row ∧
+    Function.Injective E.toPair.left.col ∧
+    Function.Injective E.toPair.right.row ∧
+    Function.Injective E.toPair.right.col
+
+noncomputable instance instFintypeAllInjective {m n : ℕ} {P : RawMinorPair m n} :
+    Fintype { E : RawMinorPair.BiReshuffle P // E.AllInjective } := by
+  classical
+  infer_instance
+
+lemma rowContent_toMinorWord_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col) :
+    MinorWord.rowContent
+        (E.toPair.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.rowContent P := by
+  rw [RawMinorPair.rowContent_toMinorWordOfStrictMono, E.rowContent_toPair]
+
+lemma colContent_toMinorWord_toPair {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col) :
+    MinorWord.colContent
+        (E.toPair.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol) =
+      RawMinorPair.colContent P := by
+  rw [RawMinorPair.colContent_toMinorWordOfStrictMono, E.colContent_toPair]
+
+lemma toPair_toPolynomial_eq_zero_of_left_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.left.row) :
+    RawMinorPair.toPolynomial (k := k) E.toPair = 0 :=
+  RawMinorPair.toPolynomial_eq_zero_of_left_row_not_injective (k := k) E.toPair h
+
+lemma toPair_toPolynomial_eq_zero_of_left_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.left.col) :
+    RawMinorPair.toPolynomial (k := k) E.toPair = 0 :=
+  RawMinorPair.toPolynomial_eq_zero_of_left_col_not_injective (k := k) E.toPair h
+
+lemma toPair_toPolynomial_eq_zero_of_right_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.right.row) :
+    RawMinorPair.toPolynomial (k := k) E.toPair = 0 :=
+  RawMinorPair.toPolynomial_eq_zero_of_right_row_not_injective (k := k) E.toPair h
+
+lemma toPair_toPolynomial_eq_zero_of_right_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.right.col) :
+    RawMinorPair.toPolynomial (k := k) E.toPair = 0 :=
+  RawMinorPair.toPolynomial_eq_zero_of_right_col_not_injective (k := k) E.toPair h
+
+lemma toPair_laplacePolynomial_eq_zero_of_left_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.left.row) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 := by
+  simp [RawMinorPair.laplacePolynomial,
+    E.toPair_toPolynomial_eq_zero_of_left_row_not_injective (k := k) h]
+
+lemma toPair_laplacePolynomial_eq_zero_of_left_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.left.col) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 := by
+  simp [RawMinorPair.laplacePolynomial,
+    E.toPair_toPolynomial_eq_zero_of_left_col_not_injective (k := k) h]
+
+lemma toPair_laplacePolynomial_eq_zero_of_right_row_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.right.row) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 := by
+  simp [RawMinorPair.laplacePolynomial,
+    E.toPair_toPolynomial_eq_zero_of_right_row_not_injective (k := k) h]
+
+lemma toPair_laplacePolynomial_eq_zero_of_right_col_not_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ Function.Injective E.toPair.right.col) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 := by
+  simp [RawMinorPair.laplacePolynomial,
+    E.toPair_toPolynomial_eq_zero_of_right_col_not_injective (k := k) h]
+
+lemma toPair_left_row_injective_of_strictMono {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : StrictMono E.toPair.left.row) :
+    Function.Injective E.toPair.left.row :=
+  h.injective
+
+lemma toPair_left_col_injective_of_strictMono {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : StrictMono E.toPair.left.col) :
+    Function.Injective E.toPair.left.col :=
+  h.injective
+
+lemma toPair_right_row_injective_of_strictMono {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : StrictMono E.toPair.right.row) :
+    Function.Injective E.toPair.right.row :=
+  h.injective
+
+lemma toPair_right_col_injective_of_strictMono {m n : ℕ} {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : StrictMono E.toPair.right.col) :
+    Function.Injective E.toPair.right.col :=
+  h.injective
+
+lemma toPair_laplacePolynomial_eq_zero_of_not_all_injective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h :
+      ¬ (Function.Injective E.toPair.left.row ∧
+        Function.Injective E.toPair.left.col ∧
+        Function.Injective E.toPair.right.row ∧
+        Function.Injective E.toPair.right.col)) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 := by
+  classical
+  push_neg at h
+  by_cases hLrow : Function.Injective E.toPair.left.row
+  · by_cases hLcol : Function.Injective E.toPair.left.col
+    · by_cases hRrow : Function.Injective E.toPair.right.row
+      · have hRcol : ¬ Function.Injective E.toPair.right.col := h hLrow hLcol hRrow
+        exact E.toPair_laplacePolynomial_eq_zero_of_right_col_not_injective (k := k) hRcol
+      · exact E.toPair_laplacePolynomial_eq_zero_of_right_row_not_injective (k := k) hRrow
+    · exact E.toPair_laplacePolynomial_eq_zero_of_left_col_not_injective (k := k) hLcol
+  · exact E.toPair_laplacePolynomial_eq_zero_of_left_row_not_injective (k := k) hLrow
+
+lemma toPair_laplacePolynomial_eq_zero_of_not_allInjective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (h : ¬ E.AllInjective) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair = 0 :=
+  E.toPair_laplacePolynomial_eq_zero_of_not_all_injective (k := k) h
+
+lemma sum_laplacePolynomial_eq_sum_allInjective {m n : ℕ}
+    {k : Type*} [Field k] {P : RawMinorPair m n}
+    (coeff : RawMinorPair.BiReshuffle P → k) :
+    (∑ E : RawMinorPair.BiReshuffle P,
+      MvPolynomial.C (coeff E) *
+        RawMinorPair.laplacePolynomial (k := k) E.toPair) =
+      ∑ E : { E : RawMinorPair.BiReshuffle P // E.AllInjective },
+        MvPolynomial.C (coeff E.1) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair := by
+  classical
+  let f : RawMinorPair.BiReshuffle P → MvPolynomial (Fin m × Fin n) k :=
+    fun E =>
+      MvPolynomial.C (coeff E) *
+        RawMinorPair.laplacePolynomial (k := k) E.toPair
+  let s : Finset (RawMinorPair.BiReshuffle P) :=
+    Finset.univ.filter fun E => E.AllInjective
+  have hsum_s : (∑ E : RawMinorPair.BiReshuffle P, f E) = Finset.sum s f := by
+    symm
+    refine Finset.sum_subset (by intro E hE; simp) ?_
+    intro E _hE hnotmem
+    have hnot : ¬ E.AllInjective := by
+      intro h
+      exact hnotmem (by simp [s, h])
+    simp [E.toPair_laplacePolynomial_eq_zero_of_not_allInjective (k := k) hnot]
+  have hattach :
+      Finset.sum s f =
+        ∑ E : { E : RawMinorPair.BiReshuffle P // E.AllInjective }, f E.1 := by
+    let e :
+        { E : RawMinorPair.BiReshuffle P // E ∈ s } ≃
+          { E : RawMinorPair.BiReshuffle P // E.AllInjective } :=
+      Equiv.subtypeEquivRight fun E => by simp [s]
+    calc
+      Finset.sum s f = ∑ E : { E // E ∈ s }, f E.1 := by
+        simpa using (s.sum_attach f).symm
+      _ = ∑ E : { E : RawMinorPair.BiReshuffle P // E.AllInjective }, f E.1 := by
+        exact Fintype.sum_equiv e (fun E => f E.1) (fun E => f E.1)
+          (by intro E; rfl)
+  rw [hsum_s, hattach]
+
+noncomputable def toSortedMinorWordOfAllInjective {m n : ℕ}
+    {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) : MinorWord m n :=
+  E.toPair.toMinorWordOfSortedOfInjective hE.1 hE.2.1 hE.2.2.1 hE.2.2.2
+
+lemma toPolynomial_toSortedMinorWordOfAllInjective {m n : ℕ}
+    {k : Type*} [CommRing k] {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) :
+    MinorWord.toPolynomial (k := k) (E.toSortedMinorWordOfAllInjective hE) =
+      E.toPair.sortSign (k := k) *
+        RawMinorPair.toPolynomial (k := k) E.toPair := by
+  exact RawMinorPair.toPolynomial_toMinorWordOfSortedOfInjective
+    (k := k) E.toPair hE.1 hE.2.1 hE.2.2.1 hE.2.2.2
+
+lemma rowContent_toSortedMinorWordOfAllInjective {m n : ℕ}
+    {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) :
+    MinorWord.rowContent (E.toSortedMinorWordOfAllInjective hE) =
+      RawMinorPair.rowContent P := by
+  rw [RawMinorPair.BiReshuffle.toSortedMinorWordOfAllInjective,
+    RawMinorPair.rowContent_toMinorWordOfSortedOfInjective,
+    E.rowContent_toPair]
+
+lemma colContent_toSortedMinorWordOfAllInjective {m n : ℕ}
+    {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) :
+    MinorWord.colContent (E.toSortedMinorWordOfAllInjective hE) =
+      RawMinorPair.colContent P := by
+  rw [RawMinorPair.BiReshuffle.toSortedMinorWordOfAllInjective,
+    RawMinorPair.colContent_toMinorWordOfSortedOfInjective,
+    E.colContent_toPair]
+
+lemma degree_toSortedMinorWordOfAllInjective {m n : ℕ}
+    {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) :
+    MinorWord.degree (E.toSortedMinorWordOfAllInjective hE) = P.p + P.q := by
+  rw [RawMinorPair.BiReshuffle.toSortedMinorWordOfAllInjective,
+    RawMinorPair.degree_toMinorWordOfSortedOfInjective]
+  simp [RawMinorPair.BiReshuffle.toPair]
+  have hle : E.r ≤ P.p + P.q := E.hle
+  omega
+
+lemma length_toSortedMinorWordOfAllInjective {m n : ℕ}
+    {P : RawMinorPair m n}
+    (E : RawMinorPair.BiReshuffle P)
+    (hE : E.AllInjective) :
+    MinorWord.length (E.toSortedMinorWordOfAllInjective hE) =
+      max E.r (P.p + P.q - E.r) := by
+  rw [RawMinorPair.BiReshuffle.toSortedMinorWordOfAllInjective,
+    RawMinorPair.length_toMinorWordOfSortedOfInjective]
+  simp [RawMinorPair.BiReshuffle.toPair]
+
+end BiReshuffle
+
+end RawMinorPair
+
+lemma sum_attach_erase_eq_neg_of_sum_eq_zero
+    {α M : Type*} [Fintype α] [DecidableEq α] [AddCommGroup M]
+    (pivot : α) (f : α → M)
+    (hsum : (∑ x : α, f x) = 0) :
+    (∑ x : { x : α // x ∈ Finset.univ.erase pivot }, f x.1) =
+      -f pivot := by
+  classical
+  let s : Finset α := Finset.univ.erase pivot
+  have hsplit :
+      (∑ x : α, f x) =
+        f pivot + Finset.sum s f := by
+    have hsplit' :
+        f pivot + Finset.sum s f = ∑ x : α, f x := by
+      simp [s]
+    exact hsplit'.symm
+  have hsubtype :
+      Finset.sum s f = ∑ x : { x : α // x ∈ s }, f x.1 := by
+    simpa using (s.sum_attach f).symm
+  have hrest_zero :
+      f pivot + Finset.sum s f = 0 := by
+    simpa [hsplit] using hsum
+  have hrest :
+      Finset.sum s f = -f pivot := by
+    exact eq_neg_of_add_eq_zero_left (by simpa [add_comm] using hrest_zero)
+  simpa [s] using hsubtype.symm.trans hrest
+
+lemma sum_option_eq_none_add_some
+    {α M : Type*} [Fintype α] [AddCommMonoid M]
+    (f : Option α → M) :
+    (∑ x : Option α, f x) = f none + ∑ a : α, f (some a) := by
+  classical
+  simp
+
+lemma sum_option_eq_zero_iff_none_add_some_eq_zero
+    {α M : Type*} [Fintype α] [AddCommMonoid M]
+    (f : Option α → M) :
+    (∑ x : Option α, f x) = 0 ↔
+      f none + ∑ a : α, f (some a) = 0 := by
+  rw [sum_option_eq_none_add_some]
+
+lemma sum_some_eq_neg_none_of_sum_option_eq_zero
+    {α M : Type*} [Fintype α] [AddCommGroup M]
+    (f : Option α → M)
+    (hsum : (∑ x : Option α, f x) = 0) :
+    (∑ a : α, f (some a)) = -f none := by
+  rw [sum_option_eq_none_add_some] at hsum
+  exact eq_neg_of_add_eq_zero_left (by simpa [add_comm] using hsum)
+
+lemma sum_some_eq_of_none_eq_neg_of_sum_option_eq_zero
+    {α M : Type*} [Fintype α] [AddCommGroup M]
+    (f : Option α → M) {P : M}
+    (hnone : f none = -P)
+    (hsum : (∑ x : Option α, f x) = 0) :
+    (∑ a : α, f (some a)) = P := by
+  have h := sum_some_eq_neg_none_of_sum_option_eq_zero f hsum
+  simpa [hnone] using h
+
+lemma fintype_sum_eq_sum_of_injective_support
+    {α β M : Type*} [Fintype α] [Fintype β] [AddCommMonoid M]
+    (g : β → α) (hg : Function.Injective g) (f : α → M)
+    (hzero : ∀ a : α, a ∉ Set.range g → f a = 0) :
+    (∑ a : α, f a) = ∑ b : β, f (g b) := by
+  classical
+  let s : Finset α := Finset.univ.image g
+  have hsum_s : (∑ a : α, f a) = ∑ a ∈ s, f a := by
+    symm
+    refine Finset.sum_subset (by intro a ha; simp) ?_
+    intro a _ha hnot
+    exact hzero a (by
+      intro hrange
+      rcases hrange with ⟨b, rfl⟩
+      exact hnot (by simp [s]))
+  have hsum_image : (∑ a ∈ s, f a) = ∑ b : β, f (g b) := by
+    rw [Finset.sum_image]
+    intro x _hx y _hy hxy
+    exact hg hxy
+  exact hsum_s.trans hsum_image
+
+lemma fintype_sum_eq_sum_subtype_of_eq_zero_off
+    {α M : Type*} [Fintype α] [AddCommMonoid M]
+    (s : Finset α) (f : α → M)
+    (hzero : ∀ a : α, a ∉ s → f a = 0) :
+    (∑ a : α, f a) = ∑ a : { a : α // a ∈ s }, f a.1 := by
+  classical
+  let g : { a : α // a ∈ s } → α := fun a => a.1
+  have hg : Function.Injective g := Subtype.val_injective
+  rw [fintype_sum_eq_sum_of_injective_support g hg f]
+  intro a ha
+  exact hzero a (by
+    intro has
+    exact ha ⟨⟨a, has⟩, rfl⟩)
+
+lemma signed_subtype_sum_eq_zero_of_total_sum_eq_zero
+    {α σ k : Type*} [Fintype α] [Field k]
+    {support : α → Prop} [Fintype { a : α // support a }]
+    (pivot : α) (hpivot_not : ¬ support pivot)
+    (coeff : α → k) (term : α → MvPolynomial σ k)
+    (hpivot_coeff : coeff pivot = (-1 : k))
+    (hzero :
+      ∀ a : α, a ≠ pivot → ¬ support a →
+        MvPolynomial.C (coeff a) * term a = 0)
+    (hsum :
+      (∑ a : α, MvPolynomial.C (coeff a) * term a) = 0) :
+    ∃ coeffSupport : { a : α // support a } → k,
+      - term pivot +
+        ∑ a : { a : α // support a },
+          MvPolynomial.C (coeffSupport a) * term a.1 = 0 := by
+  classical
+  let g : Option { a : α // support a } → α :=
+    fun x =>
+      match x with
+      | none => pivot
+      | some a => a.1
+  let f : α → MvPolynomial σ k :=
+    fun a => MvPolynomial.C (coeff a) * term a
+  have hg : Function.Injective g := by
+    intro x y hxy
+    cases x with
+    | none =>
+        cases y with
+        | none => rfl
+        | some y =>
+            exfalso
+            change pivot = y.1 at hxy
+            have hy : support pivot := by
+              rw [hxy]
+              exact y.2
+            exact hpivot_not hy
+    | some x =>
+        cases y with
+        | none =>
+            exfalso
+            change x.1 = pivot at hxy
+            have hx : support pivot := by
+              rw [← hxy]
+              exact x.2
+            exact hpivot_not hx
+        | some y =>
+            change x.1 = y.1 at hxy
+            exact congrArg some (Subtype.ext hxy)
+  have hzero_range : ∀ a : α, a ∉ Set.range g → f a = 0 := by
+    intro a ha
+    by_cases hap : a = pivot
+    · exact False.elim (ha ⟨none, by rw [hap]⟩)
+    · by_cases hsupp : support a
+      · exact False.elim (ha ⟨some ⟨a, hsupp⟩, by rfl⟩)
+      · exact hzero a hap hsupp
+  have hsum_range :
+      (∑ a : α, f a) =
+        ∑ x : Option { a : α // support a }, f (g x) := by
+    exact fintype_sum_eq_sum_of_injective_support g hg f hzero_range
+  have hoption :
+      (∑ x : Option { a : α // support a }, f (g x)) =
+        f pivot + ∑ a : { a : α // support a }, f a.1 := by
+    rw [sum_option_eq_none_add_some]
+  have hmain :
+      f pivot + ∑ a : { a : α // support a }, f a.1 = 0 := by
+    simpa [f, hsum_range, hoption] using hsum
+  refine ⟨fun a => coeff a.1, ?_⟩
+  simpa [f, hpivot_coeff] using hmain
+
+lemma exists_fintype_coeff_pushforward_polynomial_sum
+    {α β σ k : Type*} [Fintype α] [Fintype β] [Field k]
+    (g : α → β) (coeff : α → k) (term : β → MvPolynomial σ k) :
+    ∃ coeff' : β → k,
+      (∑ a : α, MvPolynomial.C (coeff a) * term (g a)) =
+        ∑ b : β, MvPolynomial.C (coeff' b) * term b := by
+  classical
+  let cα : α →₀ k := Finsupp.equivFunOnFinite.symm coeff
+  let cβ : β →₀ k := Finsupp.mapDomain g cα
+  refine ⟨fun b => cβ b, ?_⟩
+  change
+    (∑ a : α, MvPolynomial.C (coeff a) * term (g a)) =
+      ∑ b : β, MvPolynomial.C (cβ b) * term b
+  have hright :
+      (∑ b : β, MvPolynomial.C (cβ b) * term b) =
+        cβ.sum (fun b r => MvPolynomial.C r * term b) := by
+    rw [Finsupp.sum_fintype]
+    intro b
+    simp
+  rw [hright]
+  change
+    (∑ a : α, MvPolynomial.C (coeff a) * term (g a)) =
+      (Finsupp.mapDomain g cα).sum
+        (fun b r => MvPolynomial.C r * term b)
+  rw [Finsupp.sum_mapDomain_index]
+  · simp [cα, Finsupp.sum_fintype]
+  · intro b
+    simp
+  · intro b a₁ a₂
+    simp [add_mul, MvPolynomial.C_add]
+
+lemma MvPolynomial.C_isUnit_of_isUnit
+    {σ k : Type*} [CommSemiring k] {a : k}
+    (ha : IsUnit a) :
+    IsUnit (MvPolynomial.C a : MvPolynomial σ k) := by
+  exact ha.map MvPolynomial.C
+
+lemma MvPolynomial.C_unit_mul_eq_zero_iff
+    {σ k : Type*} [CommSemiring k] {a : k}
+    (ha : IsUnit a) (P : MvPolynomial σ k) :
+    MvPolynomial.C a * P = 0 ↔ P = 0 := by
+  constructor
+  · intro h
+    rcases MvPolynomial.C_isUnit_of_isUnit (σ := σ) ha with ⟨u, hu⟩
+    have h' := congrArg (fun Q : MvPolynomial σ k => ↑u⁻¹ * Q) h
+    simpa [← hu, mul_assoc] using h'
+  · intro h
+    simp [h]
+
+lemma signed_sum_cancel_common_C_unit
+    {α σ k : Type*} [Fintype α] [Field k]
+    (a : k) (ha : IsUnit a)
+    (coeff : α → k)
+    (P : MvPolynomial σ k) (Q : α → MvPolynomial σ k)
+    (h :
+      -(MvPolynomial.C a * P) +
+        ∑ x : α, MvPolynomial.C (coeff x) *
+          (MvPolynomial.C a * Q x) = 0) :
+    - P + ∑ x : α, MvPolynomial.C (coeff x) * Q x = 0 := by
+  let R : MvPolynomial σ k := - P + ∑ x : α, MvPolynomial.C (coeff x) * Q x
+  have hfactor :
+      - (MvPolynomial.C a * P) +
+        ∑ x : α, MvPolynomial.C (coeff x) *
+          (MvPolynomial.C a * Q x) =
+        MvPolynomial.C a * R := by
+    have hsum :
+        (∑ x : α, MvPolynomial.C (coeff x) *
+          (MvPolynomial.C a * Q x)) =
+          MvPolynomial.C a *
+            ∑ x : α, MvPolynomial.C (coeff x) * Q x := by
+      rw [Finset.mul_sum]
+      apply Finset.sum_congr rfl
+      intro x _hx
+      ring
+    rw [hsum]
+    simp [R, mul_add]
+  have hzero : MvPolynomial.C a * R = 0 := by
+    simpa [hfactor] using h
+  exact (MvPolynomial.C_unit_mul_eq_zero_iff (σ := σ) ha R).mp hzero
+
+lemma RawMinorPair.laplaceCoeff_isUnit
+    {m n : ℕ} {k : Type*} [Field k]
+    (P : RawMinorPair m n) :
+    IsUnit (RawMinorPair.laplaceCoeff (k := k) P) := by
+  unfold RawMinorPair.laplaceCoeff
+  exact isUnit_iff_ne_zero.mpr
+    (pow_ne_zero _ (neg_ne_zero.mpr (one_ne_zero : (1 : k) ≠ 0)))
+
+/-- Standard minor words: local-word analogue of standard Young bitableaux. -/
+abbrev StandardMinorWord (m n : ℕ) :=
+  { W : MinorWord m n // MinorWord.PairwisePairLE W }
+
+namespace YoungBitableau
+
+lemma isStandard_iff_adjacent_pairLE {m n : ℕ} (B : YoungBitableau m n) :
+    B.IsStandard ↔
+      ∀ (a b : Fin B.v), a.val + 1 = b.val →
+        MinorIndex.PairLE (B.minorindex a) (B.minorindex b) := by
+  constructor
+  · intro hstd a b hnext
+    refine ⟨B.shape_antitone a b (by grind), ?_⟩
+    intro j
+    exact hstd a b hnext j
+  · intro hstd a b hnext j
+    rcases hstd a b hnext with ⟨hsize, hcomp⟩
+    specialize hcomp j
+    simpa using hcomp
+
+lemma IsStandard.adjacent_pairLE {m n : ℕ} {B : YoungBitableau m n}
+    (hB : B.IsStandard) {a b : Fin B.v} (hnext : a.val + 1 = b.val) :
+    MinorIndex.PairLE (B.minorindex a) (B.minorindex b) :=
+  (isStandard_iff_adjacent_pairLE B).mp hB a b hnext
+
+lemma isStandard_of_adjacent_pairLE {m n : ℕ} {B : YoungBitableau m n}
+    (hB : ∀ (a b : Fin B.v), a.val + 1 = b.val →
+      MinorIndex.PairLE (B.minorindex a) (B.minorindex b)) :
+    B.IsStandard :=
+  (isStandard_iff_adjacent_pairLE B).mpr hB
+
+lemma IsStandard.head_pairLE {m n : ℕ} {B : YoungBitableau m n}
+    (hB : B.IsStandard) (hv : 1 < B.v) :
+    MinorIndex.PairLE
+      (B.minorindex ⟨0, by omega⟩)
+      (B.minorindex ⟨1, hv⟩) := by
+  exact hB.adjacent_pairLE (a := ⟨0, by omega⟩) (b := ⟨1, hv⟩) rfl
+
+lemma isStandard_of_v_le_one {m n : ℕ} {B : YoungBitableau m n}
+    (hBv : B.v ≤ 1) : B.IsStandard := by
+  intro a b hnext j
+  have hb : b.val < B.v := b.isLt
+  have hfalse : False := by omega
+  exact False.elim hfalse
+
+lemma two_le_v_of_not_isStandard {m n : ℕ} {B : YoungBitableau m n}
+    (hB : ¬ B.IsStandard) : 2 ≤ B.v := by
+  by_contra hlt
+  exact hB (isStandard_of_v_le_one (B := B) (by omega))
+
+/-- Prepend one minor to a bitableau.  The hypothesis says the new first
+minor is at least as large as the old first column, so the Young shape remains
+antitone. -/
+noncomputable def consMinor {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t) :
+    YoungBitableau m n where
+  v := B.v + 1
+  size := Fin.cons t B.size
+  size_pos := by
+    intro a
+    cases a using Fin.cases with
+    | zero =>
+        simpa [Fin.cons_zero] using ht
+    | succ a =>
+        simpa [Fin.cons_succ] using B.size_pos a
+  minorindex := fun a => by
+    cases a using Fin.cases with
+    | zero =>
+        simpa [Fin.cons_zero] using I
+    | succ a =>
+        simpa [Fin.cons_succ] using B.minorindex a
+  shape_antitone := by
+    intro a b hab
+    cases b using Fin.cases with
+    | zero =>
+        cases a using Fin.cases with
+        | zero =>
+            rfl
+        | succ a =>
+            have hbad : a.succ.val ≤ (0 : Fin (B.v + 1)).val := hab
+            simp at hbad
+    | succ b =>
+        cases a using Fin.cases with
+        | zero =>
+            exact le_trans (size_le_length B b) hB
+        | succ a =>
+            have hab' : a ≤ b := by
+              simpa [Fin.succ_le_succ_iff] using hab
+            exact B.shape_antitone a b hab'
+
+@[simp] lemma consMinor_size_zero {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t) :
+    (consMinor ht I B hB).size ⟨0, Nat.succ_pos B.v⟩ = t := by
+  simp [consMinor]
+
+@[simp] lemma consMinor_size_succ {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t)
+    (a : Fin B.v) :
+    (consMinor ht I B hB).size a.succ = B.size a := by
+  simp [consMinor]
+
+@[simp] lemma toPolynomial_consMinor {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t) :
+    toPolynomial (k := k) (consMinor ht I B hB) =
+      genericMinor (k := k) I * toPolynomial (k := k) B := by
+  change
+    (∏ a : Fin (B.v + 1), genericMinor ((consMinor ht I B hB).minorindex a)) =
+      genericMinor (k := k) I *
+        ∏ a : Fin B.v, genericMinor (B.minorindex a)
+  rw [Fin.prod_univ_succ]
+  simp [consMinor]
+
+@[simp] lemma degree_consMinor {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t) :
+    degree (consMinor ht I B hB) = t + degree B := by
+  change
+    (∑ a : Fin (B.v + 1), (consMinor ht I B hB).size a) =
+      t + ∑ a : Fin B.v, B.size a
+  rw [Fin.sum_univ_succ]
+  simp [consMinor]
+
+@[simp] lemma length_consMinor {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hB : B.length ≤ t) :
+    length (consMinor ht I B hB) = t := by
+  rw [length_eq_size_zero (consMinor ht I B hB) (Nat.succ_pos B.v)]
+  simp [consMinor]
+
+lemma consMinor_isStandard {m n t : ℕ}
+    (ht : 0 < t) (I : MinorIndex m n t)
+    (B : YoungBitableau m n) (hBlen : B.length ≤ t)
+    (hIB : ∀ hv : 0 < B.v,
+      MinorIndex.PairLE I (B.minorindex ⟨0, hv⟩))
+    (hBstd : B.IsStandard) :
+    (consMinor ht I B hBlen).IsStandard := by
+  rw [isStandard_iff_adjacent_pairLE]
+  intro a b hnext
+  cases a using Fin.cases with
+  | zero =>
+      cases b using Fin.cases with
+      | zero =>
+          have hbad := hnext
+          simp at hbad
+      | succ b =>
+          have hbval : b.val = 0 := by
+            exact (Nat.succ.inj hnext).symm
+          have hv : 0 < B.v := by
+            simpa [hbval] using b.isLt
+          have hb0 : b = ⟨0, hv⟩ := by
+            apply Fin.ext
+            exact hbval
+          change MinorIndex.PairLE I (B.minorindex b)
+          rw [hb0]
+          exact hIB hv
+  | succ a =>
+      cases b using Fin.cases with
+      | zero =>
+          have hbad := hnext
+          simp at hbad
+      | succ b =>
+          have hnext' : a.val + 1 = b.val := by
+            simpa using hnext
+          have htail :=
+            (isStandard_iff_adjacent_pairLE B).mp hBstd a b hnext'
+          simpa [consMinor] using htail
+
+lemma consMinor_consMinor_isStandard {m n p q : ℕ}
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (B : YoungBitableau m n)
+    (hBlen : B.length ≤ q)
+    (hIJ : MinorIndex.PairLE I J)
+    (hJB : ∀ hv : 0 < B.v,
+      MinorIndex.PairLE J (B.minorindex ⟨0, hv⟩))
+    (hBstd : B.IsStandard) :
+    (consMinor hp I
+      (consMinor hq J B hBlen)
+      (by simpa [length_consMinor] using hIJ.size_le)).IsStandard := by
+  refine consMinor_isStandard hp I
+    (consMinor hq J B hBlen)
+    (by simpa [length_consMinor] using hIJ.size_le)
+    ?_ ?_
+  · intro _hv
+    change MinorIndex.PairLE I J
+    exact hIJ
+  · exact consMinor_isStandard hq J B hBlen hJB hBstd
+
+@[simp] lemma toPolynomial_consMinor_consMinor {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (B : YoungBitableau m n)
+    (hBlen : B.length ≤ q)
+    (hpq : q ≤ p) :
+    toPolynomial (k := k)
+      (consMinor hp I (consMinor hq J B hBlen)
+        (by simpa [length_consMinor] using hpq)) =
+      genericMinor (k := k) I * genericMinor (k := k) J *
+        toPolynomial (k := k) B := by
+  simp [mul_assoc]
+
+@[simp] lemma degree_consMinor_consMinor {m n p q : ℕ}
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (B : YoungBitableau m n)
+    (hBlen : B.length ≤ q)
+    (hpq : q ≤ p) :
+    degree
+      (consMinor hp I (consMinor hq J B hBlen)
+        (by simpa [length_consMinor] using hpq)) =
+      p + q + degree B := by
+  simp [Nat.add_assoc]
+
+@[simp] lemma length_consMinor_consMinor {m n p q : ℕ}
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (B : YoungBitableau m n)
+    (hBlen : B.length ≤ q)
+    (hpq : q ≤ p) :
+    length
+      (consMinor hp I (consMinor hq J B hBlen)
+        (by simpa [length_consMinor] using hpq)) = p := by
+  simp
+
+/-- Remove the first minor from a nonempty bitableau. -/
+noncomputable def tail {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    YoungBitableau m n where
+  v := B.v - 1
+  size := fun a => B.size ⟨a.val + 1, by omega⟩
+  size_pos := by
+    intro a
+    exact B.size_pos ⟨a.val + 1, by omega⟩
+  minorindex := fun a => B.minorindex ⟨a.val + 1, by omega⟩
+  shape_antitone := by
+    intro a b hab
+    apply B.shape_antitone
+    change a.val + 1 ≤ b.val + 1
+    exact Nat.succ_le_succ hab
+
+@[simp] lemma tail_v {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    (tail B hv).v = B.v - 1 := rfl
+
+lemma tail_v_lt {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    (tail B hv).v < B.v := by
+  simp [tail]
+  omega
+
+@[simp] lemma tail_size {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v)
+    (a : Fin (B.v - 1)) :
+    (tail B hv).size a = B.size ⟨a.val + 1, by omega⟩ := rfl
+
+@[simp] lemma tail_minorindex {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v)
+    (a : Fin (B.v - 1)) :
+    (tail B hv).minorindex a = B.minorindex ⟨a.val + 1, by omega⟩ := rfl
+
+lemma length_tail_le_head {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    (tail B hv).length ≤ B.size ⟨0, hv⟩ := by
+  unfold length
+  change
+    (Finset.univ.sup
+      (fun a : Fin (B.v - 1) => B.size ⟨a.val + 1, by omega⟩)) ≤
+      B.size ⟨0, hv⟩
+  apply Finset.sup_le
+  intro a _ha
+  exact B.shape_antitone ⟨0, hv⟩ ⟨a.val + 1, by omega⟩ (by
+    change 0 ≤ a.val + 1
+    omega)
+
+lemma tail_isStandard_of_isStandard {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v)
+    (hB : B.IsStandard) :
+    (tail B hv).IsStandard := by
+  apply isStandard_of_adjacent_pairLE
+  intro a b hnext
+  have ha : a.val < B.v - 1 := by
+    change a.val < B.v - 1
+    exact a.isLt
+  have hb : b.val < B.v - 1 := by
+    change b.val < B.v - 1
+    exact b.isLt
+  change
+    MinorIndex.PairLE
+      (B.minorindex ⟨a.val + 1, by omega⟩)
+      (B.minorindex ⟨b.val + 1, by omega⟩)
+  apply hB.adjacent_pairLE
+  change a.val + 1 + 1 = b.val + 1
+  omega
+
+lemma head_pairLE_tail_head_of_isStandard {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 1 < B.v)
+    (hB : B.IsStandard) :
+    MinorIndex.PairLE
+      (B.minorindex ⟨0, by omega⟩)
+      ((tail B (by omega)).minorindex ⟨0, by simp [tail]; omega⟩) := by
+  change
+    MinorIndex.PairLE
+      (B.minorindex ⟨0, by omega⟩)
+      (B.minorindex ⟨1, by omega⟩)
+  exact hB.head_pairLE hv
+
+lemma toPolynomial_eq_head_mul_tail {m n : ℕ}
+    {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    toPolynomial (k := k) B =
+      genericMinor (k := k) (B.minorindex ⟨0, hv⟩) *
+        toPolynomial (k := k) (tail B hv) := by
+  cases B with
+  | mk v size size_pos minorindex shape_antitone =>
+      cases v with
+      | zero =>
+          cases hv
+      | succ v =>
+          change
+            (∏ a : Fin (v + 1), genericMinor (minorindex a)) =
+              genericMinor (minorindex ⟨0, Nat.succ_pos v⟩) *
+                ∏ a : Fin v,
+                  genericMinor (minorindex ⟨a.val + 1, by omega⟩)
+          rw [Fin.prod_univ_succ]
+          rfl
+
+lemma degree_eq_head_add_tail {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    degree B = B.size ⟨0, hv⟩ + degree (tail B hv) := by
+  cases B with
+  | mk v size size_pos minorindex shape_antitone =>
+      cases v with
+      | zero =>
+          cases hv
+      | succ v =>
+          change
+            (∑ a : Fin (v + 1), size a) =
+              size ⟨0, Nat.succ_pos v⟩ +
+                ∑ a : Fin v, size ⟨a.val + 1, by omega⟩
+          rw [Fin.sum_univ_succ]
+          rfl
+
+/-- Forget the Young-shape proof and view a Young bitableau as a minor word. -/
+noncomputable def toMinorWord {m n : ℕ} (B : YoungBitableau m n) : MinorWord m n :=
+  ⟨List.ofFn fun a : Fin B.v => { t := B.size a, idx := B.minorindex a }⟩
+
+lemma toMinorWord_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (B : YoungBitableau m n) :
+    MinorWord.toPolynomial (k := k) (YoungBitableau.toMinorWord B) =
+      YoungBitableau.toPolynomial (k := k) B := by
+  cases B with
+  | mk v size size_pos minorindex shape_antitone =>
+      simpa [YoungBitableau.toMinorWord, YoungBitableau.toPolynomial,
+        MinorWord.toPolynomial, MinorFactor.toPolynomial,
+        Function.comp_def] using
+        (Fin.prod_ofFn
+          (fun a : Fin v => genericMinor (k := k) (minorindex a)))
+
+lemma toMinorWord_degree {m n : ℕ} (B : YoungBitableau m n) :
+    MinorWord.degree (YoungBitableau.toMinorWord B) =
+      YoungBitableau.degree B := by
+  cases B with
+  | mk v size size_pos minorindex shape_antitone =>
+      change
+        List.foldr (fun F d => F.t + d) 0
+            (List.ofFn fun a : Fin v =>
+              ({ t := size a, idx := minorindex a } : MinorFactor m n)) =
+          ∑ x : Fin v, size x
+      revert size size_pos minorindex shape_antitone
+      induction v with
+      | zero =>
+          intro size size_pos minorindex shape_antitone
+          simp
+      | succ v ih =>
+          intro size size_pos minorindex shape_antitone
+          have htail := ih
+            (fun a : Fin v => size a.succ)
+            (fun a : Fin v => size_pos a.succ)
+            (fun a : Fin v => minorindex a.succ)
+            (fun a b hab => shape_antitone a.succ b.succ
+              (Fin.succ_le_succ_iff.mpr hab))
+          rw [List.ofFn_succ, Fin.sum_univ_succ]
+          simpa using htail
+
+lemma toMinorWord_length {m n : ℕ} (B : YoungBitableau m n) :
+    MinorWord.length (YoungBitableau.toMinorWord B) =
+      YoungBitableau.length B := by
+  classical
+  apply le_antisymm
+  · apply MinorWord.length_le_of_forall_mem_factor_le
+    intro F hF
+    rw [YoungBitableau.toMinorWord] at hF
+    rcases (List.mem_ofFn' _ F).mp hF with ⟨a, ha⟩
+    have ht : F.t = B.size a := by
+      simpa using congrArg MinorFactor.t ha.symm
+    rw [ht]
+    exact YoungBitableau.size_le_length B a
+  · by_cases hv : 0 < B.v
+    · let F : MinorFactor m n :=
+        { t := B.size ⟨0, hv⟩, idx := B.minorindex ⟨0, hv⟩ }
+      have hFmem : F ∈ (YoungBitableau.toMinorWord B).factors := by
+        rw [YoungBitableau.toMinorWord]
+        exact (List.mem_ofFn' _ F).mpr ⟨⟨0, hv⟩, rfl⟩
+      have hle : F.t ≤ MinorWord.length (YoungBitableau.toMinorWord B) :=
+        MinorWord.length_le_of_mem_factor hFmem
+      simpa [F, YoungBitableau.length_eq_size_zero B hv] using hle
+    · have hv0 : B.v = 0 := by omega
+      haveI : IsEmpty (Fin B.v) := by
+        rw [hv0]
+        infer_instance
+      simp [YoungBitableau.toMinorWord, YoungBitableau.length]
+
+lemma toPolynomial_eq_head_minorWord_mul_erased_tail
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    YoungBitableau.toPolynomial (k := k) B =
+      MinorWord.toPolynomial (k := k)
+        ⟨({ t := B.size ⟨0, hv⟩,
+            idx := B.minorindex ⟨0, hv⟩ } : MinorFactor m n) ::
+          (MinorWord.eraseUnits
+            (YoungBitableau.toMinorWord (YoungBitableau.tail B hv))).factors⟩ := by
+  rw [YoungBitableau.toPolynomial_eq_head_mul_tail (k := k) B hv]
+  rw [← YoungBitableau.toMinorWord_toPolynomial
+    (k := k) (YoungBitableau.tail B hv)]
+  rw [← MinorWord.eraseUnits_toPolynomial
+    (W := YoungBitableau.toMinorWord (YoungBitableau.tail B hv))]
+  simp [MinorFactor.toPolynomial]
+
+lemma degree_eq_head_minorWord_add_erased_tail
+    {m n : ℕ} (B : YoungBitableau m n) (hv : 0 < B.v) :
+    B.size ⟨0, hv⟩ +
+        MinorWord.degree
+          (MinorWord.eraseUnits
+            (YoungBitableau.toMinorWord (YoungBitableau.tail B hv))) =
+      YoungBitableau.degree B := by
+  rw [YoungBitableau.degree_eq_head_add_tail B hv]
+  rw [MinorWord.eraseUnits_degree]
+  rw [YoungBitableau.toMinorWord_degree]
+
+lemma length_eq_head_size {m n : ℕ}
+    (B : YoungBitableau m n) (hv : 0 < B.v) :
+    YoungBitableau.length B = B.size ⟨0, hv⟩ :=
+  YoungBitableau.length_eq_size_zero B hv
+
+end YoungBitableau
+
+namespace MinorWord
+
+noncomputable def toYoungBitableauOfPositivePairwise {m n : ℕ}
+    (W : MinorWord m n)
+    (hpos : ∀ F ∈ W.factors, 0 < F.t)
+    (hpair : MinorWord.PairwisePairLE W) :
+    YoungBitableau m n where
+  v := W.factors.length
+  size := fun a => (W.factors.get a).t
+  size_pos := by
+    intro a
+    exact hpos (W.factors.get a) (List.get_mem W.factors a)
+  minorindex := fun a => (W.factors.get a).idx
+  shape_antitone := by
+    intro a b hab
+    by_cases hlt : a < b
+    · have hpairList :
+          W.factors.Pairwise fun F G => MinorIndex.PairLE F.idx G.idx := by
+        simpa [MinorWord.PairwisePairLE] using hpair
+      have hrel :
+          MinorIndex.PairLE (W.factors.get a).idx (W.factors.get b).idx :=
+        hpairList.rel_get_of_lt hlt
+      exact MinorIndex.PairLE.size_le hrel
+    · have hba : b ≤ a := le_of_not_gt hlt
+      have habeq : a = b := le_antisymm hab hba
+      subst habeq
+      rfl
+
+@[simp] lemma toYoungBitableauOfPositivePairwise_v {m n : ℕ}
+    (W : MinorWord m n)
+    (hpos : ∀ F ∈ W.factors, 0 < F.t)
+    (hpair : MinorWord.PairwisePairLE W) :
+    (W.toYoungBitableauOfPositivePairwise hpos hpair).v = W.factors.length := rfl
+
+@[simp] lemma toYoungBitableauOfPositivePairwise_size {m n : ℕ}
+    (W : MinorWord m n)
+    (hpos : ∀ F ∈ W.factors, 0 < F.t)
+    (hpair : MinorWord.PairwisePairLE W)
+    (a : Fin (W.toYoungBitableauOfPositivePairwise hpos hpair).v) :
+    (W.toYoungBitableauOfPositivePairwise hpos hpair).size a =
+      (W.factors.get (Fin.cast (by simp) a)).t := by
+  rfl
+
+lemma toMinorWord_toYoungBitableauOfPositivePairwise {m n : ℕ}
+    (W : MinorWord m n)
+    (hpos : ∀ F ∈ W.factors, 0 < F.t)
+    (hpair : MinorWord.PairwisePairLE W) :
+    YoungBitableau.toMinorWord
+      (W.toYoungBitableauOfPositivePairwise hpos hpair) = W := by
+  cases W with
+  | mk factors =>
+      simp [YoungBitableau.toMinorWord,
+        MinorWord.toYoungBitableauOfPositivePairwise]
+
+end MinorWord
+
+namespace StandardMinorWord
+
+noncomputable def toYoungBitableauAfterEraseUnits {m n : ℕ}
+    (S : StandardMinorWord m n) : StandardYoungBitableau m n :=
+  let W : MinorWord m n := MinorWord.eraseUnits S.1
+  let hpos : ∀ F ∈ W.factors, 0 < F.t := by
+    intro F hF
+    have hFne : F.t ≠ 0 := by
+      have hF' : F ∈ S.1.factors ∧ F.t ≠ 0 := by
+        simpa [W, MinorWord.eraseUnits] using hF
+      exact hF'.2
+    exact Nat.pos_of_ne_zero hFne
+  let hpair : MinorWord.PairwisePairLE W := S.2.eraseUnits
+  ⟨W.toYoungBitableauOfPositivePairwise hpos hpair,
+    YoungBitableau.isStandard_of_adjacent_pairLE (by
+      intro a b hnext
+      have hab : a < b := by
+        rw [Fin.lt_def]
+        omega
+      have hpairList :
+          W.factors.Pairwise fun F G => MinorIndex.PairLE F.idx G.idx := by
+        simpa [MinorWord.PairwisePairLE] using hpair
+      exact hpairList.rel_get_of_lt hab)⟩
+
+lemma toMinorWord_toYoungBitableauAfterEraseUnits {m n : ℕ}
+    (S : StandardMinorWord m n) :
+    YoungBitableau.toMinorWord (S.toYoungBitableauAfterEraseUnits.1) =
+      MinorWord.eraseUnits S.1 := by
+  classical
+  let W : MinorWord m n := MinorWord.eraseUnits S.1
+  let hpos : ∀ F ∈ W.factors, 0 < F.t := by
+    intro F hF
+    have hFne : F.t ≠ 0 := by
+      have hF' : F ∈ S.1.factors ∧ F.t ≠ 0 := by
+        simpa [W, MinorWord.eraseUnits] using hF
+      exact hF'.2
+    exact Nat.pos_of_ne_zero hFne
+  let hpair : MinorWord.PairwisePairLE W := S.2.eraseUnits
+  unfold toYoungBitableauAfterEraseUnits
+  exact MinorWord.toMinorWord_toYoungBitableauOfPositivePairwise
+    W hpos hpair
+
+lemma toYoungBitableauAfterEraseUnits_toPolynomial {m n : ℕ}
+    {k : Type*} [CommRing k] (S : StandardMinorWord m n) :
+    YoungBitableau.toPolynomial (k := k)
+        S.toYoungBitableauAfterEraseUnits.1 =
+      MinorWord.toPolynomial (k := k) S.1 := by
+  rw [← YoungBitableau.toMinorWord_toPolynomial
+    (k := k) S.toYoungBitableauAfterEraseUnits.1]
+  rw [toMinorWord_toYoungBitableauAfterEraseUnits]
+  rw [MinorWord.eraseUnits_toPolynomial]
+
+lemma toYoungBitableauAfterEraseUnits_degree {m n : ℕ}
+    (S : StandardMinorWord m n) :
+    YoungBitableau.degree S.toYoungBitableauAfterEraseUnits.1 =
+      MinorWord.degree S.1 := by
+  rw [← YoungBitableau.toMinorWord_degree
+    S.toYoungBitableauAfterEraseUnits.1]
+  rw [toMinorWord_toYoungBitableauAfterEraseUnits]
+  rw [MinorWord.eraseUnits_degree]
+
+lemma toYoungBitableauAfterEraseUnits_length {m n : ℕ}
+    (S : StandardMinorWord m n) :
+    YoungBitableau.length S.toYoungBitableauAfterEraseUnits.1 =
+      MinorWord.length S.1 := by
+  rw [← YoungBitableau.toMinorWord_length
+    S.toYoungBitableauAfterEraseUnits.1]
+  rw [toMinorWord_toYoungBitableauAfterEraseUnits]
+  rw [MinorWord.eraseUnits_length_eq]
+
+lemma length_le_toYoungBitableauAfterEraseUnits_length
+    {m n : ℕ} (S : StandardMinorWord m n)
+    {H : MinorFactor m n} (hHmem : H ∈ S.1.factors) (hH : 0 < H.t) :
+    H.t ≤ YoungBitableau.length S.toYoungBitableauAfterEraseUnits.1 := by
+  have hmemErase : H ∈ (MinorWord.eraseUnits S.1).factors := by
+    simpa [MinorWord.eraseUnits, hH.ne'] using hHmem
+  have hmemWord :
+      H ∈ (YoungBitableau.toMinorWord
+        S.toYoungBitableauAfterEraseUnits.1).factors := by
+    simpa [toMinorWord_toYoungBitableauAfterEraseUnits S] using hmemErase
+  have hle :
+      H.t ≤ MinorWord.length
+        (YoungBitableau.toMinorWord S.toYoungBitableauAfterEraseUnits.1) :=
+    MinorWord.length_le_of_mem_factor hmemWord
+  rwa [YoungBitableau.toMinorWord_length] at hle
+
+end StandardMinorWord
+
+lemma standardMinorWord_pushforward_toYoungBitableauAfterEraseUnits
+    {m n : ℕ} {k : Type*} [Field k]
+    (c : StandardMinorWord m n →₀ k) :
+    ∃ cY : StandardYoungBitableau m n →₀ k,
+      c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) =
+        cY.sum (fun S a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)
+      ∧
+      ∀ S : StandardYoungBitableau m n, cY S ≠ 0 →
+        ∃ U : StandardMinorWord m n,
+          c U ≠ 0 ∧ U.toYoungBitableauAfterEraseUnits = S := by
+  classical
+  let toY : StandardMinorWord m n → StandardYoungBitableau m n :=
+    fun U => U.toYoungBitableauAfterEraseUnits
+  let cY : StandardYoungBitableau m n →₀ k := Finsupp.mapDomain toY c
+  refine ⟨cY, ?_, ?_⟩
+  · change
+      c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) =
+        (Finsupp.mapDomain toY c).sum (fun S a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)
+    rw [Finsupp.sum_mapDomain_index]
+    · apply Finsupp.sum_congr
+      intro U a
+      rw [StandardMinorWord.toYoungBitableauAfterEraseUnits_toPolynomial
+        (k := k) U]
+    · intro S
+      simp
+    · intro S a b
+      simp [add_mul, MvPolynomial.C_add]
+  · intro S hS
+    have hSmem : S ∈ cY.support := by
+      simpa [Finsupp.mem_support_iff] using hS
+    have hSimage : S ∈ Finset.image toY c.support := by
+      exact Finsupp.mapDomain_support hSmem
+    rcases Finset.mem_image.mp hSimage with ⟨U, hUmem, hUS⟩
+    refine ⟨U, ?_, hUS⟩
+    simpa [Finsupp.mem_support_iff] using hUmem
 
 /-- The paper's determinantal ideal `J_r`, generated by the `(r + 1) × (r + 1)` minors. -/
 abbrev Jr (m n r : ℕ) (k : Type*) [CommRing k] :=
@@ -10928,6 +19172,90 @@ theorem krs_width {m n : ℕ}
 
 end KRS
 
+namespace KRS
+
+/-- Public cell characterization for the Young diagram attached to a bitableau. -/
+lemma shapeOfBitableau_mem_iff
+    {m n : ℕ} (B : YoungBitableau m n) {i j : ℕ} :
+    (i, j) ∈ shapeOfBitableau B ↔
+      ∃ hj : j < B.v, i < B.size ⟨j, hj⟩ := by
+  exact mem_shapeOfBitableau_iff B
+
+/-- In one reverse-KRS step applied to the tableau pair of a standard bitableau,
+the upper letter is one of the row indices in the original minor factor
+corresponding to the selected column of the bitableau shape. -/
+lemma reverseKrsStep_youngBitableau_letter_upper_factor
+    {m n : ℕ}
+    (B : StandardYoungBitableau m n)
+    (h : (youngBitableauToTableauPair B).shape.card ≠ 0) :
+    ∃ a : Fin B.1.v, ∃ i : Fin (B.1.size a),
+      (reverseKrsStep (youngBitableauToTableauPair B) h).letter.1 =
+        (B.1.minorindex a).row i ∧
+      (maxRecordingCorner (youngBitableauToTableauPair B) h).cell =
+        (i.val, a.val) := by
+  classical
+  let T := youngBitableauToTableauPair B
+  let C := maxRecordingCorner T h
+  have hcell : C.cell ∈ shapeOfBitableau B.1 := by
+    simpa [T, youngBitableauToTableauPair] using C.cell_mem
+  rcases (mem_shapeOfBitableau_iff B.1).1 hcell with ⟨hj, hi⟩
+  let a : Fin B.1.v := ⟨C.cell.2, hj⟩
+  let i : Fin (B.1.size a) := ⟨C.cell.1, by simpa [a] using hi⟩
+  refine ⟨a, i, ?_, ?_⟩
+  · apply Fin.ext
+    rw [reverseKrsStep_letter_upper_eq_corner]
+    change bitableauRowEntry B.1 C.cell.1 C.cell.2 =
+      ((B.1.minorindex a).row i).val
+    rw [bitableauRowEntry_of_mem B.1 hj hi]
+  · simp [T, C, a, i]
+
+/-- In one reverse-KRS step from a standard bitableau, the selected upper
+letter identifies a row of a minor factor, and the ejected lower letter is
+bounded by the column entry in the same selected cell. -/
+lemma reverseKrsStep_youngBitableau_letter_lower_le_selected_col
+    {m n : ℕ}
+    (B : StandardYoungBitableau m n)
+    (h : (youngBitableauToTableauPair B).shape.card ≠ 0) :
+    ∃ a : Fin B.1.v, ∃ i : Fin (B.1.size a),
+      (reverseKrsStep (youngBitableauToTableauPair B) h).letter.1 =
+        (B.1.minorindex a).row i ∧
+      (reverseKrsStep (youngBitableauToTableauPair B) h).letter.2.val ≤
+        ((B.1.minorindex a).col i).val ∧
+      (maxRecordingCorner (youngBitableauToTableauPair B) h).cell =
+        (i.val, a.val) := by
+  classical
+  let T := youngBitableauToTableauPair B
+  let C := maxRecordingCorner T h
+  rcases reverseKrsStep_youngBitableau_letter_upper_factor B h with
+    ⟨a, i, hupper, hcell⟩
+  refine ⟨a, i, hupper, ?_, hcell⟩
+  have hlower :
+      (reverseKrsStep T h).letter.2.val ≤ T.P.T C.cell.1 C.cell.2 := by
+    simpa [T, C] using reverseKrsStep_letter_lower_le_deleted_P_entry T h
+  have hcell_mem : C.cell ∈ shapeOfBitableau B.1 := by
+    simpa [T, youngBitableauToTableauPair] using C.cell_mem
+  rcases (mem_shapeOfBitableau_iff B.1).1 hcell_mem with ⟨hj, hi⟩
+  have hP :
+      T.P.T C.cell.1 C.cell.2 =
+        ((B.1.minorindex a).col i).val := by
+    change bitableauColEntry B.1 C.cell.1 C.cell.2 =
+      ((B.1.minorindex a).col i).val
+    rw [bitableauColEntry_of_mem B.1 hj hi]
+    have hC : C.cell = (i.val, a.val) := by
+      simpa [T, C] using hcell
+    have ha : (⟨C.cell.2, hj⟩ : Fin B.1.v) = a := by
+      apply Fin.ext
+      exact congrArg Prod.snd hC
+    subst a
+    have hi_eq :
+        (⟨C.cell.1, hi⟩ : Fin (B.1.size ⟨C.cell.2, hj⟩)) = i := by
+      apply Fin.ext
+      exact congrArg Prod.fst hC
+    rw [hi_eq]
+  exact le_trans hlower (le_of_eq hP)
+
+end KRS
+
 /--
 Proposition 2, KRS correspondence.
 
@@ -11040,6 +19368,8750 @@ theorem natCard_standardBitableau_lengthLE_degree_eq_monomial_widthLE
   rcases exists_krsEquiv_of_degree_widthLE m n r d with ⟨κ, _⟩
   exact (Nat.card_congr κ).symm
 
+/-- Linear independence of standard bitableau polynomials implies uniqueness of the
+polynomial part of a straightening expansion. -/
+theorem straightening_law_unique_of_linearIndependent
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (hli :
+      LinearIndependent k
+        (fun S : StandardYoungBitableau m n =>
+          YoungBitableau.toPolynomial (k := k) S.1))
+    (B : YoungBitableau m n) :
+    ∀ c d : StandardYoungBitableau m n →₀ k,
+      YoungBitableau.toPolynomial B
+        =
+      c.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1) →
+      YoungBitableau.toPolynomial B
+        =
+      d.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1) →
+      c = d := by
+  intro c d hc hd
+  let v : StandardYoungBitableau m n →
+      MvPolynomial (Fin m × Fin n) k :=
+    fun S => YoungBitableau.toPolynomial (k := k) S.1
+  have hcLin :
+      Finsupp.linearCombination k v c = YoungBitableau.toPolynomial (k := k) B := by
+    rw [Finsupp.linearCombination_apply]
+    simpa [v, MvPolynomial.C_mul'] using hc.symm
+  have hdLin :
+      Finsupp.linearCombination k v d = YoungBitableau.toPolynomial (k := k) B := by
+    rw [Finsupp.linearCombination_apply]
+    simpa [v, MvPolynomial.C_mul'] using hd.symm
+  have hlin :
+      Finsupp.linearCombination k v (c - d) = 0 := by
+    rw [map_sub]
+    rw [hcLin, hdLin]
+    exact sub_self _
+  have hcd : c - d = 0 :=
+    (linearIndependent_iff.mp hli (c - d)) hlin
+  exact sub_eq_zero.mp hcd
+
+/-- Homogeneous projection of one scalar multiple of a standard bitableau polynomial. -/
+lemma homogeneousComponent_C_mul_standardBitableau_toPolynomial
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ) (a : k) (B : StandardYoungBitableau m n) :
+    MvPolynomial.homogeneousComponent d
+      (MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1)
+      =
+    if YoungBitableau.degree B.1 = d then
+      MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1
+    else
+      0 := by
+  rw [MvPolynomial.homogeneousComponent_C_mul]
+  have hmem :
+      YoungBitableau.toPolynomial (k := k) B.1 ∈
+        MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k
+          (YoungBitableau.degree B.1) := by
+    rw [MvPolynomial.mem_homogeneousSubmodule]
+    exact YoungBitableau.toPolynomial_isHomogeneous (k := k) B.1
+  rw [MvPolynomial.homogeneousComponent_of_mem (m := d) hmem]
+  by_cases hdeg : d = YoungBitableau.degree B.1
+  · simp [hdeg]
+  · have hdeg' : YoungBitableau.degree B.1 ≠ d := fun h => hdeg h.symm
+    simp [hdeg, hdeg']
+
+/-- Homogeneous projection of a finite standard-bitableau expansion. -/
+lemma homogeneousComponent_standardBitableau_finsupp_sum
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ)
+    (c : StandardYoungBitableau m n →₀ k) :
+    MvPolynomial.homogeneousComponent d
+      (c.sum fun B a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1)
+      =
+    (c.filter fun B => YoungBitableau.degree B.1 = d).sum fun B a =>
+      MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1 := by
+  classical
+  rw [Finsupp.sum, map_sum]
+  simp_rw [homogeneousComponent_C_mul_standardBitableau_toPolynomial
+    (d := d)]
+  rw [Finsupp.sum, Finsupp.support_filter]
+  rw [Finset.sum_filter]
+  apply Finset.sum_congr rfl
+  intro B hB
+  by_cases hdeg : YoungBitableau.degree B.1 = d
+  · simp [hdeg]
+  · simp [hdeg]
+
+/-- It is enough to prove linear independence in each fixed total degree. -/
+theorem standardBitableau_linearIndependent_of_degreewise
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (hdeg :
+      ∀ d : ℕ,
+        LinearIndependent k
+          (fun S : { S : StandardYoungBitableau m n //
+              YoungBitableau.degree S.1 = d } =>
+            YoungBitableau.toPolynomial (k := k) S.1.1)) :
+    LinearIndependent k
+      (fun S : StandardYoungBitableau m n =>
+        YoungBitableau.toPolynomial (k := k) S.1) := by
+  classical
+  rw [linearIndependent_iff]
+  intro c hc
+  ext S
+  let d : ℕ := YoungBitableau.degree S.1
+  let P : StandardYoungBitableau m n → Prop :=
+    fun T => YoungBitableau.degree T.1 = d
+  let cd : { T : StandardYoungBitableau m n // P T } →₀ k :=
+    c.subtypeDomain P
+  have hsum_zero :
+      (c.sum fun B a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1) = 0 := by
+    rw [Finsupp.linearCombination_apply] at hc
+    simpa [MvPolynomial.C_mul'] using hc
+  have hfilter_zero :
+      (c.filter P).sum (fun B a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1) = 0 := by
+    have hcomp_zero :
+        MvPolynomial.homogeneousComponent d
+          (c.sum fun B a =>
+            MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1) = 0 := by
+      rw [hsum_zero]
+      simp
+    have hcomp :=
+      homogeneousComponent_standardBitableau_finsupp_sum
+        (m := m) (n := n) (k := k) d c
+    simpa [P] using hcomp.symm.trans hcomp_zero
+  have hsubtype_zero :
+      cd.sum (fun B a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1.1) = 0 := by
+    have hcd_eq :
+        cd = (c.filter P).subtypeDomain P := by
+      ext T
+      simp [cd, T.2]
+    have hp :
+        ∀ T ∈ (c.filter P).support, P T := by
+      intro T hT
+      rw [Finsupp.support_filter] at hT
+      exact (Finset.mem_filter.mp hT).2
+    have hsum_subtype :
+        ((c.filter P).subtypeDomain P).sum (fun B a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1.1)
+          =
+        (c.filter P).sum (fun B a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1) := by
+      simpa using
+        (Finsupp.sum_subtypeDomain_index
+          (v := c.filter P)
+          (p := P)
+          (h := fun B a =>
+            MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1)
+          hp)
+    rw [hcd_eq, hsum_subtype]
+    exact hfilter_zero
+  have hlin_cd :
+      Finsupp.linearCombination k
+        (fun T : { T : StandardYoungBitableau m n // P T } =>
+          YoungBitableau.toPolynomial (k := k) T.1.1) cd = 0 := by
+    rw [Finsupp.linearCombination_apply]
+    simpa [MvPolynomial.C_mul'] using hsubtype_zero
+  have hcd_zero : cd = 0 := by
+    exact (linearIndependent_iff.mp (hdeg d) cd) (by
+      simpa [P] using hlin_cd)
+  have hS := DFunLike.congr_fun hcd_zero ⟨S, rfl⟩
+  simpa [cd, P, d] using hS
+
+/-- A coefficient-triangularity criterion for polynomial linear independence.
+
+For each vector `v i`, choose a monomial `key i` and an ordered rank `rank i`.  If the
+chosen coefficient of `v i` is nonzero, and no `v j` can contribute to the coefficient
+at `key i` unless `rank i ≤ rank j`, then a maximal-rank term in any finite relation
+cannot cancel. -/
+theorem mvPolynomial_linearIndependent_of_coeff_triangular
+    {σ ι κ : Type*}
+    {k : Type*} [Field k]
+    [LinearOrder κ]
+    (v : ι → MvPolynomial σ k)
+    (key : ι → σ →₀ ℕ)
+    (rank : ι → κ)
+    (hrank : Function.Injective rank)
+    (hdiag : ∀ i, MvPolynomial.coeff (key i) (v i) ≠ 0)
+    (htri :
+      ∀ i j,
+        MvPolynomial.coeff (key i) (v j) ≠ 0 →
+          rank i ≤ rank j) :
+    LinearIndependent k v := by
+  classical
+  rw [linearIndependent_iff]
+  intro c hc
+  by_contra hc_ne
+  have hsupp : c.support.Nonempty := by
+    by_contra hsupp
+    have hsupport_empty : c.support = ∅ := by
+      exact Finset.not_nonempty_iff_eq_empty.mp hsupp
+    exact hc_ne (Finsupp.support_eq_empty.mp hsupport_empty)
+  rcases Finset.exists_max_image c.support rank hsupp with
+    ⟨i₀, hi₀mem, hi₀max⟩
+  have hci₀_ne : c i₀ ≠ 0 := by
+    simpa [Finsupp.mem_support_iff] using hi₀mem
+  have hcoeff_zero :
+      MvPolynomial.coeff (key i₀)
+        (Finsupp.linearCombination k v c) = 0 := by
+    rw [hc]
+    simp
+  have hcoeff_sum :
+      MvPolynomial.coeff (key i₀)
+        (Finsupp.linearCombination k v c)
+        =
+      c.sum fun j a => a * MvPolynomial.coeff (key i₀) (v j) := by
+    rw [Finsupp.linearCombination_apply, Finsupp.sum, MvPolynomial.coeff_sum]
+    apply Finset.sum_congr rfl
+    intro j hj
+    simp
+  have hsum_eq :
+      c.sum (fun j a => a * MvPolynomial.coeff (key i₀) (v j)) =
+        c i₀ * MvPolynomial.coeff (key i₀) (v i₀) := by
+    rw [Finsupp.sum]
+    apply Finset.sum_eq_single i₀
+    · intro j hj hji
+      have hcoeff_j_zero :
+          MvPolynomial.coeff (key i₀) (v j) = 0 := by
+        by_contra hcoeff_j
+        have hle_forward : rank i₀ ≤ rank j := htri i₀ j hcoeff_j
+        have hle_back : rank j ≤ rank i₀ := hi₀max j hj
+        have hrank_eq : rank i₀ = rank j := le_antisymm hle_forward hle_back
+        have hij : i₀ = j := hrank hrank_eq
+        exact hji hij.symm
+      simp [hcoeff_j_zero]
+    · intro hi₀not
+      exact False.elim (hi₀not hi₀mem)
+  have hsum_zero :
+      c.sum (fun j a => a * MvPolynomial.coeff (key i₀) (v j)) = 0 := by
+    simpa [hcoeff_sum] using hcoeff_zero
+  have hdiag_nonzero :
+      c i₀ * MvPolynomial.coeff (key i₀) (v i₀) ≠ 0 :=
+    mul_ne_zero hci₀_ne (hdiag i₀)
+  exact hdiag_nonzero (by simpa [hsum_eq] using hsum_zero)
+
+namespace KRS
+
+/-- The inverse side of the KRS equivalence is injective on standard bitableaux. -/
+theorem inverse_injective {m n : ℕ} :
+    Function.Injective (inverse (m := m) (n := n)) := by
+  intro B C hBC
+  calc
+    B = forward (inverse B) := (krs_right_inverse (m := m) (n := n) B).symm
+    _ = forward (inverse C) := by rw [hBC]
+    _ = C := krs_right_inverse (m := m) (n := n) C
+
+/-- The inverse KRS monomial of a standard bitableau has the same total degree. -/
+theorem inverse_degree {m n : ℕ}
+    (B : StandardYoungBitableau m n) :
+    Finsupp.degree (inverse (m := m) (n := n) B) =
+      YoungBitableau.degree B.1 := by
+  have h := krs_degree (m := m) (n := n) (inverse B)
+  have hκ :
+      krsEquiv m n (inverse (m := m) (n := n) B) = B :=
+    krs_right_inverse (m := m) (n := n) B
+  rw [hκ] at h
+  exact h.symm
+
+end KRS
+
+/-- A nonzero coefficient of a homogeneous multivariate polynomial has the
+homogeneous degree. -/
+lemma mvPolynomial_coeff_ne_zero_degree_of_isHomogeneous
+    {σ : Type*} {k : Type*} [Field k]
+    {p : MvPolynomial σ k} {d : ℕ} {E : σ →₀ ℕ}
+    (hp : p.IsHomogeneous d)
+    (hcoeff : MvPolynomial.coeff E p ≠ 0) :
+    Finsupp.degree E = d := by
+  have hp_mem :
+      p ∈ MvPolynomial.homogeneousSubmodule σ k d := by
+    rw [MvPolynomial.mem_homogeneousSubmodule]
+    exact hp
+  rw [MvPolynomial.homogeneousSubmodule_eq_finsupp_supported,
+    Finsupp.mem_supported] at hp_mem
+  exact hp_mem (by
+    simpa [MvPolynomial.mem_support_iff] using hcoeff)
+
+/-- If the KRS inverse monomial of `S` occurs in the polynomial expansion of
+`T`, then `S` and `T` have the same total degree. -/
+lemma standardBitableau_krsCoeff_degree_eq
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (S T : StandardYoungBitableau m n)
+    (hcoeff :
+      MvPolynomial.coeff (KRS.inverse S)
+        (YoungBitableau.toPolynomial (k := k) T.1) ≠ 0) :
+    YoungBitableau.degree S.1 = YoungBitableau.degree T.1 := by
+  have hterm :
+      Finsupp.degree (KRS.inverse (m := m) (n := n) S) =
+        YoungBitableau.degree T.1 :=
+    mvPolynomial_coeff_ne_zero_degree_of_isHomogeneous
+      (YoungBitableau.toPolynomial_isHomogeneous (k := k) T.1) hcoeff
+  exact (KRS.inverse_degree (m := m) (n := n) S).symm.trans hterm
+
+/-- Every nonzero coefficient of a generic minor comes from one Leibniz
+permutation term. -/
+lemma genericMinor_coeff_ne_zero_exists_permExp
+    {m n t : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n t) {E : (Fin m × Fin n) →₀ ℕ}
+    (hcoeff : MvPolynomial.coeff E (genericMinor (k := k) I) ≠ 0) :
+    ∃ σ : Equiv.Perm (Fin t), E = permExp I σ := by
+  classical
+  rw [minor_eq_sum_permTerm I, MvPolynomial.coeff_sum] at hcoeff
+  by_contra h
+  push_neg at h
+  exact hcoeff <| by
+    refine Finset.sum_eq_zero ?_
+    intro σ hσ
+    simp [coeff_permTerm, h σ]
+
+/-- A Leibniz permutation exponent is in the support of the corresponding
+generic minor over a field. -/
+lemma genericMinor_permExp_mem_support
+    {m n t : ℕ}
+    {k : Type*} [Field k]
+    (I : MinorIndex m n t) (σ : Equiv.Perm (Fin t)) :
+    permExp I σ ∈ (genericMinor (k := k) I).support := by
+  rw [MvPolynomial.mem_support_iff, coeff_minor_permExp]
+  exact permCoeff_ne_zero (k := k) σ
+
+/-- Support of a generic minor, expressed as Leibniz permutation exponent
+vectors. -/
+lemma genericMinor_mem_support_iff_exists_permExp
+    {m n t : ℕ}
+    {k : Type*} [Field k]
+    (I : MinorIndex m n t) (E : (Fin m × Fin n) →₀ ℕ) :
+    E ∈ (genericMinor (k := k) I).support ↔
+      ∃ σ : Equiv.Perm (Fin t), E = permExp I σ := by
+  constructor
+  · intro hE
+    exact genericMinor_coeff_ne_zero_exists_permExp (k := k) I
+      (by simpa [MvPolynomial.mem_support_iff] using hE)
+  · rintro ⟨σ, rfl⟩
+    exact genericMinor_permExp_mem_support (k := k) I σ
+
+namespace YoungBitableau
+
+/-- Exponent vector obtained by choosing one Leibniz permutation term from each
+minor factor of a Young bitableau. -/
+noncomputable def permChoiceExp
+    {m n : ℕ} (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    (Fin m × Fin n) →₀ ℕ :=
+  ∑ a : Fin B.v, permExp (B.minorindex a) (π a)
+
+/-- Coefficient obtained by choosing one Leibniz permutation term from each
+minor factor of a Young bitableau. -/
+noncomputable def permChoiceCoeff
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) : k :=
+  ∏ a : Fin B.v, permCoeff (k := k) (π a)
+
+/-- The monomial term obtained by choosing one Leibniz permutation term from
+each minor factor of a Young bitableau. -/
+noncomputable def permChoiceTerm
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.monomial (permChoiceExp B π) (permChoiceCoeff (k := k) B π)
+
+/-- Multiplying the selected Leibniz terms from every minor factor gives the
+single bitableau permutation-choice monomial. -/
+lemma prod_permTerm_eq_permChoiceTerm
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    (∏ a : Fin B.v, permTerm (k := k) (B.minorindex a) (π a)) =
+      permChoiceTerm (k := k) B π := by
+  classical
+  rw [permChoiceTerm, permChoiceExp, permChoiceCoeff]
+  calc
+    (∏ a : Fin B.v, permTerm (k := k) (B.minorindex a) (π a))
+        =
+      ∏ a : Fin B.v,
+        (MvPolynomial.C (permCoeff (k := k) (π a)) *
+          MvPolynomial.monomial (permExp (B.minorindex a) (π a)) (1 : k)) := by
+        apply Finset.prod_congr rfl
+        intro a ha
+        rw [permTerm]
+        symm
+        rw [MvPolynomial.C_mul_monomial]
+        simp
+    _ =
+      (∏ a : Fin B.v, MvPolynomial.C (permCoeff (k := k) (π a))) *
+        ∏ a : Fin B.v,
+          MvPolynomial.monomial (permExp (B.minorindex a) (π a)) (1 : k) := by
+        rw [Finset.prod_mul_distrib]
+    _ =
+      MvPolynomial.C (∏ a : Fin B.v, permCoeff (k := k) (π a)) *
+        ∏ a : Fin B.v,
+          MvPolynomial.monomial (permExp (B.minorindex a) (π a)) (1 : k) := by
+        simp
+    _ =
+      MvPolynomial.monomial
+        (∑ a : Fin B.v, permExp (B.minorindex a) (π a))
+        (∏ a : Fin B.v, permCoeff (k := k) (π a)) := by
+        rw [← MvPolynomial.monomial_sum_index Finset.univ
+          (fun a : Fin B.v => permExp (B.minorindex a) (π a))
+          (∏ a : Fin B.v, permCoeff (k := k) (π a))]
+
+/-- Leibniz expansion of the polynomial attached to a Young bitableau: choose
+one permutation term from each minor factor. -/
+theorem toPolynomial_eq_sum_permChoiceTerm
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) :
+    toPolynomial (k := k) B =
+      ∑ π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+        permChoiceTerm (k := k) B π := by
+  classical
+  calc
+    toPolynomial (k := k) B =
+        ∏ a : Fin B.v,
+          ∑ σ : Equiv.Perm (Fin (B.size a)),
+            permTerm (k := k) (B.minorindex a) σ := by
+          simp [toPolynomial, minor_eq_sum_permTerm]
+    _ =
+        ∑ π ∈ (Finset.univ : Finset (Fin B.v)).pi
+            (fun a => (Finset.univ : Finset (Equiv.Perm (Fin (B.size a))))),
+          ∏ x ∈ (Finset.univ : Finset (Fin B.v)).attach,
+            permTerm (k := k) (B.minorindex x.1) (π x.1 x.2) := by
+          simpa using
+            (Finset.prod_sum
+              (s := (Finset.univ : Finset (Fin B.v)))
+              (t := fun a => (Finset.univ : Finset (Equiv.Perm (Fin (B.size a)))))
+              (f := fun a σ => permTerm (k := k) (B.minorindex a) σ))
+    _ =
+        ∑ π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+          ∏ a : Fin B.v, permTerm (k := k) (B.minorindex a) (π a) := by
+          let e :
+              ((a : Fin B.v) → a ∈ (Finset.univ : Finset (Fin B.v)) →
+                Equiv.Perm (Fin (B.size a))) ≃
+              ((a : Fin B.v) → Equiv.Perm (Fin (B.size a))) :=
+            { toFun := fun π a => π a (Finset.mem_univ a)
+              invFun := fun π a _ => π a
+              left_inv := by
+                intro π
+                funext a ha
+                rfl
+              right_inv := by
+                intro π
+                funext a
+                rfl }
+          have hpi :
+              (Finset.univ : Finset (Fin B.v)).pi
+                (fun a => (Finset.univ : Finset (Equiv.Perm (Fin (B.size a))))) =
+              (Finset.univ :
+                Finset ((a : Fin B.v) →
+                  a ∈ (Finset.univ : Finset (Fin B.v)) →
+                    Equiv.Perm (Fin (B.size a)))) := by
+            ext π
+            simp
+          rw [hpi]
+          exact Fintype.sum_equiv e
+            (fun π =>
+              ∏ x ∈ (Finset.univ : Finset (Fin B.v)).attach,
+                permTerm (k := k) (B.minorindex x.1) (π x.1 x.2))
+            (fun π =>
+              ∏ a : Fin B.v, permTerm (k := k) (B.minorindex a) (π a))
+            (by
+              intro π
+              dsimp [e]
+              exact Finset.prod_attach Finset.univ
+                (fun a : Fin B.v =>
+                  permTerm (k := k) (B.minorindex a) (π a (Finset.mem_univ a))))
+    _ =
+        ∑ π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+          permChoiceTerm (k := k) B π := by
+          apply Finset.sum_congr rfl
+          intro π hπ
+          rw [prod_permTerm_eq_permChoiceTerm]
+
+/-- The coefficient of a permutation-choice term at its own exponent. -/
+lemma coeff_permChoiceTerm_permChoiceExp
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    MvPolynomial.coeff (permChoiceExp B π) (permChoiceTerm (k := k) B π) =
+      permChoiceCoeff (k := k) B π := by
+  simp [permChoiceTerm]
+
+/-- The coefficient attached to any bitableau permutation choice is nonzero
+over a field. -/
+lemma permChoiceCoeff_ne_zero
+    {m n : ℕ} {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    permChoiceCoeff (k := k) B π ≠ 0 := by
+  classical
+  rw [permChoiceCoeff]
+  exact Finset.prod_ne_zero_iff.mpr fun a ha =>
+    permCoeff_ne_zero (k := k) (π a)
+
+/-- Any nonzero coefficient in a Young-bitableau polynomial comes from at
+least one choice of Leibniz permutation term in every minor factor.  This is a
+one-way statement only; it does not assert that different choices cannot
+collide or cancel. -/
+lemma toPolynomial_coeff_ne_zero_exists_permChoiceExp
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) {E : (Fin m × Fin n) →₀ ℕ}
+    (hcoeff : MvPolynomial.coeff E (toPolynomial (k := k) B) ≠ 0) :
+    ∃ π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+      E = permChoiceExp B π := by
+  classical
+  rw [toPolynomial_eq_sum_permChoiceTerm B, MvPolynomial.coeff_sum] at hcoeff
+  by_contra h
+  push_neg at h
+  exact hcoeff <| by
+    refine Finset.sum_eq_zero ?_
+    intro π hπ
+    simp only [permChoiceTerm, MvPolynomial.coeff_monomial, ite_eq_right_iff]
+    intro p
+    exact not_neZero.mp fun a ↦ h π (id (Eq.symm p))
+
+/-- Support-form version of
+`toPolynomial_coeff_ne_zero_exists_permChoiceExp`. -/
+lemma toPolynomial_mem_support_exists_permChoiceExp
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) {E : (Fin m × Fin n) →₀ ℕ}
+    (hE : E ∈ (toPolynomial (k := k) B).support) :
+    ∃ π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+      E = permChoiceExp B π := by
+  exact toPolynomial_coeff_ne_zero_exists_permChoiceExp
+    (k := k) B (by simpa [MvPolynomial.mem_support_iff] using hE)
+
+/-- The support of a Young-bitableau polynomial is contained in the range of
+its permutation-choice exponents. -/
+lemma toPolynomial_support_subset_permChoiceExp_range
+    {m n : ℕ} {k : Type*} [CommRing k]
+    (B : YoungBitableau m n) :
+    ((toPolynomial (k := k) B).support : Set ((Fin m × Fin n) →₀ ℕ)) ⊆
+      Set.range (fun π : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) =>
+        permChoiceExp B π) := by
+  intro E hE
+  rcases toPolynomial_mem_support_exists_permChoiceExp (k := k) B hE with ⟨π, rfl⟩
+  exact ⟨π, rfl⟩
+
+/-- If a permutation-choice exponent is produced by a unique choice, then its
+coefficient in the full Young-bitableau polynomial is nonzero.  This isolates
+the no-cancellation input needed later for the KRS diagonal coefficient. -/
+lemma toPolynomial_coeff_permChoiceExp_ne_zero_of_unique
+    {m n : ℕ} {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a)))
+    (huniq : ∀ τ : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+      permChoiceExp B τ = permChoiceExp B π → τ = π) :
+    MvPolynomial.coeff (permChoiceExp B π) (toPolynomial (k := k) B) ≠ 0 := by
+  classical
+  rw [toPolynomial_eq_sum_permChoiceTerm B, MvPolynomial.coeff_sum]
+  rw [Finset.sum_eq_single π]
+  · rw [coeff_permChoiceTerm_permChoiceExp]
+    exact permChoiceCoeff_ne_zero (k := k) B π
+  · intro τ hτ hτne
+    have hne : permChoiceExp B π ≠ permChoiceExp B τ := by
+      intro hEq
+      exact hτne ((huniq τ hEq.symm))
+    simp only [permChoiceTerm, MvPolynomial.coeff_monomial, ite_eq_right_iff]
+    intro p
+    exact not_neZero.mp fun a ↦ hτne (huniq τ p)
+  · intro hπ
+    simp at hπ
+
+/-- If every minor factor has size `1`, then the permutation choice is unique.
+This is the base case of the diagonal KRS coefficient uniqueness argument:
+there is no nontrivial determinant permutation in any factor. -/
+lemma permChoice_unique_of_forall_size_eq_one
+    {m n : ℕ}
+    (B : YoungBitableau m n)
+    (hsize : ∀ a : Fin B.v, B.size a = 1)
+    (π τ : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    τ = π := by
+  funext a
+  ext x
+  have hx : Subsingleton (Fin (B.size a)) := by
+    rw [hsize a]
+    infer_instance
+  have h : (τ a) x = (π a) x := Subsingleton.elim _ _
+  simpa using congrArg Fin.val h
+
+/-- In the all-`1 × 1` case, any chosen permutation-choice exponent is
+uniquely produced. -/
+lemma permChoiceExp_unique_of_forall_size_eq_one
+    {m n : ℕ}
+    (B : YoungBitableau m n)
+    (hsize : ∀ a : Fin B.v, B.size a = 1)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    ∀ τ : (∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))),
+      permChoiceExp B τ = permChoiceExp B π → τ = π := by
+  intro τ _hExp
+  exact permChoice_unique_of_forall_size_eq_one B hsize π τ
+
+/-- All-`1 × 1` specialization of the no-cancellation coefficient lemma. -/
+lemma toPolynomial_coeff_permChoiceExp_ne_zero_of_forall_size_eq_one
+    {m n : ℕ} {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (hsize : ∀ a : Fin B.v, B.size a = 1)
+    (π : ∀ a : Fin B.v, Equiv.Perm (Fin (B.size a))) :
+    MvPolynomial.coeff (permChoiceExp B π) (toPolynomial (k := k) B) ≠ 0 := by
+  exact toPolynomial_coeff_permChoiceExp_ne_zero_of_unique
+    (k := k) B π (permChoiceExp_unique_of_forall_size_eq_one B hsize π)
+
+end YoungBitableau
+
+/-- If the KRS inverse monomial of `S` occurs in the polynomial expansion of
+`T`, then it is one of the Leibniz permutation-choice exponents of `T`. -/
+lemma standardBitableau_krsCoeff_exists_permChoiceExp
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (S T : StandardYoungBitableau m n)
+    (hcoeff :
+      MvPolynomial.coeff (KRS.inverse S)
+        (YoungBitableau.toPolynomial (k := k) T.1) ≠ 0) :
+    ∃ π : (∀ a : Fin T.1.v, Equiv.Perm (Fin (T.1.size a))),
+      KRS.inverse S = YoungBitableau.permChoiceExp T.1 π := by
+  exact YoungBitableau.toPolynomial_coeff_ne_zero_exists_permChoiceExp
+    (k := k) T.1 hcoeff
+
+/-- Fixed-degree subtype version of
+`standardBitableau_krsCoeff_exists_permChoiceExp`, matching the hypotheses in
+`standardBitableau_degree_krsCoeff_triangular`. -/
+lemma standardBitableau_degree_krsCoeff_exists_permChoiceExp
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {d : ℕ}
+    (S T : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d })
+    (hcoeff :
+      MvPolynomial.coeff (KRS.inverse S.1)
+        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0) :
+    ∃ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
+      KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π := by
+  exact standardBitableau_krsCoeff_exists_permChoiceExp
+    (k := k) S.1 T.1 hcoeff
+
+/-- In the fixed-degree setting, a nonzero KRS coefficient gives both the
+permutation-choice representation of the exponent and the expected degree
+equality. -/
+lemma standardBitableau_degree_krsCoeff_data
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {d : ℕ}
+    (S T : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d })
+    (hcoeff :
+      MvPolynomial.coeff (KRS.inverse S.1)
+        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0) :
+    (∃ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
+      KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π)
+    ∧ YoungBitableau.degree S.1.1 = YoungBitableau.degree T.1.1 := by
+  exact ⟨standardBitableau_degree_krsCoeff_exists_permChoiceExp
+      (k := k) S T hcoeff,
+    standardBitableau_krsCoeff_degree_eq (k := k) S.1 T.1 hcoeff⟩
+
+/-- A KRS inverse coefficient is nonzero once the KRS inverse exponent is known
+to be a uniquely produced bitableau permutation-choice exponent.  This is the
+diagonal-coefficient reduction needed before proving the actual KRS/Swan
+uniqueness statement. -/
+lemma standardBitableau_krsCoeff_ne_zero_of_unique_permChoice
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (S : StandardYoungBitableau m n)
+    (π : ∀ a : Fin S.1.v, Equiv.Perm (Fin (S.1.size a)))
+    (hKRS : KRS.inverse S = YoungBitableau.permChoiceExp S.1 π)
+    (huniq : ∀ τ : (∀ a : Fin S.1.v, Equiv.Perm (Fin (S.1.size a))),
+      YoungBitableau.permChoiceExp S.1 τ =
+        YoungBitableau.permChoiceExp S.1 π → τ = π) :
+    MvPolynomial.coeff (KRS.inverse S)
+      (YoungBitableau.toPolynomial (k := k) S.1) ≠ 0 := by
+  rw [hKRS]
+  exact YoungBitableau.toPolynomial_coeff_permChoiceExp_ne_zero_of_unique
+    (k := k) S.1 π huniq
+
+/-- Fixed-degree subtype version of
+`standardBitableau_krsCoeff_ne_zero_of_unique_permChoice`. -/
+lemma standardBitableau_degree_krsCoeff_ne_zero_of_unique_permChoice
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {d : ℕ}
+    (S : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d })
+    (π : ∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a)))
+    (hKRS : KRS.inverse S.1 = YoungBitableau.permChoiceExp S.1.1 π)
+    (huniq : ∀ τ : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
+      YoungBitableau.permChoiceExp S.1.1 τ =
+        YoungBitableau.permChoiceExp S.1.1 π → τ = π) :
+    MvPolynomial.coeff (KRS.inverse S.1)
+      (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0 := by
+  exact standardBitableau_krsCoeff_ne_zero_of_unique_permChoice
+    (k := k) S.1 π hKRS huniq
+
+/-- Reduction of the fixed-degree KRS coefficient triangularity statement to
+two concrete permutation-choice facts:
+
+* the diagonal KRS exponent is a uniquely produced permutation-choice exponent;
+* any permutation-choice representation of a cross KRS coefficient is
+  triangular in row-major order.
+
+This is intentionally weaker than the final theorem's mathematical content:
+the two hypotheses are exactly the remaining Swan/KRS combinatorial work. -/
+theorem standardBitableau_degree_krsCoeff_triangular_of_permChoice
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ)
+    (hdiagChoice :
+      ∀ S : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d },
+        ∃ π : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
+          KRS.inverse S.1 = YoungBitableau.permChoiceExp S.1.1 π ∧
+          ∀ τ : (∀ a : Fin S.1.1.v, Equiv.Perm (Fin (S.1.1.size a))),
+            YoungBitableau.permChoiceExp S.1.1 τ =
+              YoungBitableau.permChoiceExp S.1.1 π → τ = π)
+    (hcrossTri :
+      ∀ S T : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d },
+        ∀ π : (∀ a : Fin T.1.1.v, Equiv.Perm (Fin (T.1.1.size a))),
+          KRS.inverse S.1 = YoungBitableau.permChoiceExp T.1.1 π →
+          (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
+            (rowMajorLex m n).toSyn (KRS.inverse T.1)) :
+    (∀ S : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d },
+      MvPolynomial.coeff (KRS.inverse S.1)
+        (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0)
+    ∧
+    (∀ S T : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d },
+      MvPolynomial.coeff (KRS.inverse S.1)
+        (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0 →
+      (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
+        (rowMajorLex m n).toSyn (KRS.inverse T.1)) := by
+  constructor
+  · intro S
+    rcases hdiagChoice S with ⟨π, hKRS, huniq⟩
+    exact standardBitableau_degree_krsCoeff_ne_zero_of_unique_permChoice
+      (k := k) S π hKRS huniq
+  · intro S T hcoeff
+    rcases standardBitableau_degree_krsCoeff_exists_permChoiceExp
+        (k := k) S T hcoeff with ⟨π, hπ⟩
+    exact hcrossTri S T π hπ
+
+/-- Fixed-degree standard bitableaux are linearly independent once the KRS monomial is known
+to be coefficient-triangular for their polynomial expansions. -/
+theorem standardBitableau_degree_linearIndependent_of_krsCoeff_triangular
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ)
+    (hdiag :
+      ∀ S : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d },
+        MvPolynomial.coeff (KRS.inverse S.1)
+          (YoungBitableau.toPolynomial (k := k) S.1.1) ≠ 0)
+    (htri :
+      ∀ S T : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d },
+        MvPolynomial.coeff (KRS.inverse S.1)
+          (YoungBitableau.toPolynomial (k := k) T.1.1) ≠ 0 →
+        (rowMajorLex m n).toSyn (KRS.inverse S.1) ≤
+          (rowMajorLex m n).toSyn (KRS.inverse T.1)) :
+    LinearIndependent k
+      (fun S : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d } =>
+        YoungBitableau.toPolynomial (k := k) S.1.1) := by
+  classical
+  apply mvPolynomial_linearIndependent_of_coeff_triangular
+    (key := fun S : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d } => KRS.inverse S.1)
+    (rank := fun S : { S : StandardYoungBitableau m n //
+        YoungBitableau.degree S.1 = d } =>
+      (rowMajorLex m n).toSyn (KRS.inverse S.1))
+  · intro S T hST
+    apply Subtype.ext
+    have hinv : KRS.inverse S.1 = KRS.inverse T.1 := by
+      exact (rowMajorLex m n).toSyn.injective hST
+    calc
+      S.1 = KRS.forward (KRS.inverse S.1) :=
+        (KRS.krs_right_inverse (m := m) (n := n) S.1).symm
+      _ = KRS.forward (KRS.inverse T.1) := by rw [hinv]
+      _ = T.1 := KRS.krs_right_inverse (m := m) (n := n) T.1
+  · exact hdiag
+  · exact htri
+
+/-- Monomials are spanned, already in the polynomial ring, by products of
+`1 × 1` minors, hence by Young bitableaux.  This earlier copy is used by the
+filtered-existence route to fixed-degree spanning. -/
+theorem monomial_mem_span_youngBitableau_toPolynomial_aux
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (E : (Fin m × Fin n) →₀ ℕ) :
+    MvPolynomial.monomial E (1 : k) ∈
+      Submodule.span k
+        (Set.range
+          (fun B : YoungBitableau m n =>
+            YoungBitableau.toPolynomial (k := k) B)) := by
+  classical
+  let W : Submodule k (MvPolynomial (Fin m × Fin n) k) :=
+    Submodule.span k
+      (Set.range
+        (fun vf : Σ v : ℕ, Fin v → Fin m × Fin n =>
+          YoungBitableau.toPolynomial (k := k)
+            (YoungBitableau.oneMinorVec vf.1 vf.2)))
+  have hmonoW :
+      MvPolynomial.monomial E (1 : k) ∈ W := by
+    simpa using
+      (MvPolynomial.induction_on_monomial
+        (motive := fun p : MvPolynomial (Fin m × Fin n) k => p ∈ W)
+        (fun a => by
+          have hgen :
+              YoungBitableau.toPolynomial (k := k)
+                  (YoungBitableau.oneMinorVec 0 (Fin.elim0)) ∈ W := by
+            exact Submodule.subset_span ⟨⟨0, Fin.elim0⟩, rfl⟩
+          have hsmul :
+              a • YoungBitableau.toPolynomial (k := k)
+                (YoungBitableau.oneMinorVec 0 (Fin.elim0)) ∈ W :=
+            W.smul_mem a hgen
+          simpa [YoungBitableau.toPolynomial_oneMinorVec,
+            MvPolynomial.C_eq_smul_one] using hsmul)
+        (fun p x hp => by
+          refine Submodule.span_induction
+            (p := fun y hy => y * MvPolynomial.X x ∈ W)
+            ?mem ?zero ?add ?smul hp
+          · intro y hy
+            rcases hy with ⟨vf, rfl⟩
+            rcases vf with ⟨v, f⟩
+            have hgen :
+                YoungBitableau.toPolynomial (k := k)
+                    (YoungBitableau.oneMinorVec (v + 1) (Fin.snoc f x)) ∈ W := by
+              exact Submodule.subset_span ⟨⟨v + 1, Fin.snoc f x⟩, rfl⟩
+            rw [YoungBitableau.toPolynomial_oneMinorVec_snoc] at hgen
+            exact hgen
+          · simp
+          · intro y z hy hz hyX hzX
+            simpa [add_mul] using W.add_mem hyX hzX
+          · intro a y hy hyX
+            simpa [MvPolynomial.smul_eq_C_mul, mul_assoc] using W.smul_mem a hyX)
+        E (1 : k))
+  have hW_le :
+      W ≤
+        Submodule.span k
+          (Set.range
+            (fun B : YoungBitableau m n =>
+              YoungBitableau.toPolynomial (k := k) B)) := by
+    rw [Submodule.span_le]
+    rintro p ⟨vf, rfl⟩
+    exact Submodule.subset_span ⟨YoungBitableau.oneMinorVec vf.1 vf.2, rfl⟩
+  exact hW_le hmonoW
+
+/-- The filtered straightening statement is immediate for an already standard bitableau. -/
+lemma straightening_law_exists_filtered_of_isStandard
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (hB : YoungBitableau.IsStandard B) :
+    ∃ c : StandardYoungBitableau m n →₀ k,
+      YoungBitableau.toPolynomial B =
+        c.sum (fun S a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)
+      ∧
+      (∀ S, c S ≠ 0 →
+        YoungBitableau.degree S.1 = YoungBitableau.degree B)
+      ∧
+      (∀ S, c S ≠ 0 →
+        YoungBitableau.length B ≤ YoungBitableau.length S.1) := by
+  classical
+  let SB : StandardYoungBitableau m n := ⟨B, hB⟩
+  refine ⟨Finsupp.single SB (1 : k), ?_, ?_, ?_⟩
+  · simp [SB]
+  · intro S hS
+    have hS_eq : S = SB := by
+      by_contra hne
+      have hzero : (Finsupp.single SB (1 : k)) S = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hS hzero
+    simp [hS_eq, SB]
+  · intro S hS
+    have hS_eq : S = SB := by
+      by_contra hne
+      have hzero : (Finsupp.single SB (1 : k)) S = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hS hzero
+    simp [hS_eq, SB]
+
+lemma exists_adjacent_violation_of_not_isStandard
+    {m n : ℕ}
+    (B : YoungBitableau m n)
+    (hB : ¬ YoungBitableau.IsStandard B) :
+    ∃ (a b : Fin B.v) (hnext : a.val + 1 = b.val)
+      (j : Fin (B.size b)),
+      ¬
+        ((B.minorindex a).row
+            ⟨j.val,
+              lt_of_lt_of_le j.isLt
+                (B.shape_antitone a b (by grind))⟩
+          ≤ (B.minorindex b).row j
+        ∧
+        (B.minorindex a).col
+            ⟨j.val,
+              lt_of_lt_of_le j.isLt
+                (B.shape_antitone a b (by grind))⟩
+          ≤ (B.minorindex b).col j) := by
+  classical
+  simpa [YoungBitableau.IsStandard, not_forall] using hB
+
+lemma exists_adjacent_not_pairLE_of_not_isStandard
+    {m n : ℕ}
+    (B : YoungBitableau m n)
+    (hB : ¬ YoungBitableau.IsStandard B) :
+    ∃ (a b : Fin B.v), a.val + 1 = b.val ∧
+      ¬ MinorIndex.PairLE (B.minorindex a) (B.minorindex b) := by
+  classical
+  rw [YoungBitableau.isStandard_iff_adjacent_pairLE] at hB
+  simpa [not_forall, Classical.not_imp] using hB
+
+/-- One summand in Swan's local two-minor straightening relation.
+
+This is the direct formal output expected from Swan Theorem 4.1 plus
+Remark 4.4: a replacement pair of minors, standardly ordered, with strictly
+smaller first factor and preserved row/column content. -/
+structure SwanTwoMinorTerm
+    {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) where
+  F : MinorFactor m n
+  G : MinorFactor m n
+  pairLE : MinorIndex.PairLE F.idx G.idx
+  firstLT : MinorIndex.PairLT F.idx I
+  row_content :
+    MinorWord.rowContent ⟨[F, G]⟩ =
+      MinorIndex.rowContent I + MinorIndex.rowContent J
+  col_content :
+    MinorWord.colContent ⟨[F, G]⟩ =
+      MinorIndex.colContent I + MinorIndex.colContent J
+
+namespace SwanTwoMinorTerm
+
+private def finiteCode {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) : MinorFactor m n × MinorFactor m n :=
+  (T.F, T.G)
+
+private lemma finiteCode_injective {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} :
+    Function.Injective (@finiteCode m n p q I J) := by
+  intro T U h
+  cases T
+  cases U
+  cases h
+  rfl
+
+instance instFinite {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} :
+    Finite (SwanTwoMinorTerm I J) := by
+  classical
+  exact Finite.of_injective (@finiteCode m n p q I J) finiteCode_injective
+
+def toWord {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) : MinorWord m n :=
+  ⟨[T.F, T.G]⟩
+
+@[simp] lemma toWord_factors {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    T.toWord.factors = [T.F, T.G] := by
+  rfl
+
+lemma pairwisePairLE_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    MinorWord.PairwisePairLE T.toWord := by
+  simp [MinorWord.PairwisePairLE, SwanTwoMinorTerm.toWord, T.pairLE]
+
+lemma toPolynomial_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    (T : SwanTwoMinorTerm I J) :
+    MinorWord.toPolynomial (k := k) T.toWord =
+      genericMinor (k := k) T.F.idx * genericMinor (k := k) T.G.idx := by
+  simp [SwanTwoMinorTerm.toWord, MinorFactor.toPolynomial]
+
+lemma rowContent_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    MinorWord.rowContent T.toWord =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  simpa [SwanTwoMinorTerm.toWord] using T.row_content
+
+lemma colContent_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    MinorWord.colContent T.toWord =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  simpa [SwanTwoMinorTerm.toWord] using T.col_content
+
+lemma first_size_nondec {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    p ≤ T.F.t :=
+  MinorIndex.PairLE.size_le T.firstLT.pairLE
+
+lemma length_nondec_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    p ≤ MinorWord.length T.toWord := by
+  have hpF : p ≤ T.F.t := T.first_size_nondec
+  simp only [MinorWord.length, MinorFactor.length, toWord, List.foldr_cons, List.foldr_nil, zero_le,
+    sup_of_le_left, le_sup_iff]
+  exact Or.inl hpF
+
+lemma degree_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    MinorWord.degree T.toWord = p + q := by
+  have hsum :
+      (∑ i : Fin m, MinorWord.rowContent T.toWord i) =
+        ∑ i : Fin m, (MinorIndex.rowContent I + MinorIndex.rowContent J) i := by
+    exact congrArg (fun f : Fin m →₀ ℕ => ∑ i : Fin m, f i) T.rowContent_toWord
+  simpa [MinorWord.rowContent_total, Finset.sum_add_distrib,
+    MinorIndex.rowContent_total] using hsum
+
+lemma support_data {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanTwoMinorTerm I J) :
+    ∃ F G : MinorFactor m n,
+      T.toWord.factors = [F, G]
+      ∧ MinorIndex.PairLE F.idx G.idx
+      ∧ MinorIndex.PairLT F.idx I
+      ∧ MinorWord.rowContent T.toWord =
+          MinorIndex.rowContent I + MinorIndex.rowContent J
+      ∧ MinorWord.colContent T.toWord =
+          MinorIndex.colContent I + MinorIndex.colContent J := by
+  exact ⟨T.F, T.G, rfl, T.pairLE, T.firstLT, T.row_content, T.col_content⟩
+
+end SwanTwoMinorTerm
+
+/-- One term in Swan's Laplace-product straightening before the strict
+first-factor improvement is attached.
+
+The adjective "good" in Swan's Theorem 3.1 is represented here by
+`pairLE : F ≤ G`: the produced two-minor product is locally standard.  The
+separate weak comparison `firstLE : F ≤ I` is the direct non-strict improvement
+from the Laplace-product theorem.  The strict comparison `F < I` used in
+Theorem 4.1 is supplied later by Swan Lemma 4.3, not baked into this primitive
+Laplace term. -/
+structure SwanLaplaceProductTerm
+    {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) where
+  F : MinorFactor m n
+  G : MinorFactor m n
+  pairLE : MinorIndex.PairLE F.idx G.idx
+  firstLE : MinorIndex.PairLE F.idx I
+  row_content :
+    MinorWord.rowContent ⟨[F, G]⟩ =
+      MinorIndex.rowContent I + MinorIndex.rowContent J
+  col_content :
+    MinorWord.colContent ⟨[F, G]⟩ =
+      MinorIndex.colContent I + MinorIndex.colContent J
+
+namespace SwanLaplaceProductTerm
+
+private def finiteCode {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) : MinorFactor m n × MinorFactor m n :=
+  (T.F, T.G)
+
+private lemma finiteCode_injective {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} :
+    Function.Injective (@finiteCode m n p q I J) := by
+  intro T U h
+  cases T
+  cases U
+  cases h
+  rfl
+
+instance instFinite {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} :
+    Finite (SwanLaplaceProductTerm I J) := by
+  classical
+  exact Finite.of_injective (@finiteCode m n p q I J) finiteCode_injective
+
+def toWord {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) : MinorWord m n :=
+  ⟨[T.F, T.G]⟩
+
+@[simp] lemma toWord_factors {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    T.toWord.factors = [T.F, T.G] := by
+  rfl
+
+lemma pairwisePairLE_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    MinorWord.PairwisePairLE T.toWord := by
+  simp [MinorWord.PairwisePairLE, SwanLaplaceProductTerm.toWord, T.pairLE]
+
+lemma rowContent_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    MinorWord.rowContent T.toWord =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  simpa [SwanLaplaceProductTerm.toWord] using T.row_content
+
+lemma colContent_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    MinorWord.colContent T.toWord =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  simpa [SwanLaplaceProductTerm.toWord] using T.col_content
+
+lemma degree_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    MinorWord.degree T.toWord = p + q := by
+  have hsum :
+      (∑ i : Fin m, MinorWord.rowContent T.toWord i) =
+        ∑ i : Fin m, (MinorIndex.rowContent I + MinorIndex.rowContent J) i := by
+    exact congrArg (fun f : Fin m →₀ ℕ => ∑ i : Fin m, f i) T.rowContent_toWord
+  simpa [MinorWord.rowContent_total, Finset.sum_add_distrib,
+    MinorIndex.rowContent_total] using hsum
+
+lemma toPolynomial_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    (T : SwanLaplaceProductTerm I J) :
+    MinorWord.toPolynomial (k := k) T.toWord =
+      genericMinor (k := k) T.F.idx * genericMinor (k := k) T.G.idx := by
+  simp [SwanLaplaceProductTerm.toWord, MinorFactor.toPolynomial]
+
+lemma first_size_nondec {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    p ≤ T.F.t :=
+  MinorIndex.PairLE.size_le T.firstLE
+
+lemma length_nondec_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    p ≤ MinorWord.length T.toWord := by
+  have hpF : p ≤ T.F.t := T.first_size_nondec
+  simp only [MinorWord.length, MinorFactor.length, toWord, List.foldr_cons, List.foldr_nil, zero_le,
+    sup_of_le_left, le_sup_iff]
+  exact Or.inl hpF
+
+lemma support_data {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J) :
+    ∃ F G : MinorFactor m n,
+      T.toWord.factors = [F, G]
+      ∧ MinorIndex.PairLE F.idx G.idx
+      ∧ MinorIndex.PairLE F.idx I
+      ∧ MinorWord.rowContent T.toWord =
+          MinorIndex.rowContent I + MinorIndex.rowContent J
+      ∧ MinorWord.colContent T.toWord =
+          MinorIndex.colContent I + MinorIndex.colContent J := by
+  exact ⟨T.F, T.G, rfl, T.pairLE, T.firstLE, T.rowContent_toWord, T.colContent_toWord⟩
+
+lemma firstLT_of_not_original_le_first {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J)
+    (hnot : ¬ MinorIndex.PairLE I T.F.idx) :
+    MinorIndex.PairLT T.F.idx I :=
+  MinorIndex.PairLT.of_pairLE_not_symm T.firstLE hnot
+
+/-- Attach the strict first-factor decrease supplied by Swan Lemma 4.3 to a
+Laplace-product term, obtaining the local term used by Theorem 4.1. -/
+def toSwanTwoMinorTerm {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J)
+    (hstrict : MinorIndex.PairLT T.F.idx I) :
+    SwanTwoMinorTerm I J where
+  F := T.F
+  G := T.G
+  pairLE := T.pairLE
+  firstLT := hstrict
+  row_content := T.row_content
+  col_content := T.col_content
+
+@[simp] lemma toSwanTwoMinorTerm_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanLaplaceProductTerm I J)
+    (hstrict : MinorIndex.PairLT T.F.idx I) :
+    (T.toSwanTwoMinorTerm hstrict).toWord = T.toWord := by
+  rfl
+
+end SwanLaplaceProductTerm
+
+/-- Swan's Laplace-product straightening data before Lemma 4.3 upgrades the
+first factor from weakly improved to strictly improved.
+
+This is the finite-sum object corresponding to Swan Theorem 3.1 in the local
+two-minor setting. -/
+structure SwanLaplaceProductExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q) where
+  ι : Type
+  instFintype : Fintype ι
+  coeff : ι → k
+  term : ι → SwanLaplaceProductTerm I J
+  poly_eq :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ x : ι,
+        MvPolynomial.C (coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanLaplaceProductTerm.toWord (term x))
+
+attribute [instance] SwanLaplaceProductExpansion.instFintype
+
+/-- A finite local Swan expansion, before it is converted to a finsupp.
+
+This mirrors the displayed finite sum in Swan Theorem 4.1: the index type
+enumerates the nonzero replacement pairs, `coeff` gives their signed
+coefficients, and `term` carries the ordered/content-preserving replacement
+data. -/
+structure SwanTwoMinorExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q) where
+  ι : Type
+  instFintype : Fintype ι
+  coeff : ι → k
+  term : ι → SwanTwoMinorTerm I J
+  poly_eq :
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ x : ι,
+        MvPolynomial.C (coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanTwoMinorTerm.toWord (term x))
+
+attribute [instance] SwanTwoMinorExpansion.instFintype
+
+/-- A product that is already good is its own one-term Laplace-product
+expansion. -/
+lemma swan_laplace_product_expansion_of_pairLE
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hIJ : MinorIndex.PairLE I J) :
+    Nonempty (SwanLaplaceProductExpansion (k := k) I J) := by
+  classical
+  let F : MinorFactor m n := { t := p, idx := I }
+  let G : MinorFactor m n := { t := q, idx := J }
+  let T : SwanLaplaceProductTerm I J :=
+    { F := F
+      G := G
+      pairLE := hIJ
+      firstLE := MinorIndex.PairLE.refl I
+      row_content := by
+        simp [F, G, MinorFactor.rowContent]
+      col_content := by
+        simp [F, G, MinorFactor.colContent] }
+  refine ⟨
+    { ι := PUnit
+      instFintype := inferInstance
+      coeff := fun _ => (1 : k)
+      term := fun _ => T
+      poly_eq := ?_ }⟩
+  simp [T, SwanLaplaceProductTerm.toWord, F, G, MinorFactor.toPolynomial]
+
+/-- A raw two-factor Laplace product during Swan's reduction process.
+
+Unlike `SwanLaplaceProductTerm`, this does not assume the two factors are
+already good/ordered.  Corollary 2.7 reduces a bad raw term to a finite sum of
+raw terms of smaller rank; Corollary 2.8 is the separate termination statement
+which iterates that reduction until only good terms remain. -/
+structure SwanRawLaplaceProductTerm
+    {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) where
+  F : MinorFactor m n
+  G : MinorFactor m n
+  firstLE : MinorIndex.PairLE F.idx I
+  row_content :
+    MinorWord.rowContent ⟨[F, G]⟩ =
+      MinorIndex.rowContent I + MinorIndex.rowContent J
+  col_content :
+    MinorWord.colContent ⟨[F, G]⟩ =
+      MinorIndex.colContent I + MinorIndex.colContent J
+
+namespace SwanRawLaplaceProductTerm
+
+def toWord {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) : MinorWord m n :=
+  ⟨[T.F, T.G]⟩
+
+def toRawPair {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) : RawMinorPair m n where
+  p := T.F.t
+  q := T.G.t
+  left := RawMinorIndex.ofMinorIndex T.F.idx
+  right := RawMinorIndex.ofMinorIndex T.G.idx
+
+@[simp] lemma toRawPair_p {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    T.toRawPair.p = T.F.t := rfl
+
+@[simp] lemma toRawPair_q {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    T.toRawPair.q = T.G.t := rfl
+
+lemma toRawPair_toPolynomial {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.toPolynomial (k := k) T.toRawPair =
+      MinorWord.toPolynomial (k := k) T.toWord := by
+  simp [SwanRawLaplaceProductTerm.toRawPair, SwanRawLaplaceProductTerm.toWord,
+    RawMinorPair.toPolynomial, MinorFactor.toPolynomial]
+
+lemma toRawPair_rowContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.rowContent T.toRawPair =
+      MinorWord.rowContent T.toWord := by
+  simp [SwanRawLaplaceProductTerm.toRawPair, SwanRawLaplaceProductTerm.toWord,
+    RawMinorPair.rowContent, MinorFactor.rowContent]
+
+lemma toRawPair_colContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.colContent T.toRawPair =
+      MinorWord.colContent T.toWord := by
+  simp [SwanRawLaplaceProductTerm.toRawPair, SwanRawLaplaceProductTerm.toWord,
+    RawMinorPair.colContent, MinorFactor.colContent]
+
+lemma toRawPair_laplacePolynomial {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.laplacePolynomial (k := k) T.toRawPair =
+      MvPolynomial.C (RawMinorPair.laplaceCoeff (k := k) T.toRawPair) *
+        MinorWord.toPolynomial (k := k) T.toWord := by
+  simp [RawMinorPair.laplacePolynomial, T.toRawPair_toPolynomial]
+
+/-- Promote a raw two-minor pair to a raw Swan Laplace-product term once the
+two raw factors are honest increasing minors and the first factor has the
+required weak improvement. -/
+def ofRawPairOfStrictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col)
+    (hfirst :
+      MinorIndex.PairLE (P.left.toMinorIndexOfStrictMono hLrow hLcol) I)
+    (hrow :
+      RawMinorPair.rowContent P =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      RawMinorPair.colContent P =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    SwanRawLaplaceProductTerm I J where
+  F := P.leftFactorOfStrictMono hLrow hLcol
+  G := P.rightFactorOfStrictMono hRrow hRcol
+  firstLE := hfirst
+  row_content := by
+    rw [← hrow]
+    exact RawMinorPair.rowContent_toMinorWordOfStrictMono P hLrow hLcol hRrow hRcol
+  col_content := by
+    rw [← hcol]
+    exact RawMinorPair.colContent_toMinorWordOfStrictMono P hLrow hLcol hRrow hRcol
+
+@[simp] lemma ofRawPairOfStrictMono_F {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col)
+    (hfirst :
+      MinorIndex.PairLE (P.left.toMinorIndexOfStrictMono hLrow hLcol) I)
+    (hrow :
+      RawMinorPair.rowContent P =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      RawMinorPair.colContent P =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    (ofRawPairOfStrictMono P hLrow hLcol hRrow hRcol hfirst hrow hcol).F =
+      P.leftFactorOfStrictMono hLrow hLcol := rfl
+
+@[simp] lemma ofRawPairOfStrictMono_G {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col)
+    (hfirst :
+      MinorIndex.PairLE (P.left.toMinorIndexOfStrictMono hLrow hLcol) I)
+    (hrow :
+      RawMinorPair.rowContent P =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      RawMinorPair.colContent P =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    (ofRawPairOfStrictMono P hLrow hLcol hRrow hRcol hfirst hrow hcol).G =
+      P.rightFactorOfStrictMono hRrow hRcol := rfl
+
+lemma ofRawPairOfStrictMono_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (P : RawMinorPair m n)
+    (hLrow : StrictMono P.left.row) (hLcol : StrictMono P.left.col)
+    (hRrow : StrictMono P.right.row) (hRcol : StrictMono P.right.col)
+    (hfirst :
+      MinorIndex.PairLE (P.left.toMinorIndexOfStrictMono hLrow hLcol) I)
+    (hrow :
+      RawMinorPair.rowContent P =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      RawMinorPair.colContent P =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    (ofRawPairOfStrictMono P hLrow hLcol hRrow hRcol hfirst hrow hcol).toWord =
+      P.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol := by
+  rfl
+
+lemma toRawPair_left_row_strictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    StrictMono T.toRawPair.left.row := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair] using T.F.idx.row.strictMono
+
+lemma toRawPair_left_col_strictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    StrictMono T.toRawPair.left.col := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair] using T.F.idx.col.strictMono
+
+lemma toRawPair_right_row_strictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    StrictMono T.toRawPair.right.row := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair] using T.G.idx.row.strictMono
+
+lemma toRawPair_right_col_strictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    StrictMono T.toRawPair.right.col := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair] using T.G.idx.col.strictMono
+
+lemma reshuffle_toRawPair_rowContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.Reshuffle T.toRawPair) :
+    RawMinorPair.rowContent E.toPair =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  rw [RawMinorPair.Reshuffle.rowContent_toPair,
+    T.toRawPair_rowContent]
+  simpa [SwanRawLaplaceProductTerm.toWord] using T.row_content
+
+lemma reshuffle_toRawPair_colContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.Reshuffle T.toRawPair) :
+    RawMinorPair.colContent E.toPair =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  rw [RawMinorPair.Reshuffle.colContent_toPair,
+    T.toRawPair_colContent]
+  simpa [SwanRawLaplaceProductTerm.toWord] using T.col_content
+
+lemma biReshuffle_toRawPair_rowContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) :
+    RawMinorPair.rowContent E.toPair =
+      MinorIndex.rowContent I + MinorIndex.rowContent J := by
+  rw [RawMinorPair.BiReshuffle.rowContent_toPair,
+    T.toRawPair_rowContent]
+  simpa [SwanRawLaplaceProductTerm.toWord] using T.row_content
+
+lemma biReshuffle_toRawPair_colContent {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) :
+    RawMinorPair.colContent E.toPair =
+      MinorIndex.colContent I + MinorIndex.colContent J := by
+  rw [RawMinorPair.BiReshuffle.colContent_toPair,
+    T.toRawPair_colContent]
+  simpa [SwanRawLaplaceProductTerm.toWord] using T.col_content
+
+/-- Turn a nonzero bi-reshuffle term from Swan's Laplace relation into the raw
+term type used by the reduction.  The hypotheses that the reshuffled factors
+are strictly increasing are exactly the nonzero determinant conditions. -/
+def ofBiReshuffleOfStrictMono {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col)
+    (hfirst :
+      MinorIndex.PairLE
+        (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I) :
+    SwanRawLaplaceProductTerm I J :=
+  ofRawPairOfStrictMono E.toPair hLrow hLcol hRrow hRcol hfirst
+    (T.biReshuffle_toRawPair_rowContent E)
+    (T.biReshuffle_toRawPair_colContent E)
+
+lemma ofBiReshuffleOfStrictMono_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col)
+    (hfirst :
+      MinorIndex.PairLE
+        (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I) :
+    (T.ofBiReshuffleOfStrictMono E hLrow hLcol hRrow hRcol hfirst).toWord =
+      E.toPair.toMinorWordOfStrictMono hLrow hLcol hRrow hRcol := by
+  rfl
+
+lemma ofBiReshuffleOfStrictMono_laplacePolynomial {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col)
+    (hfirst :
+      MinorIndex.PairLE
+        (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I) :
+    RawMinorPair.laplacePolynomial (k := k) E.toPair =
+      MvPolynomial.C (RawMinorPair.laplaceCoeff (k := k) T.toRawPair) *
+        MinorWord.toPolynomial (k := k)
+          (T.ofBiReshuffleOfStrictMono E hLrow hLcol hRrow hRcol hfirst).toWord := by
+  rw [RawMinorPair.BiReshuffle.laplacePolynomial_toPair]
+  rw [T.ofBiReshuffleOfStrictMono_toWord E hLrow hLcol hRrow hRcol hfirst]
+  rw [RawMinorPair.toPolynomial_toMinorWordOfStrictMono (k := k)]
+
+def IsGood {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) : Prop :=
+  MinorIndex.PairLE T.F.idx T.G.idx
+
+/-- The concrete obstruction witnessing that a raw Laplace product is bad. -/
+inductive BadWitness {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) : Prop
+  | size : T.F.t < T.G.t → BadWitness T
+  | component :
+      (hsize : T.G.t ≤ T.F.t) →
+      (j : Fin T.G.t) →
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j) →
+      BadWitness T
+
+lemma bad_cases {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) (hbad : ¬ T.IsGood) :
+    T.F.t < T.G.t ∨
+      ∃ (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t),
+        ¬
+          (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+           T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j) := by
+  exact MinorIndex.not_pairLE_or_violation hbad
+
+noncomputable def badWitness {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) (hbad : ¬ T.IsGood) :
+    BadWitness T := by
+  classical
+  rcases T.bad_cases hbad with hsize | hviol
+  · exact BadWitness.size hsize
+  · rcases hviol with ⟨hsize, j, hj⟩
+    exact BadWitness.component hsize j hj
+
+lemma exists_violation_of_bad_of_size_le {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) (hbad : ¬ T.IsGood) :
+    ∃ j : Fin T.G.t,
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j) := by
+  exact MinorIndex.exists_violation_of_not_pairLE_of_size_le hsize hbad
+
+/-- A component defect witnessed in the rows at position `j`. -/
+def RowBadAt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t) : Prop :=
+  T.G.idx.row j <
+    T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩
+
+/-- A component defect witnessed in the columns at position `j`. -/
+def ColBadAt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t) : Prop :=
+  T.G.idx.col j <
+    T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩
+
+lemma rowBad_or_colBad_of_component_violation {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t)
+    (hj :
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j)) :
+    RowBadAt T hsize j ∨ ColBadAt T hsize j := by
+  classical
+  by_cases hrow :
+      T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j
+  · right
+    have hcol :
+        ¬ T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤
+            T.G.idx.col j := by
+      intro hcol
+      exact hj ⟨hrow, hcol⟩
+    exact not_le.mp hcol
+  · left
+    exact not_le.mp hrow
+
+noncomputable def rowBadFinset {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) : Finset (Fin T.G.t) :=
+  by
+    classical
+    exact Finset.univ.filter fun j => RowBadAt T hsize j
+
+noncomputable def colBadFinset {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) : Finset (Fin T.G.t) :=
+  by
+    classical
+    exact Finset.univ.filter fun j => ColBadAt T hsize j
+
+/-- The first row component where the old first factor is too large. -/
+noncomputable def minimalRowBadIndex {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (rowBadFinset T hsize).Nonempty) : Fin T.G.t :=
+  (rowBadFinset T hsize).min' hne
+
+/-- The first column component where the old first factor is too large. -/
+noncomputable def minimalColBadIndex {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (colBadFinset T hsize).Nonempty) : Fin T.G.t :=
+  (colBadFinset T hsize).min' hne
+
+lemma minimalRowBadIndex_bad {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (rowBadFinset T hsize).Nonempty) :
+    RowBadAt T hsize (minimalRowBadIndex T hsize hne) := by
+  classical
+  have hmem := Finset.min'_mem (rowBadFinset T hsize) hne
+  simpa [minimalRowBadIndex, rowBadFinset] using hmem
+
+lemma minimalColBadIndex_bad {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (colBadFinset T hsize).Nonempty) :
+    ColBadAt T hsize (minimalColBadIndex T hsize hne) := by
+  classical
+  have hmem := Finset.min'_mem (colBadFinset T hsize) hne
+  simpa [minimalColBadIndex, colBadFinset] using hmem
+
+lemma row_le_before_minimalRowBadIndex {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (rowBadFinset T hsize).Nonempty)
+    (μ : Fin T.G.t) (hμ : μ < minimalRowBadIndex T hsize hne) :
+    T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+      T.G.idx.row μ := by
+  classical
+  have hnot : ¬ RowBadAt T hsize μ := by
+    intro hbad
+    have hmem : μ ∈ rowBadFinset T hsize := by
+      simp [rowBadFinset, hbad]
+    have hle :
+        minimalRowBadIndex T hsize hne ≤ μ := by
+      simpa [minimalRowBadIndex] using
+        Finset.min'_le (rowBadFinset T hsize) μ hmem
+    exact not_lt_of_ge hle hμ
+  exact not_lt.mp hnot
+
+lemma col_le_before_minimalColBadIndex {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (hne : (colBadFinset T hsize).Nonempty)
+    (μ : Fin T.G.t) (hμ : μ < minimalColBadIndex T hsize hne) :
+    T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+      T.G.idx.col μ := by
+  classical
+  have hnot : ¬ ColBadAt T hsize μ := by
+    intro hbad
+    have hmem : μ ∈ colBadFinset T hsize := by
+      simp [colBadFinset, hbad]
+    have hle :
+        minimalColBadIndex T hsize hne ≤ μ := by
+      simpa [minimalColBadIndex] using
+        Finset.min'_le (colBadFinset T hsize) μ hmem
+    exact not_lt_of_ge hle hμ
+  exact not_lt.mp hnot
+
+/-- Swan's raw reduction order: a product is smaller when its first factor is
+strictly smaller in the minor-pair order. -/
+def LT {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (A B : SwanRawLaplaceProductTerm I J) : Prop :=
+  MinorFactor.PairLT A.F B.F
+
+lemma ofBiReshuffleOfStrictMono_LT {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : StrictMono E.toPair.left.row)
+    (hLcol : StrictMono E.toPair.left.col)
+    (hRrow : StrictMono E.toPair.right.row)
+    (hRcol : StrictMono E.toPair.right.col)
+    (hfirst :
+      MinorIndex.PairLE
+        (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I)
+    (hlt :
+      MinorIndex.PairLT
+        (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) T.F.idx) :
+    LT (T.ofBiReshuffleOfStrictMono E hLrow hLcol hRrow hRcol hfirst) T := by
+  simpa [LT, MinorFactor.PairLT,
+    SwanRawLaplaceProductTerm.ofBiReshuffleOfStrictMono,
+    SwanRawLaplaceProductTerm.ofRawPairOfStrictMono,
+    RawMinorPair.leftFactorOfStrictMono] using hlt
+
+/-- A bi-reshuffle term that survives the zero filtering in the size branch of
+Swan's Laplace relation and is already promotable to the raw reduction term
+type. -/
+structure BiReshuffleSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) where
+  E : RawMinorPair.BiReshuffle T.toRawPair
+  hLrow : StrictMono E.toPair.left.row
+  hLcol : StrictMono E.toPair.left.col
+  hRrow : StrictMono E.toPair.right.row
+  hRcol : StrictMono E.toPair.right.col
+  firstLE :
+    MinorIndex.PairLE
+      (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I
+  firstLT :
+    MinorIndex.PairLT
+      (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) T.F.idx
+
+namespace BiReshuffleSupport
+
+private def finiteCode {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (S : BiReshuffleSupport T) :
+    RawMinorPair.BiReshuffle T.toRawPair :=
+  S.E
+
+private lemma finiteCode_injective {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Function.Injective (@finiteCode m n p q I J T) := by
+  intro S S' h
+  cases S
+  cases S'
+  cases h
+  rfl
+
+instance instFinite {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Finite (BiReshuffleSupport T) := by
+  classical
+  exact Finite.of_injective (@finiteCode m n p q I J T) finiteCode_injective
+
+noncomputable instance instFintype {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Fintype (BiReshuffleSupport T) := by
+  classical
+  exact Fintype.ofFinite (BiReshuffleSupport T)
+
+def toRawTerm {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (S : BiReshuffleSupport T) :
+    SwanRawLaplaceProductTerm I J :=
+  T.ofBiReshuffleOfStrictMono S.E S.hLrow S.hLcol S.hRrow S.hRcol S.firstLE
+
+lemma toRawTerm_LT {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (S : BiReshuffleSupport T) :
+    LT S.toRawTerm T :=
+  T.ofBiReshuffleOfStrictMono_LT S.E S.hLrow S.hLcol S.hRrow S.hRcol
+    S.firstLE S.firstLT
+
+@[simp] lemma toRawTerm_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (S : BiReshuffleSupport T) :
+    S.toRawTerm.toWord =
+      S.E.toPair.toMinorWordOfStrictMono S.hLrow S.hLcol S.hRrow S.hRcol := by
+  rfl
+
+lemma ext_E {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {S S' : BiReshuffleSupport T}
+    (hE : S.E = S'.E) :
+    S = S' := by
+  cases S
+  cases S'
+  simp only at hE
+  cases hE
+  rfl
+
+lemma E_injective {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Function.Injective (fun S : BiReshuffleSupport T => S.E) := by
+  intro S S' hE
+  exact ext_E hE
+
+/-- A raw bi-reshuffle term survives the determinant filtering precisely when
+all four raw factors are strictly increasing and Swan's size-branch comparison
+promotes the first factor to a smaller first factor. -/
+def IsPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ hLrow : StrictMono E.toPair.left.row,
+  ∃ hLcol : StrictMono E.toPair.left.col,
+  ∃ _hRrow : StrictMono E.toPair.right.row,
+  ∃ _hRcol : StrictMono E.toPair.right.col,
+  ∃ _firstLE :
+    MinorIndex.PairLE
+      (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) I,
+    MinorIndex.PairLT
+      (E.toPair.left.toMinorIndexOfStrictMono hLrow hLcol) T.F.idx
+
+noncomputable def toPromotableSubtype {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (S : BiReshuffleSupport T) :
+    { E : RawMinorPair.BiReshuffle T.toRawPair // IsPromotable T E } :=
+  ⟨S.E, S.hLrow, S.hLcol, S.hRrow, S.hRcol, S.firstLE, S.firstLT⟩
+
+noncomputable def ofSortedInjective {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : Function.Injective E.toPair.left.row)
+    (hLcol : Function.Injective E.toPair.left.col)
+    (hRrow : Function.Injective E.toPair.right.row)
+    (hRcol : Function.Injective E.toPair.right.col)
+    (firstLE :
+      MinorIndex.PairLE
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) I)
+    (firstLT :
+      MinorIndex.PairLT
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) T.F.idx) :
+    BiReshuffleSupport T where
+  E := E.sorted
+  hLrow := E.sorted_toPair_left_row_strictMono_of_injective hLrow
+  hLcol := E.sorted_toPair_left_col_strictMono_of_injective hLcol
+  hRrow := E.sorted_toPair_right_row_strictMono_of_injective hRrow
+  hRcol := E.sorted_toPair_right_col_strictMono_of_injective hRcol
+  firstLE := firstLE
+  firstLT := firstLT
+
+@[simp] lemma ofSortedInjective_E {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : Function.Injective E.toPair.left.row)
+    (hLcol : Function.Injective E.toPair.left.col)
+    (hRrow : Function.Injective E.toPair.right.row)
+    (hRcol : Function.Injective E.toPair.right.col)
+    (firstLE :
+      MinorIndex.PairLE
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) I)
+    (firstLT :
+      MinorIndex.PairLT
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) T.F.idx) :
+    (ofSortedInjective E hLrow hLcol hRrow hRcol firstLE firstLT).E =
+      E.sorted := rfl
+
+lemma ofSortedInjective_laplacePolynomial {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (E : RawMinorPair.BiReshuffle T.toRawPair)
+    (hLrow : Function.Injective E.toPair.left.row)
+    (hLcol : Function.Injective E.toPair.left.col)
+    (hRrow : Function.Injective E.toPair.right.row)
+    (hRcol : Function.Injective E.toPair.right.col)
+    (firstLE :
+      MinorIndex.PairLE
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) I)
+    (firstLT :
+      MinorIndex.PairLT
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hLrow)
+          (E.sorted_toPair_left_col_strictMono_of_injective hLcol)) T.F.idx) :
+    RawMinorPair.laplacePolynomial (k := k)
+        (ofSortedInjective E hLrow hLcol hRrow hRcol firstLE firstLT).E.toPair =
+      E.toPair.sortSign (k := k) *
+        RawMinorPair.laplacePolynomial (k := k) E.toPair := by
+  simpa [ofSortedInjective] using
+    RawMinorPair.BiReshuffle.laplacePolynomial_sorted_toPair (k := k) E
+
+def IsSortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ hE : E.AllInjective,
+  ∃ _firstLE :
+    MinorIndex.PairLE
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+      (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+      (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) I,
+    MinorIndex.PairLT
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx
+
+/-- Raw support predicate for the column-side Hodge component branch.
+
+It records the non-pivot `HodgeColSplit` terms whose associated raw
+bi-reshuffle survives determinant-zero filtering.  The order-theoretic
+promotion to `IsSortedPromotable` is intentionally kept as a separate lemma. -/
+def IsComponentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp,
+    S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp ∧
+      RawMinorPair.BiReshuffle.HodgeColSplit.toBiReshuffle S = E ∧
+        E.AllInjective
+
+/-- Raw support predicate for the row-side Hodge component branch. -/
+def IsComponentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp,
+    S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp ∧
+      RawMinorPair.BiReshuffle.HodgeRowSplit.toBiReshuffle S = E ∧
+        E.AllInjective
+
+lemma allInjective_of_componentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsComponentColLaplaceSupport T ν hνp E) :
+    E.AllInjective := by
+  rcases h with ⟨_S, _hne, _hE, hsurvives⟩
+  exact hsurvives
+
+lemma allInjective_of_componentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsComponentRowLaplaceSupport T ν hνp E) :
+    E.AllInjective := by
+  rcases h with ⟨_S, _hne, _hE, hsurvives⟩
+  exact hsurvives
+
+noncomputable instance instFintypeComponentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t} :
+    Fintype { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsComponentColLaplaceSupport T ν hνp E } := by
+  classical
+  exact Fintype.ofFinite _
+
+noncomputable instance instFintypeComponentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t} :
+    Fintype { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsComponentRowLaplaceSupport T ν hνp E } := by
+  classical
+  exact Fintype.ofFinite _
+
+/-- The survivor condition for Swan's size-defect branch before collecting
+terms into `BiReshuffleSupport`.
+
+In the case `|A| < n / 2`, Corollary 2.8 sums over supersets `U ⊇ A` and
+`W ⊇ B`.  After deleting determinant-zero raw terms and sorting the four raw
+minors, every non-pivot survivor has a first factor of strictly larger size
+than the original first factor, while still lying below it in Swan's
+minor-pair order.  This predicate records exactly that local support
+condition; the next lemma converts it to the existing `IsSortedPromotable`
+interface used downstream. -/
+def IsSizeBranchSurvivor {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ hE : E.AllInjective,
+  ∃ _firstLEOld :
+    MinorIndex.PairLE
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx,
+    T.F.t < E.r
+
+/-- Row-slot containment `U ⊇ A` in Swan's size branch: every old left row
+slot of `T.toRawPair` is selected among the new left row slots of `E`. -/
+def ContainsOriginalLeftRows {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∀ i : Fin T.F.t, ∃ a : Fin E.r, E.rowEquiv (Sum.inl a) = Sum.inl i
+
+/-- Column-slot containment `W ⊇ B` in Swan's size branch: every old left
+column slot of `T.toRawPair` is selected among the new left column slots of
+`E`. -/
+def ContainsOriginalLeftCols {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∀ i : Fin T.F.t, ∃ a : Fin E.r, E.colEquiv (Sum.inl a) = Sum.inl i
+
+lemma containsOriginalLeftRows_id {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    ContainsOriginalLeftRows T (RawMinorPair.BiReshuffle.id T.toRawPair) := by
+  intro i
+  exact ⟨i, rfl⟩
+
+lemma containsOriginalLeftCols_id {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    ContainsOriginalLeftCols T (RawMinorPair.BiReshuffle.id T.toRawPair) := by
+  intro i
+  exact ⟨i, rfl⟩
+
+lemma containsOriginalLeftRows_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair) :
+    ContainsOriginalLeftRows T S.toBiReshuffle := by
+  intro i
+  exact S.exists_rowEquiv_inl_eq_inl i
+
+lemma containsOriginalLeftCols_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair) :
+    ContainsOriginalLeftCols T S.toBiReshuffle := by
+  intro i
+  exact S.exists_colEquiv_inl_eq_inl i
+
+lemma containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp) :
+    ContainsOriginalLeftRows T S.toBiReshuffle := by
+  classical
+  intro i
+  let x : S.rowSlots := ⟨Fin.castAdd T.toRawPair.q i,
+    S.leftRows (RawMinorPair.BiReshuffle.mem_leftSlotFinset_castAdd T.toRawPair i)⟩
+  let a : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm x
+  refine ⟨a, ?_⟩
+  simp only [RawMinorPair.BiReshuffle.HodgeColSplit.toBiReshuffle,
+    RawMinorPair.BiReshuffle.ofFinsets_rowEquiv_inl]
+  have ha :
+      S.rowSlots.orderEmbOfFin rfl a = Fin.castAdd T.toRawPair.q i := by
+    exact congrArg Subtype.val ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply x)
+  rw [ha, finSumFinEquiv_symm_apply_castAdd]
+
+lemma containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp) :
+    ContainsOriginalLeftCols T S.toBiReshuffle := by
+  classical
+  intro i
+  let x : S.colSlots := ⟨Fin.castAdd T.toRawPair.q i,
+    S.leftCols (RawMinorPair.BiReshuffle.mem_leftSlotFinset_castAdd T.toRawPair i)⟩
+  let a : Fin S.colSlots.card := (S.colSlots.orderIsoOfFin rfl).symm x
+  refine ⟨Fin.cast S.card_eq.symm a, ?_⟩
+  simp only [RawMinorPair.BiReshuffle.HodgeRowSplit.toBiReshuffle,
+    RawMinorPair.BiReshuffle.ofFinsets_colEquiv_inl]
+  have ha :
+      S.colSlots.orderEmbOfFin S.card_eq.symm (Fin.cast S.card_eq.symm a) =
+        Fin.castAdd T.toRawPair.q i := by
+    exact congrArg Subtype.val ((S.colSlots.orderIsoOfFin rfl).apply_symm_apply x)
+  change
+    finSumFinEquiv.symm
+        (S.colSlots.orderEmbOfFin S.card_eq.symm (Fin.cast S.card_eq.symm a)) =
+      Sum.inl i
+  rw [ha, finSumFinEquiv_symm_apply_castAdd]
+
+lemma left_row_image_subset_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair) :
+    Finset.univ.image T.toRawPair.left.row ⊆
+      Finset.univ.image S.toBiReshuffle.toPair.left.row := by
+  intro x hx
+  rcases Finset.mem_image.mp hx with ⟨i, _hi, rfl⟩
+  rcases S.exists_rowEquiv_inl_eq_inl i with ⟨a, ha⟩
+  refine Finset.mem_image.mpr ⟨a, Finset.mem_univ _, ?_⟩
+  change T.toRawPair.slotRow (S.toBiReshuffle.rowEquiv (Sum.inl a)) =
+    T.toRawPair.left.row i
+  rw [ha]
+  rfl
+
+lemma left_col_image_subset_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair) :
+    Finset.univ.image T.toRawPair.left.col ⊆
+      Finset.univ.image S.toBiReshuffle.toPair.left.col := by
+  intro x hx
+  rcases Finset.mem_image.mp hx with ⟨i, _hi, rfl⟩
+  rcases S.exists_colEquiv_inl_eq_inl i with ⟨a, ha⟩
+  refine Finset.mem_image.mpr ⟨a, Finset.mem_univ _, ?_⟩
+  change T.toRawPair.slotCol (S.toBiReshuffle.colEquiv (Sum.inl a)) =
+    T.toRawPair.left.col i
+  rw [ha]
+  rfl
+
+lemma left_row_image_subset_toBiReshuffle_of_hodgeColSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp) :
+    Finset.univ.image T.toRawPair.left.row ⊆
+      Finset.univ.image S.toBiReshuffle.toPair.left.row := by
+  intro x hx
+  rcases Finset.mem_image.mp hx with ⟨i, _hi, rfl⟩
+  rcases containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S i with
+    ⟨a, ha⟩
+  refine Finset.mem_image.mpr ⟨a, Finset.mem_univ _, ?_⟩
+  change T.toRawPair.slotRow (S.toBiReshuffle.rowEquiv (Sum.inl a)) =
+    T.toRawPair.left.row i
+  rw [ha]
+  rfl
+
+lemma left_col_image_subset_toBiReshuffle_of_hodgeRowSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp) :
+    Finset.univ.image T.toRawPair.left.col ⊆
+      Finset.univ.image S.toBiReshuffle.toPair.left.col := by
+  intro x hx
+  rcases Finset.mem_image.mp hx with ⟨i, _hi, rfl⟩
+  rcases containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S i with
+    ⟨a, ha⟩
+  refine Finset.mem_image.mpr ⟨a, Finset.mem_univ _, ?_⟩
+  change T.toRawPair.slotCol (S.toBiReshuffle.colEquiv (Sum.inl a)) =
+    T.toRawPair.left.col i
+  rw [ha]
+  rfl
+
+lemma size_le_of_containsOriginalLeftRows {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hrows : ContainsOriginalLeftRows T E) :
+    T.F.t ≤ E.r := by
+  classical
+  let pre : Fin T.F.t → Fin E.r := fun i => Classical.choose (hrows i)
+  have hpre :
+      ∀ i : Fin T.F.t, E.rowEquiv (Sum.inl (pre i)) = Sum.inl i := by
+    intro i
+    exact Classical.choose_spec (hrows i)
+  have hinj : Function.Injective pre := by
+    intro i j hij
+    have hsum :
+        (Sum.inl i : Sum (Fin T.F.t) (Fin T.G.t)) = Sum.inl j := by
+      calc
+      Sum.inl i = E.rowEquiv (Sum.inl (pre i)) := (hpre i).symm
+      _ = E.rowEquiv (Sum.inl (pre j)) := by rw [hij]
+      _ = Sum.inl j := hpre j
+    injection hsum
+  simpa using Fintype.card_le_of_injective pre hinj
+
+lemma size_lt_of_containsOriginalLeftRows_of_ne {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hrows : ContainsOriginalLeftRows T E)
+    (hne : E.r ≠ T.F.t) :
+    T.F.t < E.r := by
+  exact lt_of_le_of_ne (size_le_of_containsOriginalLeftRows hrows) (Ne.symm hne)
+
+lemma size_le_of_containsOriginalLeftCols {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hcols : ContainsOriginalLeftCols T E) :
+    T.F.t ≤ E.r := by
+  classical
+  let pre : Fin T.F.t → Fin E.r := fun i => Classical.choose (hcols i)
+  have hpre :
+      ∀ i : Fin T.F.t, E.colEquiv (Sum.inl (pre i)) = Sum.inl i := by
+    intro i
+    exact Classical.choose_spec (hcols i)
+  have hinj : Function.Injective pre := by
+    intro i j hij
+    have hsum :
+        (Sum.inl i : Sum (Fin T.F.t) (Fin T.G.t)) = Sum.inl j := by
+      calc
+        Sum.inl i = E.colEquiv (Sum.inl (pre i)) := (hpre i).symm
+        _ = E.colEquiv (Sum.inl (pre j)) := by rw [hij]
+        _ = Sum.inl j := hpre j
+    injection hsum
+  simpa using Fintype.card_le_of_injective pre hinj
+
+lemma size_lt_of_containsOriginalLeftCols_of_ne {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hcols : ContainsOriginalLeftCols T E)
+    (hne : E.r ≠ T.F.t) :
+    T.F.t < E.r := by
+  exact lt_of_le_of_ne (size_le_of_containsOriginalLeftCols hcols) (Ne.symm hne)
+
+lemma firstLEOld_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair)
+    (hE : S.toBiReshuffle.AllInjective) :
+    MinorIndex.PairLE
+      (S.toBiReshuffle.sorted.toPair.left.toMinorIndexOfStrictMono
+        (S.toBiReshuffle.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (S.toBiReshuffle.sorted_toPair_left_col_strictMono_of_injective hE.2.1))
+      T.F.idx := by
+  let E := S.toBiReshuffle
+  have hsize : T.F.t ≤ E.r :=
+    size_le_of_containsOriginalLeftRows
+      (containsOriginalLeftRows_toBiReshuffle_of_containingSplit T S)
+  refine ⟨hsize, ?_⟩
+  intro i
+  constructor
+  · have h := RawMinorIndex.sorted_row_le_of_image_subset
+      T.toRawPair.left E.toPair.left T.F.idx.row.injective hE.1
+      (left_row_image_subset_toBiReshuffle_of_containingSplit T S) i
+    change E.toPair.left.sorted.row
+      ⟨i, lt_of_lt_of_le i.isLt hsize⟩ ≤ T.F.idx.row i
+    have hsort :
+        Tuple.sort (RawMinorIndex.ofMinorIndex T.F.idx).row = Equiv.refl _ :=
+      Tuple.sort_eq_refl_iff_monotone.mpr T.F.idx.row.monotone
+    simpa [E, SwanRawLaplaceProductTerm.toRawPair,
+      RawMinorIndex.sorted, RawMinorIndex.permute, hsort] using h
+  · have h := RawMinorIndex.sorted_col_le_of_image_subset
+      T.toRawPair.left E.toPair.left T.F.idx.col.injective hE.2.1
+      (left_col_image_subset_toBiReshuffle_of_containingSplit T S) i
+    change E.toPair.left.sorted.col
+      ⟨i, lt_of_lt_of_le i.isLt hsize⟩ ≤ T.F.idx.col i
+    have hsort :
+        Tuple.sort (RawMinorIndex.ofMinorIndex T.F.idx).col = Equiv.refl _ :=
+      Tuple.sort_eq_refl_iff_monotone.mpr T.F.idx.col.monotone
+    simpa [E, SwanRawLaplaceProductTerm.toRawPair,
+      RawMinorIndex.sorted, RawMinorIndex.permute, hsort] using h
+
+/-- In the column-side Hodge branch, row slots still contain the old left row
+slots, so the sorted new first rows are componentwise no larger than the old
+first rows. -/
+lemma sorted_left_row_le_original_of_hodgeColSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (hE : S.toBiReshuffle.AllInjective)
+    (i : Fin T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.row
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftRows
+            (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ ≤
+      T.F.idx.row i := by
+  let E := S.toBiReshuffle
+  have h := RawMinorIndex.sorted_row_le_of_image_subset
+    T.toRawPair.left E.toPair.left T.F.idx.row.injective hE.1
+    (left_row_image_subset_toBiReshuffle_of_hodgeColSplit T S) i
+  change E.toPair.left.sorted.row
+      ⟨i, lt_of_lt_of_le i.isLt
+        (size_le_of_containsOriginalLeftRows
+          (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ ≤
+    T.F.idx.row i
+  have hsort :
+      Tuple.sort (RawMinorIndex.ofMinorIndex T.F.idx).row = Equiv.refl _ :=
+    Tuple.sort_eq_refl_iff_monotone.mpr T.F.idx.row.monotone
+  simpa [E, SwanRawLaplaceProductTerm.toRawPair,
+    RawMinorIndex.sorted, RawMinorIndex.permute, hsort] using h
+
+/-- In the row-side Hodge branch, column slots still contain the old left
+column slots, so the sorted new first columns are componentwise no larger than
+the old first columns. -/
+lemma sorted_left_col_le_original_of_hodgeRowSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (hE : S.toBiReshuffle.AllInjective)
+    (i : Fin T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.col
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftCols
+            (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ ≤
+      T.F.idx.col i := by
+  let E := S.toBiReshuffle
+  have h := RawMinorIndex.sorted_col_le_of_image_subset
+    T.toRawPair.left E.toPair.left T.F.idx.col.injective hE.2.1
+    (left_col_image_subset_toBiReshuffle_of_hodgeRowSplit T S) i
+  change E.toPair.left.sorted.col
+      ⟨i, lt_of_lt_of_le i.isLt
+        (size_le_of_containsOriginalLeftCols
+          (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ ≤
+    T.F.idx.col i
+  have hsort :
+      Tuple.sort (RawMinorIndex.ofMinorIndex T.F.idx).col = Equiv.refl _ :=
+    Tuple.sort_eq_refl_iff_monotone.mpr T.F.idx.col.monotone
+  simpa [E, SwanRawLaplaceProductTerm.toRawPair,
+    RawMinorIndex.sorted, RawMinorIndex.permute, hsort] using h
+
+lemma hodgeColSplit_leftPrefix_subset_colSlots_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    RawMinorPair.BiReshuffle.Hodge.leftPrefix T.toRawPair i ⊆ S.colSlots := by
+  classical
+  intro x hx
+  rw [RawMinorPair.BiReshuffle.HodgeColSplit.colSlots]
+  refine Finset.mem_sdiff.mpr ⟨?_, ?_⟩
+  · exact RawMinorPair.BiReshuffle.Hodge.leftPrefix_subset_hodgeD
+      T.toRawPair ν i hx
+  · intro hxW
+    have hxC := S.W_subset hxW
+    rcases Finset.mem_union.mp hxC with hxright | hxsuf
+    · have hdis :=
+        RawMinorPair.BiReshuffle.Hodge.leftPrefix_disjoint_rightPrefix
+          T.toRawPair ν i
+      rw [Finset.disjoint_left] at hdis
+      exact hdis hx hxright
+    · rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+      rcases Finset.mem_map.mp hxsuf with ⟨b, hb, hbx⟩
+      have hai : a ≤ i := (Finset.mem_filter.mp ha).2
+      have hνb : ν.val ≤ b.val := (Finset.mem_filter.mp hb).2
+      have hab : a.val = b.val := by
+        have hfin :
+            Fin.castAdd T.toRawPair.q a = Fin.castAdd T.toRawPair.q b := by
+          exact hax.trans hbx.symm
+        simpa [Fin.castAdd] using congrArg Fin.val hfin
+      have hai' : a.val ≤ i.val := by
+        exact_mod_cast hai
+      have hνi : ν.val ≤ i.val := by omega
+      exact (not_le_of_gt hiν) hνi
+
+lemma hodgeColSplit_leftPrefix_subset_good_colSlots_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    RawMinorPair.BiReshuffle.Hodge.leftPrefix T.toRawPair i ⊆
+      S.colSlots.filter (fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i) := by
+  classical
+  intro x hx
+  rw [Finset.mem_filter]
+  refine ⟨hodgeColSplit_leftPrefix_subset_colSlots_of_lt T S i hiν hx, ?_⟩
+  rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+  have hai : a ≤ i := (Finset.mem_filter.mp ha).2
+  have hslot :
+      T.toRawPair.slotCol (finSumFinEquiv.symm x) = T.F.idx.col a := by
+    rw [← hax]
+    have hsum :
+        finSumFinEquiv.symm ((Fin.castAddEmb T.toRawPair.q) a) = Sum.inl a := by
+      change finSumFinEquiv.symm (Fin.castAdd T.toRawPair.q a) = Sum.inl a
+      simp
+    rw [hsum]
+    rfl
+  rw [hslot]
+  exact T.F.idx.col.monotone hai
+
+lemma hodgeColSplit_colSlots_good_card_gt_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    (i : ℕ) <
+      (S.colSlots.filter fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i).card := by
+  classical
+  have hcard := Finset.card_le_card
+    (hodgeColSplit_leftPrefix_subset_good_colSlots_of_lt T S i hiν)
+  rw [RawMinorPair.BiReshuffle.Hodge.card_leftPrefix] at hcard
+  omega
+
+lemma hodgeColSplit_bad_colSlots_subset_leftAfter_of_colBad
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hνi : ν.val ≤ i.val) :
+    S.colSlots.filter (fun y =>
+        ¬ T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i) ⊆
+      RawMinorPair.BiReshuffle.Hodge.leftAfter T.toRawPair i := by
+  classical
+  intro x hx
+  rcases Finset.mem_filter.mp hx with ⟨hxcol, hxnot⟩
+  rw [RawMinorPair.BiReshuffle.HodgeColSplit.colSlots] at hxcol
+  rcases Finset.mem_sdiff.mp hxcol with ⟨hxD, _hxW⟩
+  rcases Finset.mem_union.mp hxD with hxleft | hxright
+  · rcases Finset.mem_map.mp hxleft with ⟨a, _ha, hax⟩
+    have hslot :
+        T.toRawPair.slotCol (finSumFinEquiv.symm x) = T.F.idx.col a := by
+      rw [← hax]
+      have hsum :
+          finSumFinEquiv.symm ((Fin.castAddEmb T.toRawPair.q) a) = Sum.inl a := by
+        change finSumFinEquiv.symm (Fin.castAdd T.toRawPair.q a) = Sum.inl a
+        simp
+      rw [hsum]
+      rfl
+    have hia : i < a := by
+      by_contra hnotlt
+      have hai : a ≤ i := le_of_not_gt hnotlt
+      exact hxnot (by
+        rw [hslot]
+        exact T.F.idx.col.monotone hai)
+    refine Finset.mem_map.mpr ⟨a, ?_, hax⟩
+    rw [Finset.mem_filter]
+    exact ⟨Finset.mem_univ _, hia⟩
+  · rcases Finset.mem_map.mp hxright with ⟨μ, hμ, hμx⟩
+    have hμν : μ ≤ ν := (Finset.mem_filter.mp hμ).2
+    have hbad' :
+        T.G.idx.col ν < T.F.idx.col ⟨ν.val, hνp⟩ := by
+      simpa [ColBadAt] using hbad
+    have hνiFin : (⟨ν.val, hνp⟩ : Fin T.F.t) ≤ i := by
+      simpa [Fin.le_def] using hνi
+    have hslot :
+        T.toRawPair.slotCol (finSumFinEquiv.symm x) = T.G.idx.col μ := by
+      rw [← hμx]
+      have hsum :
+          finSumFinEquiv.symm ((Fin.natAddEmb T.toRawPair.p) μ) = Sum.inr μ := by
+        simp [Fin.natAddEmb]
+      rw [hsum]
+      rfl
+    have hle :
+        T.toRawPair.slotCol (finSumFinEquiv.symm x) ≤ T.F.idx.col i := by
+      rw [hslot]
+      exact le_trans (T.G.idx.col.monotone hμν)
+        (le_trans (le_of_lt hbad') (T.F.idx.col.monotone hνiFin))
+    exact False.elim (hxnot hle)
+
+lemma hodgeColSplit_colSlots_good_card_gt_of_ge
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hνi : ν.val ≤ i.val) :
+    (i : ℕ) <
+      (S.colSlots.filter fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i).card := by
+  classical
+  let good : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) :=
+    S.colSlots.filter fun y =>
+      T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i
+  let bad : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) :=
+    S.colSlots.filter fun y =>
+      ¬ T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i
+  have hsplit : good.card + bad.card = S.colSlots.card := by
+    simpa [good, bad] using
+      (Finset.card_filter_add_card_filter_not
+        (s := S.colSlots)
+        (p := fun y =>
+          T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i))
+  have hbadcard :
+      bad.card ≤
+        (RawMinorPair.BiReshuffle.Hodge.leftAfter T.toRawPair i).card :=
+    Finset.card_le_card
+      (by
+        simpa [bad] using
+          hodgeColSplit_bad_colSlots_subset_leftAfter_of_colBad
+            T hsize hbad S i hνi)
+  rw [RawMinorPair.BiReshuffle.Hodge.card_leftAfter] at hbadcard
+  change bad.card ≤ T.F.t - (i.val + 1) at hbadcard
+  have hrowSize :
+      T.F.t ≤ S.toBiReshuffle.r :=
+    size_le_of_containsOriginalLeftRows
+      (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S)
+  have hcolSize : T.F.t ≤ S.colSlots.card := by
+    have hrowSize' : T.F.t ≤ S.rowSlots.card := by
+      simpa using hrowSize
+    simpa [S.card_eq] using hrowSize'
+  have hgood :
+      (S.colSlots.filter fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i).card =
+        good.card := rfl
+  rw [hgood]
+  omega
+
+lemma hodgeColSplit_colSlots_good_card_gt_of_colBad
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) :
+    (i : ℕ) <
+      (S.colSlots.filter fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) ≤ T.F.idx.col i).card := by
+  by_cases hiν : i.val < ν.val
+  · exact hodgeColSplit_colSlots_good_card_gt_of_lt T S i hiν
+  · have hνi : ν.val ≤ i.val := by omega
+    exact hodgeColSplit_colSlots_good_card_gt_of_ge
+      T hsize hbad S i hνi
+
+lemma sorted_left_col_le_original_of_hodgeColSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.col
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftRows
+            (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ ≤
+      T.F.idx.col i := by
+  let E := S.toBiReshuffle
+  have hidx :
+      (⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftRows
+            (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ :
+        Fin S.rowSlots.card) =
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftRows
+            (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ := rfl
+  have hcount :=
+    hodgeColSplit_colSlots_good_card_gt_of_colBad
+      T hsize hbad S i
+  simpa [E, RawMinorPair.BiReshuffle.HodgeColSplit.toBiReshuffle, hidx] using
+    RawMinorPair.BiReshuffle.ofFinsets_sorted_left_col_le_of_slot_count
+      T.toRawPair S.rowSlots S.colSlots S.card_eq
+      (⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftRows
+            (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S))⟩ :
+        Fin S.rowSlots.card)
+      (T.F.idx.col i) hcount
+
+lemma hodgeRowSplit_leftPrefix_subset_rowSlots_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    RawMinorPair.BiReshuffle.Hodge.leftPrefix T.toRawPair i ⊆ S.rowSlots := by
+  classical
+  intro x hx
+  rw [RawMinorPair.BiReshuffle.HodgeRowSplit.rowSlots]
+  refine Finset.mem_sdiff.mpr ⟨?_, ?_⟩
+  · exact RawMinorPair.BiReshuffle.Hodge.leftPrefix_subset_hodgeD
+      T.toRawPair ν i hx
+  · intro hxW
+    have hxC := S.W_subset hxW
+    rcases Finset.mem_union.mp hxC with hxright | hxsuf
+    · have hdis :=
+        RawMinorPair.BiReshuffle.Hodge.leftPrefix_disjoint_rightPrefix
+          T.toRawPair ν i
+      rw [Finset.disjoint_left] at hdis
+      exact hdis hx hxright
+    · rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+      rcases Finset.mem_map.mp hxsuf with ⟨b, hb, hbx⟩
+      have hai : a ≤ i := (Finset.mem_filter.mp ha).2
+      have hνb : ν.val ≤ b.val := (Finset.mem_filter.mp hb).2
+      have hab : a.val = b.val := by
+        have hfin :
+            Fin.castAdd T.toRawPair.q a = Fin.castAdd T.toRawPair.q b := by
+          exact hax.trans hbx.symm
+        simpa [Fin.castAdd] using congrArg Fin.val hfin
+      have hai' : a.val ≤ i.val := by
+        exact_mod_cast hai
+      have hνi : ν.val ≤ i.val := by omega
+      exact (not_le_of_gt hiν) hνi
+
+lemma hodgeRowSplit_leftPrefix_subset_good_rowSlots_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    RawMinorPair.BiReshuffle.Hodge.leftPrefix T.toRawPair i ⊆
+      S.rowSlots.filter (fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i) := by
+  classical
+  intro x hx
+  rw [Finset.mem_filter]
+  refine ⟨hodgeRowSplit_leftPrefix_subset_rowSlots_of_lt T S i hiν hx, ?_⟩
+  rcases Finset.mem_map.mp hx with ⟨a, ha, hax⟩
+  have hai : a ≤ i := (Finset.mem_filter.mp ha).2
+  have hslot :
+      T.toRawPair.slotRow (finSumFinEquiv.symm x) = T.F.idx.row a := by
+    rw [← hax]
+    have hsum :
+        finSumFinEquiv.symm ((Fin.castAddEmb T.toRawPair.q) a) = Sum.inl a := by
+      change finSumFinEquiv.symm (Fin.castAdd T.toRawPair.q a) = Sum.inl a
+      simp
+    rw [hsum]
+    rfl
+  rw [hslot]
+  exact T.F.idx.row.monotone hai
+
+lemma hodgeRowSplit_rowSlots_good_card_gt_of_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hiν : i.val < ν.val) :
+    (i : ℕ) <
+      (S.rowSlots.filter fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i).card := by
+  classical
+  have hcard := Finset.card_le_card
+    (hodgeRowSplit_leftPrefix_subset_good_rowSlots_of_lt T S i hiν)
+  rw [RawMinorPair.BiReshuffle.Hodge.card_leftPrefix] at hcard
+  omega
+
+lemma hodgeRowSplit_bad_rowSlots_subset_leftAfter_of_rowBad
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hνi : ν.val ≤ i.val) :
+    S.rowSlots.filter (fun y =>
+        ¬ T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i) ⊆
+      RawMinorPair.BiReshuffle.Hodge.leftAfter T.toRawPair i := by
+  classical
+  intro x hx
+  rcases Finset.mem_filter.mp hx with ⟨hxrow, hxnot⟩
+  rw [RawMinorPair.BiReshuffle.HodgeRowSplit.rowSlots] at hxrow
+  rcases Finset.mem_sdiff.mp hxrow with ⟨hxD, _hxW⟩
+  rcases Finset.mem_union.mp hxD with hxleft | hxright
+  · rcases Finset.mem_map.mp hxleft with ⟨a, _ha, hax⟩
+    have hslot :
+        T.toRawPair.slotRow (finSumFinEquiv.symm x) = T.F.idx.row a := by
+      rw [← hax]
+      have hsum :
+          finSumFinEquiv.symm ((Fin.castAddEmb T.toRawPair.q) a) = Sum.inl a := by
+        change finSumFinEquiv.symm (Fin.castAdd T.toRawPair.q a) = Sum.inl a
+        simp
+      rw [hsum]
+      rfl
+    have hia : i < a := by
+      by_contra hnotlt
+      have hai : a ≤ i := le_of_not_gt hnotlt
+      exact hxnot (by
+        rw [hslot]
+        exact T.F.idx.row.monotone hai)
+    refine Finset.mem_map.mpr ⟨a, ?_, hax⟩
+    rw [Finset.mem_filter]
+    exact ⟨Finset.mem_univ _, hia⟩
+  · rcases Finset.mem_map.mp hxright with ⟨μ, hμ, hμx⟩
+    have hμν : μ ≤ ν := (Finset.mem_filter.mp hμ).2
+    have hbad' :
+        T.G.idx.row ν < T.F.idx.row ⟨ν.val, hνp⟩ := by
+      simpa [RowBadAt] using hbad
+    have hνiFin : (⟨ν.val, hνp⟩ : Fin T.F.t) ≤ i := by
+      simpa [Fin.le_def] using hνi
+    have hslot :
+        T.toRawPair.slotRow (finSumFinEquiv.symm x) = T.G.idx.row μ := by
+      rw [← hμx]
+      have hsum :
+          finSumFinEquiv.symm ((Fin.natAddEmb T.toRawPair.p) μ) = Sum.inr μ := by
+        simp [Fin.natAddEmb]
+      rw [hsum]
+      rfl
+    have hle :
+        T.toRawPair.slotRow (finSumFinEquiv.symm x) ≤ T.F.idx.row i := by
+      rw [hslot]
+      exact le_trans (T.G.idx.row.monotone hμν)
+        (le_trans (le_of_lt hbad') (T.F.idx.row.monotone hνiFin))
+    exact False.elim (hxnot hle)
+
+lemma hodgeRowSplit_rowSlots_good_card_gt_of_ge
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) (hνi : ν.val ≤ i.val) :
+    (i : ℕ) <
+      (S.rowSlots.filter fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i).card := by
+  classical
+  let good : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) :=
+    S.rowSlots.filter fun y =>
+      T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i
+  let bad : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) :=
+    S.rowSlots.filter fun y =>
+      ¬ T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i
+  have hsplit : good.card + bad.card = S.rowSlots.card := by
+    simpa [good, bad] using
+      (Finset.card_filter_add_card_filter_not
+        (s := S.rowSlots)
+        (p := fun y =>
+          T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i))
+  have hbadcard :
+      bad.card ≤
+        (RawMinorPair.BiReshuffle.Hodge.leftAfter T.toRawPair i).card :=
+    Finset.card_le_card
+      (by
+        simpa [bad] using
+          hodgeRowSplit_bad_rowSlots_subset_leftAfter_of_rowBad
+            T hsize hbad S i hνi)
+  rw [RawMinorPair.BiReshuffle.Hodge.card_leftAfter] at hbadcard
+  change bad.card ≤ T.F.t - (i.val + 1) at hbadcard
+  have hrowSize :
+      T.F.t ≤ S.toBiReshuffle.r :=
+    size_le_of_containsOriginalLeftCols
+      (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S)
+  have hgood :
+      (S.rowSlots.filter fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i).card =
+        good.card := rfl
+  rw [hgood]
+  have hrowSize' : T.F.t ≤ S.rowSlots.card := by
+    simpa using hrowSize
+  omega
+
+lemma hodgeRowSplit_rowSlots_good_card_gt_of_rowBad
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) :
+    (i : ℕ) <
+      (S.rowSlots.filter fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) ≤ T.F.idx.row i).card := by
+  by_cases hiν : i.val < ν.val
+  · exact hodgeRowSplit_rowSlots_good_card_gt_of_lt T S i hiν
+  · have hνi : ν.val ≤ i.val := by omega
+    exact hodgeRowSplit_rowSlots_good_card_gt_of_ge
+      T hsize hbad S i hνi
+
+lemma sorted_left_row_le_original_of_hodgeRowSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (i : Fin T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.row
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftCols
+            (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ ≤
+      T.F.idx.row i := by
+  let E := S.toBiReshuffle
+  have hidx :
+      (⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftCols
+            (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ :
+        Fin S.rowSlots.card) =
+        ⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftCols
+            (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ := rfl
+  have hcount :=
+    hodgeRowSplit_rowSlots_good_card_gt_of_rowBad
+      T hsize hbad S i
+  simpa [E, RawMinorPair.BiReshuffle.HodgeRowSplit.toBiReshuffle, hidx] using
+    RawMinorPair.BiReshuffle.ofFinsets_sorted_left_row_le_of_slot_count
+      T.toRawPair S.rowSlots S.colSlots S.card_eq
+      (⟨i.val, lt_of_lt_of_le i.isLt
+          (size_le_of_containsOriginalLeftCols
+            (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S))⟩ :
+        Fin S.rowSlots.card)
+      (T.F.idx.row i) hcount
+
+lemma hodgeColSplit_colSlots_bad_position_lt_card_gt_of_ne_pivot_of_rowSlots_card_eq
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (hne :
+      S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp)
+    (hcard : S.rowSlots.card = T.F.t) :
+    (ν : ℕ) <
+      (S.colSlots.filter fun y =>
+        T.toRawPair.slotCol (finSumFinEquiv.symm y) <
+          T.F.idx.col ⟨ν.val, hνp⟩).card := by
+  classical
+  obtain ⟨x, hx⟩ :=
+RawMinorPair.BiReshuffle.HodgeColSplit.rightPrefix_sdiff_W_nonempty_of_ne_pivot_of_rowSlots_card_eq
+      S hne hcard
+  rcases Finset.mem_sdiff.mp hx with ⟨hxright, hxW⟩
+  let base := RawMinorPair.BiReshuffle.Hodge.leftBefore T.toRawPair ν
+  have hsubset :
+      insert x base ⊆
+        S.colSlots.filter fun y =>
+          T.toRawPair.slotCol (finSumFinEquiv.symm y) <
+            T.F.idx.col ⟨ν.val, hνp⟩ := by
+    intro y hy
+    rw [Finset.mem_filter]
+    rcases Finset.mem_insert.mp hy with hyx | hybase
+    · subst y
+      constructor
+      · rw [RawMinorPair.BiReshuffle.HodgeColSplit.colSlots]
+        exact Finset.mem_sdiff.mpr
+          ⟨RawMinorPair.BiReshuffle.Hodge.rightPrefix_subset_hodgeD
+              T.toRawPair ν hxright, hxW⟩
+      · rcases Finset.mem_map.mp hxright with ⟨μ, hμ, hμx⟩
+        have hμν : μ ≤ ν := (Finset.mem_filter.mp hμ).2
+        have hslot :
+            T.toRawPair.slotCol (finSumFinEquiv.symm x) =
+              T.G.idx.col μ := by
+          rw [← hμx]
+          have hsum :
+              finSumFinEquiv.symm
+                  ((Fin.natAddEmb T.toRawPair.p) μ) =
+                Sum.inr μ := by
+            simp [Fin.natAddEmb]
+          rw [hsum]
+          rfl
+        have hbad' :
+            T.G.idx.col ν < T.F.idx.col ⟨ν.val, hνp⟩ := by
+          simpa [ColBadAt] using hbad
+        rw [hslot]
+        exact lt_of_le_of_lt (T.G.idx.col.monotone hμν) hbad'
+    · constructor
+      · simpa [base, RawMinorPair.BiReshuffle.HodgeColSplit.colSlots] using
+          RawMinorPair.BiReshuffle.Hodge.leftBefore_subset_hodgeD_sdiff_W
+            T.toRawPair ν hνp S.W_subset hybase
+      · simpa [base, SwanRawLaplaceProductTerm.toRawPair] using
+          RawMinorPair.BiReshuffle.Hodge.slotCol_lt_of_mem_leftBefore
+            T.toRawPair T.toRawPair_left_col_strictMono hνp hybase
+  have hxnot : x ∉ base := by
+    intro hxbase
+    have hdis :=
+      RawMinorPair.BiReshuffle.Hodge.leftBefore_disjoint_rightPrefix
+        T.toRawPair ν
+    rw [Finset.disjoint_left] at hdis
+    exact hdis hxbase hxright
+  have hcard_insert : (insert x base).card = ν.val + 1 := by
+    rw [Finset.card_insert_of_notMem hxnot]
+    rw [show base = RawMinorPair.BiReshuffle.Hodge.leftBefore T.toRawPair ν from rfl]
+    rw [RawMinorPair.BiReshuffle.Hodge.card_leftBefore T.toRawPair ν hνp]
+  have hcard_le := Finset.card_le_card hsubset
+  rw [hcard_insert] at hcard_le
+  omega
+
+lemma sorted_left_col_lt_original_of_hodgeColSplit_ne_pivot_of_rowSlots_card_eq
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : ColBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp)
+    (hne :
+      S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp)
+    (hcard : S.rowSlots.card = T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.col
+        (⟨ν.val, by rw [hcard]; exact hνp⟩ : Fin S.rowSlots.card) <
+      T.F.idx.col ⟨ν.val, hνp⟩ := by
+  let E := S.toBiReshuffle
+  have hcount :=
+    hodgeColSplit_colSlots_bad_position_lt_card_gt_of_ne_pivot_of_rowSlots_card_eq
+      T hsize hbad S hne hcard
+  simpa [E, RawMinorPair.BiReshuffle.HodgeColSplit.toBiReshuffle] using
+    RawMinorPair.BiReshuffle.ofFinsets_sorted_left_col_lt_of_slot_count
+      T.toRawPair S.rowSlots S.colSlots S.card_eq
+      (⟨ν.val, by rw [hcard]; exact hνp⟩ : Fin S.rowSlots.card)
+      (T.F.idx.col ⟨ν.val, hνp⟩) hcount
+
+lemma hodgeRowSplit_rowSlots_bad_position_lt_card_gt_of_ne_pivot_of_rowSlots_card_eq
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (hne :
+      S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp)
+    (hcard : S.rowSlots.card = T.F.t) :
+    (ν : ℕ) <
+      (S.rowSlots.filter fun y =>
+        T.toRawPair.slotRow (finSumFinEquiv.symm y) <
+          T.F.idx.row ⟨ν.val, hνp⟩).card := by
+  classical
+  obtain ⟨x, hx⟩ :=
+RawMinorPair.BiReshuffle.HodgeRowSplit.rightPrefix_sdiff_W_nonempty_of_ne_pivot_of_rowSlots_card_eq
+      S hne hcard
+  rcases Finset.mem_sdiff.mp hx with ⟨hxright, hxW⟩
+  let base := RawMinorPair.BiReshuffle.Hodge.leftBefore T.toRawPair ν
+  have hsubset :
+      insert x base ⊆
+        S.rowSlots.filter fun y =>
+          T.toRawPair.slotRow (finSumFinEquiv.symm y) <
+            T.F.idx.row ⟨ν.val, hνp⟩ := by
+    intro y hy
+    rw [Finset.mem_filter]
+    rcases Finset.mem_insert.mp hy with hyx | hybase
+    · subst y
+      constructor
+      · rw [RawMinorPair.BiReshuffle.HodgeRowSplit.rowSlots]
+        exact Finset.mem_sdiff.mpr
+          ⟨RawMinorPair.BiReshuffle.Hodge.rightPrefix_subset_hodgeD
+              T.toRawPair ν hxright, hxW⟩
+      · rcases Finset.mem_map.mp hxright with ⟨μ, hμ, hμx⟩
+        have hμν : μ ≤ ν := (Finset.mem_filter.mp hμ).2
+        have hslot :
+            T.toRawPair.slotRow (finSumFinEquiv.symm x) =
+              T.G.idx.row μ := by
+          rw [← hμx]
+          have hsum :
+              finSumFinEquiv.symm
+                  ((Fin.natAddEmb T.toRawPair.p) μ) =
+                Sum.inr μ := by
+            simp [Fin.natAddEmb]
+          rw [hsum]
+          rfl
+        have hbad' :
+            T.G.idx.row ν < T.F.idx.row ⟨ν.val, hνp⟩ := by
+          simpa [RowBadAt] using hbad
+        rw [hslot]
+        exact lt_of_le_of_lt (T.G.idx.row.monotone hμν) hbad'
+    · constructor
+      · simpa [base, RawMinorPair.BiReshuffle.HodgeRowSplit.rowSlots] using
+          RawMinorPair.BiReshuffle.Hodge.leftBefore_subset_hodgeD_sdiff_W
+            T.toRawPair ν hνp S.W_subset hybase
+      · simpa [base, SwanRawLaplaceProductTerm.toRawPair] using
+          RawMinorPair.BiReshuffle.Hodge.slotRow_lt_of_mem_leftBefore
+            T.toRawPair T.toRawPair_left_row_strictMono hνp hybase
+  have hxnot : x ∉ base := by
+    intro hxbase
+    have hdis :=
+      RawMinorPair.BiReshuffle.Hodge.leftBefore_disjoint_rightPrefix
+        T.toRawPair ν
+    rw [Finset.disjoint_left] at hdis
+    exact hdis hxbase hxright
+  have hcard_insert : (insert x base).card = ν.val + 1 := by
+    rw [Finset.card_insert_of_notMem hxnot]
+    rw [show base = RawMinorPair.BiReshuffle.Hodge.leftBefore T.toRawPair ν from rfl]
+    rw [RawMinorPair.BiReshuffle.Hodge.card_leftBefore T.toRawPair ν hνp]
+  have hcard_le := Finset.card_le_card hsubset
+  rw [hcard_insert] at hcard_le
+  omega
+
+lemma sorted_left_row_lt_original_of_hodgeRowSplit_ne_pivot_of_rowSlots_card_eq
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hbad : RowBadAt T hsize ν)
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp)
+    (hne :
+      S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp)
+    (hcard : S.rowSlots.card = T.F.t) :
+    S.toBiReshuffle.toPair.left.sorted.row
+        (⟨ν.val, by rw [hcard]; exact hνp⟩ : Fin S.rowSlots.card) <
+      T.F.idx.row ⟨ν.val, hνp⟩ := by
+  let E := S.toBiReshuffle
+  have hcount :=
+    hodgeRowSplit_rowSlots_bad_position_lt_card_gt_of_ne_pivot_of_rowSlots_card_eq
+      T hsize hbad S hne hcard
+  simpa [E, RawMinorPair.BiReshuffle.HodgeRowSplit.toBiReshuffle] using
+    RawMinorPair.BiReshuffle.ofFinsets_sorted_left_row_lt_of_slot_count
+      T.toRawPair S.rowSlots S.colSlots S.card_eq
+      (⟨ν.val, by rw [hcard]; exact hνp⟩ : Fin S.rowSlots.card)
+      (T.F.idx.row ⟨ν.val, hνp⟩) hcount
+
+/-- Raw support predicate for the non-pivot terms in Swan Corollary 2.8,
+size-defect branch.
+
+The determinant identity itself supplies coefficients on this support.  The
+predicate separates the paper's combinatorics from later algebra:
+`ContainsOriginalLeftRows` and `ContainsOriginalLeftCols` encode
+`U ⊇ A`, `W ⊇ B`; `hne` removes the distinguished original term; and
+`firstLEOld` is the sorted-subset comparison that makes the new first factor
+weakly smaller than the old first factor. -/
+def IsSizeBranchLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (E : RawMinorPair.BiReshuffle T.toRawPair) : Prop :=
+  ∃ hE : E.AllInjective,
+  ∃ _hrows : ContainsOriginalLeftRows T E,
+  ∃ _hcols : ContainsOriginalLeftCols T E,
+  ∃ _hne : E.r ≠ T.F.t,
+    MinorIndex.PairLE
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx
+
+lemma isSizeBranchLaplaceSupport_toBiReshuffle_of_containingSplit
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair)
+    (hE : S.toBiReshuffle.AllInjective)
+    (hne : S.toBiReshuffle.r ≠ T.F.t) :
+    IsSizeBranchLaplaceSupport T S.toBiReshuffle := by
+  exact ⟨hE,
+    containsOriginalLeftRows_toBiReshuffle_of_containingSplit T S,
+    containsOriginalLeftCols_toBiReshuffle_of_containingSplit T S,
+    hne,
+    firstLEOld_toBiReshuffle_of_containingSplit T S hE⟩
+
+lemma not_sizeBranchLaplaceSupport_id {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    ¬ IsSizeBranchLaplaceSupport T (RawMinorPair.BiReshuffle.id T.toRawPair) := by
+  intro h
+  rcases h with ⟨_hE, _hrows, _hcols, hne, _hfirstLEOld⟩
+  exact hne rfl
+
+noncomputable instance instFintypeSizeBranchLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Fintype { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSizeBranchLaplaceSupport T E } := by
+  classical
+  exact Fintype.ofFinite _
+
+lemma sizeBranchSurvivor_of_laplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsSizeBranchLaplaceSupport T E) :
+    IsSizeBranchSurvivor T E := by
+  rcases h with ⟨hE, hrows, _hcols, hne, hfirstLEOld⟩
+  exact ⟨hE, hfirstLEOld, size_lt_of_containsOriginalLeftRows_of_ne hrows hne⟩
+
+lemma size_lt_of_sizeBranchLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsSizeBranchLaplaceSupport T E) :
+    T.F.t < E.r := by
+  rcases h with ⟨_hE, hrows, _hcols, hne, _hfirstLEOld⟩
+  exact size_lt_of_containsOriginalLeftRows_of_ne hrows hne
+
+noncomputable instance instFintypeSortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Fintype { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E } := by
+  classical
+  exact Fintype.ofFinite _
+
+noncomputable instance instFintypeSizeBranchSurvivor {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J} :
+    Fintype { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSizeBranchSurvivor T E } := by
+  classical
+  exact Fintype.ofFinite _
+
+lemma isSortedPromotable_of_sizeBranchSurvivor {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsSizeBranchSurvivor T E) :
+    IsSortedPromotable T E := by
+  rcases h with ⟨hE, hfirstLEOld, hsize⟩
+  refine ⟨hE, MinorIndex.PairLE.trans hfirstLEOld T.firstLE, ?_⟩
+  exact MinorIndex.PairLT.of_pairLE_not_symm hfirstLEOld
+    (MinorIndex.not_pairLE_of_size_lt hsize)
+
+lemma isSortedPromotable_of_sizeBranchLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsSizeBranchLaplaceSupport T E) :
+    IsSortedPromotable T E :=
+  isSortedPromotable_of_sizeBranchSurvivor
+    (sizeBranchSurvivor_of_laplaceSupport h)
+
+lemma exists_coeff_sortedPromotable_sum_of_sizeBranchSurvivor
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSizeBranchSurvivor T E } → k) :
+    ∃ coeff' : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSizeBranchSurvivor T E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair) =
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            IsSortedPromotable T E },
+          MvPolynomial.C (coeff' E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair := by
+  classical
+  let toSortedPromotable :
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSizeBranchSurvivor T E } →
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } :=
+    fun E => ⟨E.1, isSortedPromotable_of_sizeBranchSurvivor E.2⟩
+  exact exists_fintype_coeff_pushforward_polynomial_sum
+    toSortedPromotable coeff
+    (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } =>
+      RawMinorPair.laplacePolynomial (k := k) E.1.toPair)
+
+lemma exists_coeff_sortedPromotable_sum_of_sizeBranchLaplaceSupport
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSizeBranchLaplaceSupport T E } → k) :
+    ∃ coeff' : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSizeBranchLaplaceSupport T E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair) =
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            IsSortedPromotable T E },
+          MvPolynomial.C (coeff' E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair := by
+  classical
+  let toSortedPromotable :
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSizeBranchLaplaceSupport T E } →
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } :=
+    fun E => ⟨E.1, isSortedPromotable_of_sizeBranchLaplaceSupport E.2⟩
+  exact exists_fintype_coeff_pushforward_polynomial_sum
+    toSortedPromotable coeff
+    (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } =>
+      RawMinorPair.laplacePolynomial (k := k) E.1.toPair)
+
+lemma exists_coeff_sortedPromotable_sum_of_componentColLaplaceSupport
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        IsComponentColLaplaceSupport T ν hνp E → IsSortedPromotable T E)
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsComponentColLaplaceSupport T ν hνp E } → k) :
+    ∃ coeff' : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsComponentColLaplaceSupport T ν hνp E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair) =
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            IsSortedPromotable T E },
+          MvPolynomial.C (coeff' E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair := by
+  classical
+  let toSortedPromotable :
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsComponentColLaplaceSupport T ν hνp E } →
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } :=
+    fun E => ⟨E.1, hprom E.2⟩
+  exact exists_fintype_coeff_pushforward_polynomial_sum
+    toSortedPromotable coeff
+    (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } =>
+      RawMinorPair.laplacePolynomial (k := k) E.1.toPair)
+
+lemma exists_coeff_sortedPromotable_sum_of_componentRowLaplaceSupport
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        IsComponentRowLaplaceSupport T ν hνp E → IsSortedPromotable T E)
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsComponentRowLaplaceSupport T ν hνp E } → k) :
+    ∃ coeff' : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsComponentRowLaplaceSupport T ν hνp E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair) =
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            IsSortedPromotable T E },
+          MvPolynomial.C (coeff' E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair := by
+  classical
+  let toSortedPromotable :
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsComponentRowLaplaceSupport T ν hνp E } →
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } :=
+    fun E => ⟨E.1, hprom E.2⟩
+  exact exists_fintype_coeff_pushforward_polynomial_sum
+    toSortedPromotable coeff
+    (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } =>
+      RawMinorPair.laplacePolynomial (k := k) E.1.toPair)
+
+noncomputable def toSupportOfSortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E }) :
+    BiReshuffleSupport T := by
+  classical
+  let hE : E.1.AllInjective := Classical.choose E.2
+  let hrest := Classical.choose_spec E.2
+  let firstLE := Classical.choose hrest
+  let firstLT := Classical.choose_spec hrest
+  exact ofSortedInjective E.1 hE.1 hE.2.1 hE.2.2.1 hE.2.2.2 firstLE firstLT
+
+lemma laplacePolynomial_toSupportOfSortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [CommRing k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E }) :
+    RawMinorPair.laplacePolynomial (k := k) E.1.toPair =
+      E.1.toPair.sortSign (k := k) *
+        RawMinorPair.laplacePolynomial (k := k)
+          (toSupportOfSortedPromotable E).E.toPair := by
+  classical
+  rw [RawMinorPair.laplacePolynomial_eq_sortSign_mul_sorted]
+  rw [← E.1.toPair_sorted]
+  simp [toSupportOfSortedPromotable, ofSortedInjective]
+
+lemma exists_coeff_support_sum_of_sortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E } → k) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSortedPromotable T E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k)
+            (toSupportOfSortedPromotable E).E.toPair) =
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair := by
+  classical
+  exact exists_fintype_coeff_pushforward_polynomial_sum
+    (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E } => toSupportOfSortedPromotable E)
+    coeff
+    (fun S : BiReshuffleSupport T =>
+      RawMinorPair.laplacePolynomial (k := k) S.E.toPair)
+
+lemma exists_coeff_support_sum_raw_sortedPromotable {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {k : Type*} [Field k]
+    {T : SwanRawLaplaceProductTerm I J}
+    (coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+      IsSortedPromotable T E } → k) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSortedPromotable T E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair) =
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair := by
+  classical
+  let coeff' :
+      { E : RawMinorPair.BiReshuffle T.toRawPair //
+        IsSortedPromotable T E } → k :=
+    fun E => coeff E * E.1.toPair.sortSignCoeff (k := k)
+  rcases exists_coeff_support_sum_of_sortedPromotable
+      (k := k) (T := T) coeff' with ⟨coeffRest, hsum⟩
+  refine ⟨coeffRest, ?_⟩
+  calc
+    (∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSortedPromotable T E },
+        MvPolynomial.C (coeff E) *
+          RawMinorPair.laplacePolynomial (k := k) E.1.toPair)
+        =
+      ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          IsSortedPromotable T E },
+        MvPolynomial.C (coeff' E) *
+          RawMinorPair.laplacePolynomial (k := k)
+            (toSupportOfSortedPromotable E).E.toPair := by
+        apply Finset.sum_congr rfl
+        intro E _hE
+        rw [laplacePolynomial_toSupportOfSortedPromotable (k := k) E,
+          RawMinorPair.sortSign_eq_C]
+        simp [coeff', MvPolynomial.C_mul]
+        ring
+    _ =
+      ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair := hsum
+
+lemma firstLEOld_of_componentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hνbad : ColBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hE : E.AllInjective)
+    (h : IsComponentColLaplaceSupport T ν hνp E) :
+    MinorIndex.PairLE
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx := by
+  classical
+  rcases h with ⟨S, _hne, rfl, _hSurvives⟩
+  let E := S.toBiReshuffle
+  have hsizeRows : T.F.t ≤ E.r :=
+    size_le_of_containsOriginalLeftRows
+      (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S)
+  refine MinorIndex.PairLE.of_components hsizeRows ?_
+  intro i
+  constructor
+  · change E.toPair.left.sorted.row
+        ⟨i.val, lt_of_lt_of_le i.isLt hsizeRows⟩ ≤ T.F.idx.row i
+    exact sorted_left_row_le_original_of_hodgeColSplit T S hE i
+  · change E.toPair.left.sorted.col
+        ⟨i.val, lt_of_lt_of_le i.isLt hsizeRows⟩ ≤ T.F.idx.col i
+    exact sorted_left_col_le_original_of_hodgeColSplit T hsize hνbad S i
+
+lemma firstLT_of_componentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (_hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.col μ)
+    (hνbad : ColBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hE : E.AllInjective)
+    (h : IsComponentColLaplaceSupport T ν hνp E) :
+    MinorIndex.PairLT
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx := by
+  classical
+  -- The weak comparison with the old first factor is already formalized above.
+  -- The remaining content is the component-branch promotion: non-pivot Hodge
+  -- column terms force a strict drop at the first bad column.
+  have hfirstLEOld :
+      MinorIndex.PairLE
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+          (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx :=
+    firstLEOld_of_componentColLaplaceSupport T hsize hνbad hE h
+  refine MinorIndex.PairLT.of_pairLE_not_symm hfirstLEOld ?_
+  rcases h with ⟨S, hne, rfl, _hSurvives⟩
+  let E := S.toBiReshuffle
+  have hsizeRows : T.F.t ≤ E.r :=
+    size_le_of_containsOriginalLeftRows
+      (containsOriginalLeftRows_toBiReshuffle_of_hodgeColSplit T S)
+  by_cases hEq : E.r = T.F.t
+  · have hcard : S.rowSlots.card = T.F.t := by
+      simpa [E] using hEq
+    have hlt :=
+      sorted_left_col_lt_original_of_hodgeColSplit_ne_pivot_of_rowSlots_card_eq
+        T hsize hνbad S hne hcard
+    have hpq :
+        S.toBiReshuffle.sorted.toPair.p ≤ T.F.t := by
+      change E.r ≤ T.F.t
+      exact le_of_eq hEq
+    refine MinorIndex.not_pairLE_of_violation
+      (I := T.F.idx)
+      (J := S.toBiReshuffle.sorted.toPair.left.toMinorIndexOfStrictMono
+        (S.toBiReshuffle.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (S.toBiReshuffle.sorted_toPair_left_col_strictMono_of_injective hE.2.1))
+      hpq
+      (⟨ν.val, by rw [hEq]; exact hνp⟩ : Fin E.r) ?_
+    intro hcomp
+    exact not_lt_of_ge (by simpa [E, hcard] using hcomp.2) hlt
+  · have hgt : T.F.t < E.r :=
+      lt_of_le_of_ne hsizeRows (Ne.symm hEq)
+    exact MinorIndex.not_pairLE_of_size_lt
+      (I := T.F.idx)
+      (J := S.toBiReshuffle.sorted.toPair.left.toMinorIndexOfStrictMono
+        (S.toBiReshuffle.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (S.toBiReshuffle.sorted_toPair_left_col_strictMono_of_injective hE.2.1))
+      hgt
+
+lemma isSortedPromotable_of_componentColLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.col μ)
+    (hνbad : ColBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsComponentColLaplaceSupport T ν hνp E) :
+    IsSortedPromotable T E := by
+  classical
+  let hE : E.AllInjective := allInjective_of_componentColLaplaceSupport h
+  refine ⟨hE, ?_, ?_⟩
+  · exact MinorIndex.PairLE.trans
+      (firstLEOld_of_componentColLaplaceSupport T hsize hνbad hE h)
+      T.firstLE
+  · exact firstLT_of_componentColLaplaceSupport
+      T hsize ν hνp hνmin hνbad hE h
+
+lemma firstLEOld_of_componentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    {ν : Fin T.G.t} {hνp : ν.val < T.F.t}
+    (hνbad : RowBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hE : E.AllInjective)
+    (h : IsComponentRowLaplaceSupport T ν hνp E) :
+    MinorIndex.PairLE
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx := by
+  classical
+  rcases h with ⟨S, _hne, rfl, _hSurvives⟩
+  let E := S.toBiReshuffle
+  have hsizeRows : T.F.t ≤ E.r :=
+    size_le_of_containsOriginalLeftCols
+      (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S)
+  refine MinorIndex.PairLE.of_components hsizeRows ?_
+  intro i
+  constructor
+  · change E.toPair.left.sorted.row
+        ⟨i.val, lt_of_lt_of_le i.isLt hsizeRows⟩ ≤ T.F.idx.row i
+    exact sorted_left_row_le_original_of_hodgeRowSplit T hsize hνbad S i
+  · change E.toPair.left.sorted.col
+        ⟨i.val, lt_of_lt_of_le i.isLt hsizeRows⟩ ≤ T.F.idx.col i
+    exact sorted_left_col_le_original_of_hodgeRowSplit T S hE i
+
+lemma firstLT_of_componentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (_hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.row μ)
+    (hνbad : RowBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (hE : E.AllInjective)
+    (h : IsComponentRowLaplaceSupport T ν hνp E) :
+    MinorIndex.PairLT
+      (E.sorted.toPair.left.toMinorIndexOfStrictMono
+        (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx := by
+  classical
+  have hfirstLEOld :
+      MinorIndex.PairLE
+        (E.sorted.toPair.left.toMinorIndexOfStrictMono
+          (E.sorted_toPair_left_row_strictMono_of_injective hE.1)
+          (E.sorted_toPair_left_col_strictMono_of_injective hE.2.1)) T.F.idx :=
+    firstLEOld_of_componentRowLaplaceSupport T hsize hνbad hE h
+  refine MinorIndex.PairLT.of_pairLE_not_symm hfirstLEOld ?_
+  rcases h with ⟨S, hne, rfl, _hSurvives⟩
+  let E := S.toBiReshuffle
+  have hsizeRows : T.F.t ≤ E.r :=
+    size_le_of_containsOriginalLeftCols
+      (containsOriginalLeftCols_toBiReshuffle_of_hodgeRowSplit T S)
+  by_cases hEq : E.r = T.F.t
+  · have hcard : S.rowSlots.card = T.F.t := by
+      simpa [E] using hEq
+    have hlt :=
+      sorted_left_row_lt_original_of_hodgeRowSplit_ne_pivot_of_rowSlots_card_eq
+        T hsize hνbad S hne hcard
+    have hpq :
+        S.toBiReshuffle.sorted.toPair.p ≤ T.F.t := by
+      change E.r ≤ T.F.t
+      exact le_of_eq hEq
+    refine MinorIndex.not_pairLE_of_violation
+      (I := T.F.idx)
+      (J := S.toBiReshuffle.sorted.toPair.left.toMinorIndexOfStrictMono
+        (S.toBiReshuffle.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (S.toBiReshuffle.sorted_toPair_left_col_strictMono_of_injective hE.2.1))
+      hpq
+      (⟨ν.val, by rw [hEq]; exact hνp⟩ : Fin E.r) ?_
+    intro hcomp
+    exact not_lt_of_ge (by simpa [E, hcard] using hcomp.1) hlt
+  · have hgt : T.F.t < E.r :=
+      lt_of_le_of_ne hsizeRows (Ne.symm hEq)
+    exact MinorIndex.not_pairLE_of_size_lt
+      (I := T.F.idx)
+      (J := S.toBiReshuffle.sorted.toPair.left.toMinorIndexOfStrictMono
+        (S.toBiReshuffle.sorted_toPair_left_row_strictMono_of_injective hE.1)
+        (S.toBiReshuffle.sorted_toPair_left_col_strictMono_of_injective hE.2.1))
+      hgt
+
+lemma isSortedPromotable_of_componentRowLaplaceSupport {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.row μ)
+    (hνbad : RowBadAt T hsize ν)
+    {E : RawMinorPair.BiReshuffle T.toRawPair}
+    (h : IsComponentRowLaplaceSupport T ν hνp E) :
+    IsSortedPromotable T E := by
+  classical
+  let hE : E.AllInjective := allInjective_of_componentRowLaplaceSupport h
+  refine ⟨hE, ?_, ?_⟩
+  · exact MinorIndex.PairLE.trans
+      (firstLEOld_of_componentRowLaplaceSupport T hsize hνbad hE h)
+      T.firstLE
+  · exact firstLT_of_componentRowLaplaceSupport
+      T hsize ν hνp hνmin hνbad hE h
+
+end BiReshuffleSupport
+
+lemma exists_coeff_componentColLaplaceSupport_of_hodgeColSplit_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (h :
+      ∃ coeff :
+          { S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp } → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S :
+              { S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp //
+                S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp },
+            MvPolynomial.C (coeff S) *
+              RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0) :
+    ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E },
+          MvPolynomial.C (coeff E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+  classical
+  rcases h with ⟨coeff, hsum⟩
+  let Source :=
+    { S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp //
+      S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp }
+  let SupportedSource :=
+    { S : Source //
+      BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp
+        S.1.toBiReshuffle }
+  let term : Source → MvPolynomial (Fin m × Fin n) k :=
+    fun S => RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair
+  have hzero :
+      ∀ S : Source,
+        S ∉ Set.range (fun U : SupportedSource => U.1) →
+          MvPolynomial.C (coeff S) * term S = 0 := by
+    intro S hS
+    by_cases hE : S.1.toBiReshuffle.AllInjective
+    · have hsupp :
+          BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp
+            S.1.toBiReshuffle := by
+        exact ⟨S.1, S.2, rfl, hE⟩
+      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+    · simp [term,
+        RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
+          (k := k) S.1.toBiReshuffle hE]
+  have hrestrict :
+      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
+        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
+    exact fintype_sum_eq_sum_of_injective_support
+      (fun U : SupportedSource => U.1) Subtype.val_injective
+      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
+  let toSupport :
+      SupportedSource →
+        { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } :=
+    fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
+  rcases exists_fintype_coeff_pushforward_polynomial_sum
+      toSupport (fun S : SupportedSource => coeff S.1)
+      (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } =>
+        RawMinorPair.laplacePolynomial (k := k) E.1.toPair) with
+    ⟨coeff', hpush⟩
+  refine ⟨coeff', ?_⟩
+  rw [← hpush, ← hrestrict]
+  simpa [Source, term] using hsum
+
+lemma exists_coeff_componentRowLaplaceSupport_of_hodgeRowSplit_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (h :
+      ∃ coeff :
+          { S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp } → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S :
+              { S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp //
+                S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp },
+            MvPolynomial.C (coeff S) *
+              RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0) :
+    ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E },
+          MvPolynomial.C (coeff E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+  classical
+  rcases h with ⟨coeff, hsum⟩
+  let Source :=
+    { S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp //
+      S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp }
+  let SupportedSource :=
+    { S : Source //
+      BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp
+        S.1.toBiReshuffle }
+  let term : Source → MvPolynomial (Fin m × Fin n) k :=
+    fun S => RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair
+  have hzero :
+      ∀ S : Source,
+        S ∉ Set.range (fun U : SupportedSource => U.1) →
+          MvPolynomial.C (coeff S) * term S = 0 := by
+    intro S hS
+    by_cases hE : S.1.toBiReshuffle.AllInjective
+    · have hsupp :
+          BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp
+            S.1.toBiReshuffle := by
+        exact ⟨S.1, S.2, rfl, hE⟩
+      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+    · simp [term,
+        RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
+          (k := k) S.1.toBiReshuffle hE]
+  have hrestrict :
+      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
+        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
+    exact fintype_sum_eq_sum_of_injective_support
+      (fun U : SupportedSource => U.1) Subtype.val_injective
+      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
+  let toSupport :
+      SupportedSource →
+        { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } :=
+    fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
+  rcases exists_fintype_coeff_pushforward_polynomial_sum
+      toSupport (fun S : SupportedSource => coeff S.1)
+      (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } =>
+        RawMinorPair.laplacePolynomial (k := k) E.1.toPair) with
+    ⟨coeff', hpush⟩
+  refine ⟨coeff', ?_⟩
+  rw [← hpush, ← hrestrict]
+  simpa [Source, term] using hsum
+
+lemma exists_coeff_ne_pivot_of_total_sum_eq_zero
+    {α σ k : Type*} [Fintype α] [DecidableEq α]
+    [Field k]
+    (pivot : α)
+    (coeff : α → k)
+    (term : α → MvPolynomial σ k)
+    (pivotTerm : MvPolynomial σ k)
+    (hpivot_coeff : coeff pivot = (-1 : k))
+    (hpivot_term : term pivot = pivotTerm)
+    (hsum : (∑ a : α, MvPolynomial.C (coeff a) * term a) = 0) :
+    ∃ coeffRest : { a : α // a ≠ pivot } → k,
+      - pivotTerm +
+        ∑ a : { a : α // a ≠ pivot },
+          MvPolynomial.C (coeffRest a) * term a.1 = 0 := by
+  classical
+  have h :
+      ∃ coeffSupport : { a : α // a ≠ pivot } → k,
+        - term pivot +
+          ∑ a : { a : α // a ≠ pivot },
+            MvPolynomial.C (coeffSupport a) * term a.1 = 0 := by
+    refine signed_subtype_sum_eq_zero_of_total_sum_eq_zero
+      (α := α) (σ := σ) (k := k)
+      (support := fun a => a ≠ pivot)
+      pivot (by simp) coeff term ?_ ?_ hsum
+    · exact hpivot_coeff
+    · intro a hne hnot
+      exact False.elim (hnot hne)
+  rcases h with ⟨coeffRest, hrest⟩
+  refine ⟨coeffRest, ?_⟩
+  simpa [hpivot_term] using hrest
+
+lemma exists_coeff_hodgeColSplit_identity_of_total_laplace_sum
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p)
+    (coeff : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp) =
+        (-1 : k))
+    (hpivot_laplace :
+      RawMinorPair.laplacePolynomial (k := k)
+          (RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp).toBiReshuffle.toPair =
+        RawMinorPair.laplacePolynomial (k := k) P)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffRest :
+        { S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp //
+          S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp } → k,
+      - RawMinorPair.laplacePolynomial (k := k) P +
+        ∑ S :
+          { S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp },
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0 := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp
+  let term : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp →
+      MvPolynomial (Fin m × Fin n) k :=
+    fun S => RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair
+  have h :
+      ∃ coeffSupport :
+          { S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp //
+            S ≠ pivot } → k,
+        - term pivot +
+          ∑ S :
+            { S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp //
+              S ≠ pivot },
+            MvPolynomial.C (coeffSupport S) * term S.1 = 0 := by
+    refine signed_subtype_sum_eq_zero_of_total_sum_eq_zero
+      (α := RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp)
+      (σ := Fin m × Fin n) (k := k)
+      (support := fun S => S ≠ pivot)
+      pivot (by simp [pivot]) coeff term ?_ ?_ ?_
+    · simpa [pivot] using hpivot_coeff
+    · intro S hne hnot
+      exact False.elim (hnot hne)
+    · simpa [term] using hsum
+  rcases h with ⟨coeffRest, hrest⟩
+  refine ⟨coeffRest, ?_⟩
+  simpa [pivot, term, hpivot_laplace] using hrest
+
+lemma exists_coeff_hodgeRowSplit_identity_of_total_laplace_sum
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (P : RawMinorPair m n) (ν : Fin P.q) (hνp : ν.val < P.p)
+    (coeff : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp) =
+        (-1 : k))
+    (hpivot_laplace :
+      RawMinorPair.laplacePolynomial (k := k)
+          (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp).toBiReshuffle.toPair =
+        RawMinorPair.laplacePolynomial (k := k) P)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffRest :
+        { S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp //
+          S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp } → k,
+      - RawMinorPair.laplacePolynomial (k := k) P +
+        ∑ S :
+          { S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp },
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0 := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp
+  let term : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp →
+      MvPolynomial (Fin m × Fin n) k :=
+    fun S => RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair
+  have h :
+      ∃ coeffSupport :
+          { S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp //
+            S ≠ pivot } → k,
+        - term pivot +
+          ∑ S :
+            { S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp //
+              S ≠ pivot },
+            MvPolynomial.C (coeffSupport S) * term S.1 = 0 := by
+    refine signed_subtype_sum_eq_zero_of_total_sum_eq_zero
+      (α := RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp)
+      (σ := Fin m × Fin n) (k := k)
+      (support := fun S => S ≠ pivot)
+      pivot (by simp [pivot]) coeff term ?_ ?_ ?_
+    · simpa [pivot] using hpivot_coeff
+    · intro S hne hnot
+      exact False.elim (hnot hne)
+    · simpa [term] using hsum
+  rcases h with ⟨coeffRest, hrest⟩
+  refine ⟨coeffRest, ?_⟩
+  simpa [pivot, term, hpivot_laplace] using hrest
+
+lemma exists_coeff_support_sum_of_componentColLaplaceSupport_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E →
+          BiReshuffleSupport.IsSortedPromotable T E)
+    (h :
+      ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E },
+            MvPolynomial.C (coeff E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  rcases h with ⟨coeff, hsum⟩
+  rcases BiReshuffleSupport.exists_coeff_sortedPromotable_sum_of_componentColLaplaceSupport
+      (k := k) (T := T) (ν := ν) (hνp := hνp) hprom coeff with
+    ⟨coeffSorted, hsorted⟩
+  rcases BiReshuffleSupport.exists_coeff_support_sum_raw_sortedPromotable
+      (k := k) (T := T) coeffSorted with
+    ⟨coeffRest, hsupport⟩
+  refine ⟨coeffRest, ?_⟩
+  rw [← hsupport, ← hsorted]
+  exact hsum
+
+lemma exists_coeff_support_sum_of_componentRowLaplaceSupport_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E →
+          BiReshuffleSupport.IsSortedPromotable T E)
+    (h :
+      ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E },
+            MvPolynomial.C (coeff E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  rcases h with ⟨coeff, hsum⟩
+  rcases BiReshuffleSupport.exists_coeff_sortedPromotable_sum_of_componentRowLaplaceSupport
+      (k := k) (T := T) (ν := ν) (hνp := hνp) hprom coeff with
+    ⟨coeffSorted, hsorted⟩
+  rcases BiReshuffleSupport.exists_coeff_support_sum_raw_sortedPromotable
+      (k := k) (T := T) coeffSorted with
+    ⟨coeffRest, hsupport⟩
+  refine ⟨coeffRest, ?_⟩
+  rw [← hsupport, ← hsorted]
+  exact hsum
+
+lemma swan_component_col_signed_identity_of_total_hodge_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (coeff : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp) =
+        (-1 : k))
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E →
+          BiReshuffleSupport.IsSortedPromotable T E)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  have hsplit :
+      ∃ coeff :
+          { S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S :
+              { S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp //
+                S ≠ RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp },
+            MvPolynomial.C (coeff S) *
+              RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0 :=
+    exists_coeff_hodgeColSplit_identity_of_total_laplace_sum
+      (k := k) T.toRawPair ν hνp
+      coeff hpivot_coeff
+      (RawMinorPair.BiReshuffle.HodgeColSplit.pivot_toBiReshuffle_toPair_laplacePolynomial
+        (k := k) T.toRawPair ν hνp)
+      hsum
+  have hcomponent :
+      ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E },
+            MvPolynomial.C (coeff E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 :=
+    exists_coeff_componentColLaplaceSupport_of_hodgeColSplit_identity
+      (k := k) T ν hνp hsplit
+  exact exists_coeff_support_sum_of_componentColLaplaceSupport_identity
+    (k := k) T ν hνp hprom hcomponent
+
+lemma swan_component_row_signed_identity_of_total_hodge_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (coeff : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp) =
+        (-1 : k))
+    (hprom :
+      ∀ {E : RawMinorPair.BiReshuffle T.toRawPair},
+        BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E →
+          BiReshuffleSupport.IsSortedPromotable T E)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffRest : BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  have hsplit :
+      ∃ coeff :
+          { S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp //
+            S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S :
+              { S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp //
+                S ≠ RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp },
+            MvPolynomial.C (coeff S) *
+              RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0 :=
+    exists_coeff_hodgeRowSplit_identity_of_total_laplace_sum
+      (k := k) T.toRawPair ν hνp
+      coeff hpivot_coeff
+      (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot_toBiReshuffle_toPair_laplacePolynomial
+        (k := k) T.toRawPair ν hνp)
+      hsum
+  have hcomponent :
+      ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E },
+            MvPolynomial.C (coeff E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 :=
+    exists_coeff_componentRowLaplaceSupport_of_hodgeRowSplit_identity
+      (k := k) T ν hνp hsplit
+  exact exists_coeff_support_sum_of_componentRowLaplaceSupport_identity
+    (k := k) T ν hνp hprom hcomponent
+
+lemma exists_coeff_sizeBranchLaplaceSupport_of_containingSplit_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (h :
+      ∃ coeff :
+          { S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair //
+            S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair } → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S :
+              { S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair //
+                S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair },
+            MvPolynomial.C (coeff S) *
+              RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0) :
+    ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            BiReshuffleSupport.IsSizeBranchLaplaceSupport T E },
+          MvPolynomial.C (coeff E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+  classical
+  rcases h with ⟨coeff, hsum⟩
+  let Source :=
+    { S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair //
+      S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair }
+  let SupportedSource :=
+    { S : Source //
+      BiReshuffleSupport.IsSizeBranchLaplaceSupport T S.1.toBiReshuffle }
+  let term : Source → MvPolynomial (Fin m × Fin n) k :=
+    fun S => RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair
+  have hzero :
+      ∀ S : Source,
+        S ∉ Set.range (fun U : SupportedSource => U.1) →
+          MvPolynomial.C (coeff S) * term S = 0 := by
+    intro S hS
+    by_cases hE : S.1.toBiReshuffle.AllInjective
+    · have hne : S.1.toBiReshuffle.r ≠ T.F.t := by
+        intro hr
+        have hcard : S.1.rowSlots.card = T.toRawPair.p := by
+          simpa using hr
+        exact S.2
+          (RawMinorPair.BiReshuffle.ContainingSplit.eq_pivot_of_rowSlots_card_eq
+            S.1 hcard)
+      have hsupp :
+          BiReshuffleSupport.IsSizeBranchLaplaceSupport T S.1.toBiReshuffle :=
+        BiReshuffleSupport.isSizeBranchLaplaceSupport_toBiReshuffle_of_containingSplit
+          T S.1 hE hne
+      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+    · simp [term,
+        RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
+          (k := k) S.1.toBiReshuffle hE]
+  have hrestrict :
+      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
+        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
+    exact fintype_sum_eq_sum_of_injective_support
+      (fun U : SupportedSource => U.1) Subtype.val_injective
+      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
+  let toSupport :
+      SupportedSource →
+        { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } :=
+    fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
+  rcases exists_fintype_coeff_pushforward_polynomial_sum
+      toSupport (fun S : SupportedSource => coeff S.1)
+      (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } =>
+        RawMinorPair.laplacePolynomial (k := k) E.1.toPair) with
+    ⟨coeff', hpush⟩
+  refine ⟨coeff', ?_⟩
+  rw [← hpush, ← hrestrict]
+  simpa [Source, term] using hsum
+
+lemma exists_coeff_ne_pivot_containingSplit_of_total_sum_eq_zero
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (P : RawMinorPair m n)
+    (coeff : RawMinorPair.BiReshuffle.ContainingSplit P → k)
+    (term : RawMinorPair.BiReshuffle.ContainingSplit P →
+      MvPolynomial (Fin m × Fin n) k)
+    (pivotTerm : MvPolynomial (Fin m × Fin n) k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.ContainingSplit.pivot P) = (-1 : k))
+    (hpivot_term :
+      term (RawMinorPair.BiReshuffle.ContainingSplit.pivot P) = pivotTerm)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit P,
+        MvPolynomial.C (coeff S) * term S) = 0) :
+    ∃ coeffRest :
+        { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+          S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot P } → k,
+      - pivotTerm +
+        ∑ S :
+          { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+            S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot P },
+          MvPolynomial.C (coeffRest S) * term S.1 = 0 := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.ContainingSplit.pivot P
+  have h :
+      ∃ coeffSupport : { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+          S ≠ pivot } → k,
+        - term pivot +
+          ∑ S : { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+              S ≠ pivot },
+            MvPolynomial.C (coeffSupport S) * term S.1 = 0 := by
+    refine signed_subtype_sum_eq_zero_of_total_sum_eq_zero
+      (α := RawMinorPair.BiReshuffle.ContainingSplit P)
+      (σ := Fin m × Fin n) (k := k)
+      (support := fun S => S ≠ pivot)
+      pivot (by simp [pivot]) coeff term ?_ ?_ hsum
+    · simpa [pivot] using hpivot_coeff
+    · intro S hne hnot
+      exact False.elim (hnot hne)
+  rcases h with ⟨coeffRest, hrest⟩
+  refine ⟨coeffRest, ?_⟩
+  simpa [pivot, hpivot_term] using hrest
+
+lemma exists_coeff_containingSplit_identity_of_total_laplace_sum
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (P : RawMinorPair m n)
+    (coeff : RawMinorPair.BiReshuffle.ContainingSplit P → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.ContainingSplit.pivot P) = (-1 : k))
+    (hpivot_laplace :
+      RawMinorPair.laplacePolynomial (k := k)
+          (RawMinorPair.BiReshuffle.ContainingSplit.pivot P).toBiReshuffle.toPair =
+        RawMinorPair.laplacePolynomial (k := k) P)
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit P,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffRest :
+        { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+          S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot P } → k,
+      - RawMinorPair.laplacePolynomial (k := k) P +
+        ∑ S :
+          { S : RawMinorPair.BiReshuffle.ContainingSplit P //
+            S ≠ RawMinorPair.BiReshuffle.ContainingSplit.pivot P },
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.1.toBiReshuffle.toPair = 0 := by
+  classical
+  exact exists_coeff_ne_pivot_containingSplit_of_total_sum_eq_zero
+    (k := k) P coeff
+    (fun S => RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair)
+    (RawMinorPair.laplacePolynomial (k := k) P)
+    hpivot_coeff hpivot_laplace hsum
+
+lemma exists_coeff_sizeBranchLaplaceSupport_of_total_containingSplit_laplace_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (coeff : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair → k)
+    (hpivot_coeff :
+      coeff (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair) = (-1 : k))
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0) :
+    ∃ coeffSupport : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsSizeBranchLaplaceSupport T E },
+            MvPolynomial.C (coeffSupport E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+  classical
+  apply exists_coeff_sizeBranchLaplaceSupport_of_containingSplit_identity T
+  exact exists_coeff_containingSplit_identity_of_total_laplace_sum
+    (k := k) T.toRawPair coeff hpivot_coeff
+    (RawMinorPair.BiReshuffle.ContainingSplit.pivot_toBiReshuffle_toPair_laplacePolynomial
+      (k := k) T.toRawPair)
+    hsum
+
+lemma exists_coeff_total_containingSplit_laplace_sum_of_iccSplit
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (P : RawMinorPair m n)
+    (coeffIcc : RawMinorPair.BiReshuffle.ContainingSplit.IccSplit P → k)
+    (hpivot_coeff :
+      coeffIcc
+          (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit
+            (RawMinorPair.BiReshuffle.ContainingSplit.pivot P)) = (-1 : k))
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit.IccSplit P,
+        MvPolynomial.C (coeffIcc S) *
+          RawMinorPair.laplacePolynomial (k := k)
+            (RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit S).toBiReshuffle.toPair) = 0) :
+    ∃ coeff : RawMinorPair.BiReshuffle.ContainingSplit P → k,
+      coeff (RawMinorPair.BiReshuffle.ContainingSplit.pivot P) = (-1 : k) ∧
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit P,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0 := by
+  classical
+  let coeff : RawMinorPair.BiReshuffle.ContainingSplit P → k :=
+    fun S => coeffIcc (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit S)
+  refine ⟨coeff, ?_, ?_⟩
+  · simpa [coeff] using hpivot_coeff
+  · rw [RawMinorPair.BiReshuffle.ContainingSplit.sum_containingSplit_eq_sum_iccSplit]
+    simpa [coeff] using hsum
+
+lemma swan_corollary2_8_size_containingSplit_total_laplace_sum_of_iccSplit
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (coeffIcc :
+      RawMinorPair.BiReshuffle.ContainingSplit.IccSplit T.toRawPair → k)
+    (hpivot_coeff :
+      coeffIcc
+          (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit
+            (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair)) =
+        (-1 : k))
+    (hsum :
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit.IccSplit T.toRawPair,
+        MvPolynomial.C (coeffIcc S) *
+          RawMinorPair.laplacePolynomial (k := k)
+            (RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit S).toBiReshuffle.toPair) =
+        0) :
+    ∃ coeff : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair → k,
+      coeff (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair) = (-1 : k) ∧
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair,
+        MvPolynomial.C (coeff S) *
+          RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0 := by
+  exact exists_coeff_total_containingSplit_laplace_sum_of_iccSplit
+    (k := k) T.toRawPair coeffIcc hpivot_coeff hsum
+
+lemma neg_one_pow_mul_self {R : Type*} [CommRing R] (r : ℕ) :
+    ((-1 : R) ^ r) * ((-1 : R) ^ r) = 1 := by
+  induction r with
+  | zero =>
+      simp
+  | succ r ih =>
+      simp only [pow_succ]
+      calc
+        ((-1 : R) ^ r * -1) * ((-1 : R) ^ r * -1)
+            =
+          ((-1 : R) ^ r * ((-1 : R) ^ r)) * ((-1 : R) * (-1 : R)) := by
+            ring
+    _ = 1 := by
+            rw [ih]
+            ring
+
+noncomputable def swan_component_col_hodgeSplitFactor
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp) : k :=
+  S.splitSignFactor (R := k) * ((-1 : k) ^ S.W.card)
+
+lemma swan_component_col_hodgeSplitFactor_mul_self
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : RawMinorPair.BiReshuffle.HodgeColSplit P ν hνp) :
+    swan_component_col_hodgeSplitFactor (k := k) S *
+        swan_component_col_hodgeSplitFactor (k := k) S = 1 := by
+  unfold swan_component_col_hodgeSplitFactor
+  have hsplit := S.splitSignFactor_mul_self (R := k)
+  have hpow := neg_one_pow_mul_self (R := k) S.W.card
+  calc
+    (S.splitSignFactor (R := k) * (-1 : k) ^ S.W.card) *
+        (S.splitSignFactor (R := k) * (-1 : k) ^ S.W.card)
+        =
+      (S.splitSignFactor (R := k) * S.splitSignFactor (R := k)) *
+        (((-1 : k) ^ S.W.card) * ((-1 : k) ^ S.W.card)) := by
+          ring
+    _ = 1 := by
+          rw [hsplit, hpow]
+          ring
+
+noncomputable def swan_component_row_hodgeSplitFactor
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp) : k :=
+  S.splitSignFactor (R := k) * ((-1 : k) ^ S.W.card)
+
+lemma swan_component_row_hodgeSplitFactor_mul_self
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    {ν : Fin P.q} {hνp : ν.val < P.p}
+    (S : RawMinorPair.BiReshuffle.HodgeRowSplit P ν hνp) :
+    swan_component_row_hodgeSplitFactor (k := k) S *
+        swan_component_row_hodgeSplitFactor (k := k) S = 1 := by
+  unfold swan_component_row_hodgeSplitFactor
+  have hsplit := S.splitSignFactor_mul_self (R := k)
+  have hpow := neg_one_pow_mul_self (R := k) S.W.card
+  calc
+    (S.splitSignFactor (R := k) * (-1 : k) ^ S.W.card) *
+        (S.splitSignFactor (R := k) * (-1 : k) ^ S.W.card)
+        =
+      (S.splitSignFactor (R := k) * S.splitSignFactor (R := k)) *
+        (((-1 : k) ^ S.W.card) * ((-1 : k) ^ S.W.card)) := by
+          ring
+    _ = 1 := by
+          rw [hsplit, hpow]
+          ring
+
+noncomputable def swan_component_col_hodgeCoeff
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp → k :=
+  fun S =>
+    - swan_component_col_hodgeSplitFactor (k := k)
+        (RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp) *
+      swan_component_col_hodgeSplitFactor (k := k) S
+
+lemma swan_component_col_hodgeCoeff_pivot
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    swan_component_col_hodgeCoeff (k := k) T ν hνp
+        (RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp) =
+      (-1 : k) := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.HodgeColSplit.pivot T.toRawPair ν hνp
+  have hsquare :
+      swan_component_col_hodgeSplitFactor (k := k) pivot *
+          swan_component_col_hodgeSplitFactor (k := k) pivot = 1 :=
+    swan_component_col_hodgeSplitFactor_mul_self (k := k) pivot
+  unfold swan_component_col_hodgeCoeff
+  change
+    - swan_component_col_hodgeSplitFactor (k := k) pivot *
+        swan_component_col_hodgeSplitFactor (k := k) pivot = (-1 : k)
+  calc
+    - swan_component_col_hodgeSplitFactor (k := k) pivot *
+        swan_component_col_hodgeSplitFactor (k := k) pivot
+        =
+      - (swan_component_col_hodgeSplitFactor (k := k) pivot *
+          swan_component_col_hodgeSplitFactor (k := k) pivot) := by
+          ring
+    _ = (-1 : k) := by
+          rw [hsquare]
+
+noncomputable def swan_component_row_hodgeCoeff
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp → k :=
+  fun S =>
+    - swan_component_row_hodgeSplitFactor (k := k)
+        (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp) *
+      swan_component_row_hodgeSplitFactor (k := k) S
+
+lemma swan_component_row_hodgeCoeff_pivot
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    swan_component_row_hodgeCoeff (k := k) T ν hνp
+        (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp) =
+      (-1 : k) := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.HodgeRowSplit.pivot T.toRawPair ν hνp
+  have hsquare :
+      swan_component_row_hodgeSplitFactor (k := k) pivot *
+          swan_component_row_hodgeSplitFactor (k := k) pivot = 1 :=
+    swan_component_row_hodgeSplitFactor_mul_self (k := k) pivot
+  unfold swan_component_row_hodgeCoeff
+  change
+    - swan_component_row_hodgeSplitFactor (k := k) pivot *
+        swan_component_row_hodgeSplitFactor (k := k) pivot = (-1 : k)
+  calc
+    - swan_component_row_hodgeSplitFactor (k := k) pivot *
+        swan_component_row_hodgeSplitFactor (k := k) pivot
+        =
+      - (swan_component_row_hodgeSplitFactor (k := k) pivot *
+          swan_component_row_hodgeSplitFactor (k := k) pivot) := by
+          ring
+    _ = (-1 : k) := by
+          rw [hsquare]
+
+noncomputable def swan_corollary2_8_size_splitFactor
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    (S : RawMinorPair.BiReshuffle.ContainingSplit P) : k :=
+  S.splitSignFactor (R := k) * ((-1 : k) ^ S.colSlotsᶜ.card)
+
+lemma swan_corollary2_8_size_splitFactor_mul_self
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {P : RawMinorPair m n}
+    (S : RawMinorPair.BiReshuffle.ContainingSplit P) :
+    swan_corollary2_8_size_splitFactor (k := k) S *
+        swan_corollary2_8_size_splitFactor (k := k) S = 1 := by
+  unfold swan_corollary2_8_size_splitFactor
+  have hsplit := S.splitSignFactor_mul_self (R := k)
+  have hpow := neg_one_pow_mul_self (R := k) S.colSlotsᶜ.card
+  calc
+    (S.splitSignFactor (R := k) * (-1 : k) ^ S.colSlotsᶜ.card) *
+        (S.splitSignFactor (R := k) * (-1 : k) ^ S.colSlotsᶜ.card)
+        =
+      (S.splitSignFactor (R := k) * S.splitSignFactor (R := k)) *
+        (((-1 : k) ^ S.colSlotsᶜ.card) *
+          ((-1 : k) ^ S.colSlotsᶜ.card)) := by
+          ring
+    _ = 1 := by
+          rw [hsplit, hpow]
+          ring
+
+noncomputable def swan_corollary2_8_size_containingCoeff
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair → k :=
+  fun S =>
+    - swan_corollary2_8_size_splitFactor (k := k)
+        (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair) *
+      swan_corollary2_8_size_splitFactor (k := k) S
+
+noncomputable def swan_corollary2_8_size_iccCoeff
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    RawMinorPair.BiReshuffle.ContainingSplit.IccSplit T.toRawPair → k :=
+  fun S => swan_corollary2_8_size_containingCoeff (k := k) T
+    (RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit S)
+
+lemma swan_corollary2_8_size_iccCoeff_pivot
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) :
+    swan_corollary2_8_size_iccCoeff (k := k) T
+        (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit
+          (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair)) =
+      (-1 : k) := by
+  classical
+  let pivot := RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair
+  have hpivot :
+      RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit
+          (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit pivot) =
+        pivot :=
+    RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit_toIccSplit pivot
+  have hsquare :
+      swan_corollary2_8_size_splitFactor (k := k) pivot *
+          swan_corollary2_8_size_splitFactor (k := k) pivot = 1 :=
+    swan_corollary2_8_size_splitFactor_mul_self (k := k) pivot
+  unfold swan_corollary2_8_size_iccCoeff
+    swan_corollary2_8_size_containingCoeff
+  rw [hpivot]
+  change
+    - swan_corollary2_8_size_splitFactor (k := k) pivot *
+        swan_corollary2_8_size_splitFactor (k := k) pivot = (-1 : k)
+  calc
+    - swan_corollary2_8_size_splitFactor (k := k) pivot *
+        swan_corollary2_8_size_splitFactor (k := k) pivot
+        =
+      - (swan_corollary2_8_size_splitFactor (k := k) pivot *
+          swan_corollary2_8_size_splitFactor (k := k) pivot) := by
+          ring
+    _ = (-1 : k) := by
+          rw [hsquare]
+
+
+/-- Size defect is one concrete way for a raw product to fail to be good. -/
+lemma not_isGood_of_size_lt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    ¬ T.IsGood := by
+  exact MinorIndex.not_pairLE_of_size_lt hsize
+
+lemma toRawPair_q_pos_of_size_lt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    0 < T.toRawPair.q := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair] using
+    lt_of_le_of_lt (Nat.zero_le T.F.t) hsize
+
+lemma toRawPair_two_left_size_lt_total_of_size_lt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    2 * T.toRawPair.p < T.toRawPair.p + T.toRawPair.q := by
+  simpa [SwanRawLaplaceProductTerm.toRawPair, two_mul] using
+    Nat.add_lt_add_left hsize T.F.t
+
+lemma leftSlotFinset_toRawPair_ne_univ_of_size_lt {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    RawMinorPair.BiReshuffle.leftSlotFinset T.toRawPair ≠ Finset.univ := by
+  exact RawMinorPair.BiReshuffle.leftSlotFinset_ne_univ_of_right_pos
+    T.toRawPair (toRawPair_q_pos_of_size_lt T hsize)
+
+lemma leftSlotFinset_toRawPair_union_permPreimage_ne_univ_of_size_lt
+    {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    RawMinorPair.BiReshuffle.leftSlotFinset T.toRawPair ∪
+        RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset T.toRawPair π ≠
+      Finset.univ := by
+  exact
+    RawMinorPair.BiReshuffle.leftSlotFinset_union_permPreimageLeftSlotFinset_ne_univ_of_two_mul_lt
+      T.toRawPair (toRawPair_two_left_size_lt_total_of_size_lt T hsize) π
+
+lemma sum_Icc_leftSlotFinset_toRawPair_union_permPreimage_neg_one_pow_card_compl_eq_zero
+    {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    (∑ s ∈ Finset.Icc
+        (RawMinorPair.BiReshuffle.leftSlotFinset T.toRawPair ∪
+          RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset T.toRawPair π)
+        Finset.univ,
+      (-1 : k) ^ sᶜ.card) = 0 := by
+  exact
+  RawMinorPair.BiReshuffle.sum_Icc_leftSlotFinset_union_permPreimage_neg_one_pow_card_compl_eq_zero
+      (k := k) T.toRawPair
+      (toRawPair_two_left_size_lt_total_of_size_lt T hsize) π
+
+lemma MvPolynomial_C_equivPermSign
+    {V : Type*} {k : Type*} [CommRing k]
+    {α : Type*} [Fintype α] [DecidableEq α]
+    (π : Equiv.Perm α) :
+    MvPolynomial.C (R := k) (σ := V)
+        (RawMinorPair.BiReshuffle.equivPermSign (R := k) π) =
+      ((Equiv.Perm.sign π : ℤˣ) : MvPolynomial V k) := by
+  simp [RawMinorPair.BiReshuffle.equivPermSign]
+
+noncomputable def swan_corollary2_8_size_commonLeibnizTerm
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.C
+        (- swan_corollary2_8_size_splitFactor (k := k)
+          (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair) *
+        RawMinorPair.laplaceCoeff (k := k) T.toRawPair *
+        RawMinorPair.BiReshuffle.equivPermSign (R := k) π) *
+    ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair (π j) j
+
+lemma swan_corollary2_8_size_leibnizTerm_eq_common
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (X : RawMinorPair.BiReshuffle.ContainingSplit.LeibnizTerm T.toRawPair) :
+    MvPolynomial.C (swan_corollary2_8_size_containingCoeff (k := k) T X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)) =
+      swan_corollary2_8_size_commonLeibnizTerm (k := k) T X.ambientPerm *
+        MvPolynomial.C ((-1 : k) ^ X.1.colSlotsᶜ.card) := by
+  classical
+  let S := X.1
+  let τ := X.2.1
+  let σ := X.2.2
+  let P := T.toRawPair
+  let pivot := RawMinorPair.BiReshuffle.ContainingSplit.pivot P
+  let a : k := - swan_corollary2_8_size_splitFactor (k := k) pivot
+  let b : k := S.splitSignFactor (R := k)
+  let c : k := (-1 : k) ^ S.colSlotsᶜ.card
+  let d : k := RawMinorPair.laplaceCoeff (k := k) P
+  let eτ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) τ
+  let eσ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) σ
+  let eπ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) (S.leibnizPerm τ σ)
+  let M : MvPolynomial (Fin m × Fin n) k :=
+    ∏ j : Fin (P.p + P.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) P
+        (S.leibnizPerm τ σ j) j
+  have hlap :
+      RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair = d := by
+    simpa [P, d] using
+      RawMinorPair.BiReshuffle.laplaceCoeff_toPair (k := k) S.toBiReshuffle
+  have hsign :
+      b * (eτ * eσ) = eπ := by
+    simpa [b, eτ, eσ, eπ] using
+      S.splitSignFactor_mul_blockSigns (R := k) τ σ
+  have hsignC :
+      MvPolynomial.C (b * (eτ * eσ)) =
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n) eπ := by
+    exact congrArg (MvPolynomial.C (R := k) (σ := Fin m × Fin n)) hsign
+  change
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign τ :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign σ :
+              MvPolynomial (Fin m × Fin n) k)) * M)) =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c
+  rw [hlap]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) τ]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) σ]
+  simp only [MvPolynomial.C_mul] at hsignC
+  calc
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C d *
+          ((MvPolynomial.C eτ * MvPolynomial.C eσ) * M))
+        =
+      (MvPolynomial.C (a * d) *
+        (MvPolynomial.C b * (MvPolynomial.C eτ * MvPolynomial.C eσ))) *
+          M * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+          ring_nf
+    _ =
+      (MvPolynomial.C (a * d) * MvPolynomial.C eπ) *
+          M * MvPolynomial.C c := by
+          rw [hsignC]
+    _ =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+
+noncomputable def swan_component_col_commonLeibnizTerm
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.C
+        (- swan_component_col_hodgeSplitFactor (k := k)
+          (RawMinorPair.BiReshuffle.HodgeColSplit.pivot
+            T.toRawPair ν hνp) *
+        RawMinorPair.laplaceCoeff (k := k) T.toRawPair *
+        RawMinorPair.BiReshuffle.equivPermSign (R := k) π) *
+    ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair (π j) j
+
+noncomputable def swan_component_row_commonLeibnizTerm
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    MvPolynomial (Fin m × Fin n) k :=
+  MvPolynomial.C
+        (- swan_component_row_hodgeSplitFactor (k := k)
+          (RawMinorPair.BiReshuffle.HodgeRowSplit.pivot
+            T.toRawPair ν hνp) *
+        RawMinorPair.laplaceCoeff (k := k) T.toRawPair *
+        RawMinorPair.BiReshuffle.equivPermSign (R := k) π) *
+    ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair (π j) j
+
+lemma swan_component_col_hodge_leibnizTerm_eq_common
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (X :
+      RawMinorPair.BiReshuffle.HodgeColSplit.LeibnizTerm
+        T.toRawPair ν hνp) :
+    MvPolynomial.C (swan_component_col_hodgeCoeff (k := k) T ν hνp X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)) =
+      swan_component_col_commonLeibnizTerm (k := k) T ν hνp X.ambientPerm *
+        MvPolynomial.C ((-1 : k) ^ X.1.W.card) := by
+  classical
+  let S := X.1
+  let τ := X.2.1
+  let σ := X.2.2
+  let P := T.toRawPair
+  let pivot := RawMinorPair.BiReshuffle.HodgeColSplit.pivot P ν hνp
+  let a : k := - swan_component_col_hodgeSplitFactor (k := k) pivot
+  let b : k := S.splitSignFactor (R := k)
+  let c : k := (-1 : k) ^ S.W.card
+  let d : k := RawMinorPair.laplaceCoeff (k := k) P
+  let eτ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) τ
+  let eσ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) σ
+  let eπ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) (S.leibnizPerm τ σ)
+  let M : MvPolynomial (Fin m × Fin n) k :=
+    ∏ j : Fin (P.p + P.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) P
+        (S.leibnizPerm τ σ j) j
+  have hlap :
+      RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair = d := by
+    simpa [P, d] using
+      RawMinorPair.BiReshuffle.laplaceCoeff_toPair (k := k) S.toBiReshuffle
+  have hsign :
+      b * (eτ * eσ) = eπ := by
+    simpa [b, eτ, eσ, eπ] using
+      S.splitSignFactor_mul_blockSigns (R := k) τ σ
+  have hsignC :
+      MvPolynomial.C (b * (eτ * eσ)) =
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n) eπ := by
+    exact congrArg (MvPolynomial.C (R := k) (σ := Fin m × Fin n)) hsign
+  change
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign τ :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign σ :
+              MvPolynomial (Fin m × Fin n) k)) * M)) =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c
+  rw [hlap]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) τ]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) σ]
+  simp only [MvPolynomial.C_mul] at hsignC
+  calc
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C d *
+          ((MvPolynomial.C eτ * MvPolynomial.C eσ) * M))
+        =
+      (MvPolynomial.C (a * d) *
+        (MvPolynomial.C b * (MvPolynomial.C eτ * MvPolynomial.C eσ))) *
+          M * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+          ring_nf
+    _ =
+      (MvPolynomial.C (a * d) * MvPolynomial.C eπ) *
+          M * MvPolynomial.C c := by
+          rw [hsignC]
+    _ =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+
+lemma swan_component_row_hodge_leibnizTerm_eq_common
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (X :
+      RawMinorPair.BiReshuffle.HodgeRowSplit.LeibnizTerm
+        T.toRawPair ν hνp) :
+    MvPolynomial.C (swan_component_row_hodgeCoeff (k := k) T ν hνp X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)) =
+      swan_component_row_commonLeibnizTerm (k := k) T ν hνp X.ambientPerm *
+        MvPolynomial.C ((-1 : k) ^ X.1.W.card) := by
+  classical
+  let S := X.1
+  let τ := X.2.1
+  let σ := X.2.2
+  let P := T.toRawPair
+  let pivot := RawMinorPair.BiReshuffle.HodgeRowSplit.pivot P ν hνp
+  let a : k := - swan_component_row_hodgeSplitFactor (k := k) pivot
+  let b : k := S.splitSignFactor (R := k)
+  let c : k := (-1 : k) ^ S.W.card
+  let d : k := RawMinorPair.laplaceCoeff (k := k) P
+  let eτ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) τ
+  let eσ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) σ
+  let eπ : k := RawMinorPair.BiReshuffle.equivPermSign (R := k) (S.leibnizPerm τ σ)
+  let M : MvPolynomial (Fin m × Fin n) k :=
+    ∏ j : Fin (P.p + P.q),
+      RawMinorPair.BiReshuffle.slotMatrix (k := k) P
+        (S.leibnizPerm τ σ j) j
+  have hlap :
+      RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair = d := by
+    simpa [P, d] using
+      RawMinorPair.BiReshuffle.laplaceCoeff_toPair (k := k) S.toBiReshuffle
+  have hsign :
+      b * (eτ * eσ) = eπ := by
+    simpa [b, eτ, eσ, eπ] using
+      S.splitSignFactor_mul_blockSigns (R := k) τ σ
+  have hsignC :
+      MvPolynomial.C (b * (eτ * eσ)) =
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n) eπ := by
+    exact congrArg (MvPolynomial.C (R := k) (σ := Fin m × Fin n)) hsign
+  change
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) S.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign τ :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign σ :
+              MvPolynomial (Fin m × Fin n) k)) * M)) =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c
+  rw [hlap]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) τ]
+  rw [← MvPolynomial_C_equivPermSign (V := Fin m × Fin n) (k := k) σ]
+  simp only [MvPolynomial.C_mul] at hsignC
+  calc
+    MvPolynomial.C (a * (b * c)) *
+        (MvPolynomial.C d *
+          ((MvPolynomial.C eτ * MvPolynomial.C eσ) * M))
+        =
+      (MvPolynomial.C (a * d) *
+        (MvPolynomial.C b * (MvPolynomial.C eτ * MvPolynomial.C eσ))) *
+          M * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+          ring_nf
+    _ =
+      (MvPolynomial.C (a * d) * MvPolynomial.C eπ) *
+          M * MvPolynomial.C c := by
+          rw [hsignC]
+    _ =
+      (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c := by
+          simp only [MvPolynomial.C_mul]
+
+lemma swan_component_col_inner_powerset_sum_eq_zero
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    (∑ W : { W : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) //
+        RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset T.toRawPair π ⊆
+          RawMinorPair.BiReshuffle.Hodge.hodgeD T.toRawPair ν ∧
+        W ∈ (RawMinorPair.BiReshuffle.Hodge.hodgeC T.toRawPair ν hνp \
+          RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset
+            T.toRawPair π).powerset },
+      swan_component_col_commonLeibnizTerm (k := k) T ν hνp π *
+        MvPolynomial.C ((-1 : k) ^ W.1.card)) = 0 := by
+  classical
+  let P := T.toRawPair
+  let base : Finset (Fin (P.p + P.q)) :=
+    RawMinorPair.BiReshuffle.Hodge.hodgeC P ν hνp \
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π
+  let common := swan_component_col_commonLeibnizTerm (k := k) T ν hνp π
+  let Source : Type :=
+    { W : Finset (Fin (P.p + P.q)) //
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π ⊆
+        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν ∧
+      W ∈ base.powerset }
+  let Target : Type := { W : Finset (Fin (P.p + P.q)) // W ∈ base.powerset }
+  change
+    (∑ W : Source, common *
+      MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+        ((-1 : k) ^ W.1.card)) = 0
+  by_cases hpreD :
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π ⊆
+        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
+  · have hbase_nonempty : base.Nonempty := by
+      simpa [P, base] using
+        RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
+          P ν hνp π
+    have hscalar :
+        (∑ W ∈ base.powerset, (-1 : k) ^ W.card) = 0 := by
+      exact Finset.sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
+        base hbase_nonempty
+    have hpoly :
+        (∑ W ∈ base.powerset,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.card)) = 0 := by
+      have hmap :
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              (∑ W ∈ base.powerset, (-1 : k) ^ W.card) =
+            ∑ W ∈ base.powerset,
+              MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+                ((-1 : k) ^ W.card) := by
+        exact map_sum (MvPolynomial.C (R := k) (σ := Fin m × Fin n))
+          (fun W => (-1 : k) ^ W.card) base.powerset
+      rw [← hmap, hscalar]
+      simp
+    let e : Source ≃ Target := {
+      toFun W := ⟨W.1, W.2.2⟩
+      invFun W := ⟨W.1, hpreD, W.2⟩
+      left_inv := by
+        intro W
+        ext
+        rfl
+      right_inv := by
+        intro W
+        ext
+        rfl }
+    have htarget :
+        (∑ W : Target,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      letI : Fintype Target := Finset.Subtype.fintype base.powerset
+      have huniv :
+          (Finset.univ : Finset Target) = base.powerset.attach := by
+        ext W
+        constructor
+        · intro _
+          exact Finset.mem_attach base.powerset W
+        · intro _
+          exact Finset.mem_univ W
+      change
+        (∑ W ∈ (Finset.univ : Finset Target),
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0
+      rw [huniv]
+      exact
+        (base.powerset.sum_attach
+          (fun W =>
+            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              ((-1 : k) ^ W.card))).trans hpoly
+    have hsource :
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      calc
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card))
+            =
+          ∑ W : Target,
+            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              ((-1 : k) ^ W.1.card) := by
+            refine Fintype.sum_equiv e _ _ ?_
+            intro W
+            rfl
+        _ = 0 := htarget
+    rw [← Finset.mul_sum, hsource]
+    simp
+  · apply Finset.sum_eq_zero
+    intro W _hW
+    exact False.elim (hpreD W.2.1)
+
+lemma swan_component_col_hodgeSplit_total_laplace_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    (∑ S : RawMinorPair.BiReshuffle.HodgeColSplit T.toRawPair ν hνp,
+      MvPolynomial.C (swan_component_col_hodgeCoeff (k := k) T ν hνp S) *
+        RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0 := by
+  classical
+  rw [RawMinorPair.BiReshuffle.HodgeColSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    (k := k) (P := T.toRawPair)
+    (swan_component_col_hodgeCoeff (k := k) T ν hνp)]
+  rw [RawMinorPair.BiReshuffle.HodgeColSplit.LeibnizTerm.sum_eq_sum_ambientW
+    (P := T.toRawPair) (ν := ν) (hνp := hνp)
+    (f := fun X =>
+      MvPolynomial.C (swan_component_col_hodgeCoeff (k := k) T ν hνp X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)))
+    (g := fun π W =>
+      swan_component_col_commonLeibnizTerm (k := k) T ν hνp π *
+        MvPolynomial.C ((-1 : k) ^ W.1.card))]
+  · apply Finset.sum_eq_zero
+    intro π _hπ
+    exact swan_component_col_inner_powerset_sum_eq_zero
+      (k := k) T ν hνp π
+  · intro X
+    exact swan_component_col_hodge_leibnizTerm_eq_common
+      (k := k) T ν hνp X
+
+lemma swan_component_row_inner_powerset_sum_eq_zero
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    (∑ W : { W : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) //
+        RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset
+            T.toRawPair π.symm ⊆
+          RawMinorPair.BiReshuffle.Hodge.hodgeD T.toRawPair ν ∧
+        W ∈ (RawMinorPair.BiReshuffle.Hodge.hodgeC T.toRawPair ν hνp \
+          RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset
+            T.toRawPair π.symm).powerset },
+      swan_component_row_commonLeibnizTerm (k := k) T ν hνp π *
+        MvPolynomial.C ((-1 : k) ^ W.1.card)) = 0 := by
+  classical
+  let P := T.toRawPair
+  let base : Finset (Fin (P.p + P.q)) :=
+    RawMinorPair.BiReshuffle.Hodge.hodgeC P ν hνp \
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm
+  let common := swan_component_row_commonLeibnizTerm (k := k) T ν hνp π
+  let Source : Type :=
+    { W : Finset (Fin (P.p + P.q)) //
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm ⊆
+        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν ∧
+      W ∈ base.powerset }
+  let Target : Type := { W : Finset (Fin (P.p + P.q)) // W ∈ base.powerset }
+  change
+    (∑ W : Source, common *
+      MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+        ((-1 : k) ^ W.1.card)) = 0
+  by_cases hpreD :
+      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm ⊆
+        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
+  · have hbase_nonempty : base.Nonempty := by
+      simpa [P, base] using
+        RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
+          P ν hνp π.symm
+    have hscalar :
+        (∑ W ∈ base.powerset, (-1 : k) ^ W.card) = 0 := by
+      exact Finset.sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
+        base hbase_nonempty
+    have hpoly :
+        (∑ W ∈ base.powerset,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.card)) = 0 := by
+      have hmap :
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              (∑ W ∈ base.powerset, (-1 : k) ^ W.card) =
+            ∑ W ∈ base.powerset,
+              MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+                ((-1 : k) ^ W.card) := by
+        exact map_sum (MvPolynomial.C (R := k) (σ := Fin m × Fin n))
+          (fun W => (-1 : k) ^ W.card) base.powerset
+      rw [← hmap, hscalar]
+      simp
+    let e : Source ≃ Target := {
+      toFun W := ⟨W.1, W.2.2⟩
+      invFun W := ⟨W.1, hpreD, W.2⟩
+      left_inv := by
+        intro W
+        ext
+        rfl
+      right_inv := by
+        intro W
+        ext
+        rfl }
+    have htarget :
+        (∑ W : Target,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      letI : Fintype Target := Finset.Subtype.fintype base.powerset
+      have huniv :
+          (Finset.univ : Finset Target) = base.powerset.attach := by
+        ext W
+        constructor
+        · intro _
+          exact Finset.mem_attach base.powerset W
+        · intro _
+          exact Finset.mem_univ W
+      change
+        (∑ W ∈ (Finset.univ : Finset Target),
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0
+      rw [huniv]
+      exact
+        (base.powerset.sum_attach
+          (fun W =>
+            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              ((-1 : k) ^ W.card))).trans hpoly
+    have hsource :
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      calc
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ W.1.card))
+            =
+          ∑ W : Target,
+            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              ((-1 : k) ^ W.1.card) := by
+            refine Fintype.sum_equiv e _ _ ?_
+            intro W
+            rfl
+        _ = 0 := htarget
+    rw [← Finset.mul_sum, hsource]
+    simp
+  · apply Finset.sum_eq_zero
+    intro W _hW
+    exact False.elim (hpreD W.2.1)
+
+lemma swan_component_row_hodgeSplit_total_laplace_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t) :
+    (∑ S : RawMinorPair.BiReshuffle.HodgeRowSplit T.toRawPair ν hνp,
+      MvPolynomial.C (swan_component_row_hodgeCoeff (k := k) T ν hνp S) *
+        RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0 := by
+  classical
+  rw [RawMinorPair.BiReshuffle.HodgeRowSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    (k := k) (P := T.toRawPair)
+    (swan_component_row_hodgeCoeff (k := k) T ν hνp)]
+  rw [RawMinorPair.BiReshuffle.HodgeRowSplit.LeibnizTerm.sum_eq_sum_ambientW
+    (P := T.toRawPair) (ν := ν) (hνp := hνp)
+    (f := fun X =>
+      MvPolynomial.C (swan_component_row_hodgeCoeff (k := k) T ν hνp X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)))
+    (g := fun π W =>
+      swan_component_row_commonLeibnizTerm (k := k) T ν hνp π *
+        MvPolynomial.C ((-1 : k) ^ W.1.card))]
+  · apply Finset.sum_eq_zero
+    intro π _hπ
+    exact swan_component_row_inner_powerset_sum_eq_zero
+      (k := k) T ν hνp π
+  · intro X
+    exact swan_component_row_hodge_leibnizTerm_eq_common
+      (k := k) T ν hνp X
+
+lemma swan_corollary2_8_size_inner_Icc_sum_eq_zero
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t)
+    (π : Equiv.Perm (Fin (T.toRawPair.p + T.toRawPair.q))) :
+    (∑ C :
+        { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) //
+          C ∈ Finset.Icc
+            (RawMinorPair.BiReshuffle.leftSlotFinset T.toRawPair ∪
+              RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset T.toRawPair π)
+            Finset.univ },
+        swan_corollary2_8_size_commonLeibnizTerm (k := k) T π *
+          MvPolynomial.C ((-1 : k) ^ C.1ᶜ.card)) = 0 := by
+  classical
+  let interval : Finset (Finset (Fin (T.toRawPair.p + T.toRawPair.q))) :=
+    Finset.Icc
+      (RawMinorPair.BiReshuffle.leftSlotFinset T.toRawPair ∪
+        RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset T.toRawPair π)
+      Finset.univ
+  let common := swan_corollary2_8_size_commonLeibnizTerm (k := k) T π
+  have hzero :=
+    sum_Icc_leftSlotFinset_toRawPair_union_permPreimage_neg_one_pow_card_compl_eq_zero
+      (k := k) T hsize π
+  have hpoly_zero :
+      (∑ s ∈ interval,
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+          ((-1 : k) ^ sᶜ.card)) = 0 := by
+    have hmap :
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            (∑ s ∈ interval, (-1 : k) ^ sᶜ.card) =
+          ∑ s ∈ interval,
+            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+              ((-1 : k) ^ sᶜ.card) := by
+      exact map_sum (MvPolynomial.C (R := k) (σ := Fin m × Fin n))
+        (fun s => (-1 : k) ^ sᶜ.card) interval
+    rw [← hmap, hzero]
+    simp
+  have hsubtype :
+      (∑ C :
+        { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) // C ∈ interval },
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+          ((-1 : k) ^ C.1ᶜ.card)) = 0 := by
+    letI : Fintype
+        { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) // C ∈ interval } :=
+      Finset.Subtype.fintype interval
+    have huniv :
+        (Finset.univ : Finset
+          { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) // C ∈ interval }) =
+          interval.attach := by
+      ext C
+      constructor
+      · intro _
+        exact Finset.mem_attach interval C
+      · intro _
+        exact Finset.mem_univ C
+    change
+      (∑ C ∈ (Finset.univ : Finset
+        { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) // C ∈ interval }),
+        MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+          ((-1 : k) ^ C.1ᶜ.card)) = 0
+    rw [huniv]
+    exact
+      (interval.sum_attach
+        (fun s =>
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ sᶜ.card))).trans hpoly_zero
+  change
+    (∑ C :
+        { C : Finset (Fin (T.toRawPair.p + T.toRawPair.q)) // C ∈ interval },
+        common *
+          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
+            ((-1 : k) ^ C.1ᶜ.card)) = 0
+  rw [← Finset.mul_sum]
+  rw [hsubtype]
+  simp
+
+lemma swan_corollary2_8_size_containing_total_laplace_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    (∑ S : RawMinorPair.BiReshuffle.ContainingSplit T.toRawPair,
+      MvPolynomial.C (swan_corollary2_8_size_containingCoeff (k := k) T S) *
+        RawMinorPair.laplacePolynomial (k := k) S.toBiReshuffle.toPair) = 0 := by
+  classical
+  rw [RawMinorPair.BiReshuffle.ContainingSplit.sum_laplacePolynomial_eq_sum_leibnizTerm
+    (k := k) (P := T.toRawPair)
+    (swan_corollary2_8_size_containingCoeff (k := k) T)]
+  rw [RawMinorPair.BiReshuffle.ContainingSplit.LeibnizTerm.sum_eq_sum_ambient_Icc
+    (P := T.toRawPair)
+    (f := fun X =>
+      MvPolynomial.C (swan_corollary2_8_size_containingCoeff (k := k) T X.1) *
+        (MvPolynomial.C
+            (RawMinorPair.laplaceCoeff (k := k) X.1.toBiReshuffle.toPair) *
+          (((Equiv.Perm.sign X.2.1 :
+              MvPolynomial (Fin m × Fin n) k) *
+            (Equiv.Perm.sign X.2.2 :
+              MvPolynomial (Fin m × Fin n) k)) *
+            ∏ j : Fin (T.toRawPair.p + T.toRawPair.q),
+              RawMinorPair.BiReshuffle.slotMatrix (k := k) T.toRawPair
+                (X.ambientPerm j) j)))
+    (g := fun π C =>
+      swan_corollary2_8_size_commonLeibnizTerm (k := k) T π *
+        MvPolynomial.C ((-1 : k) ^ C.1ᶜ.card))]
+  · apply Finset.sum_eq_zero
+    intro π _hπ
+    exact swan_corollary2_8_size_inner_Icc_sum_eq_zero (k := k) T hsize π
+  · intro X
+    exact swan_corollary2_8_size_leibnizTerm_eq_common (k := k) T X
+
+lemma swan_corollary2_8_size_total_iccSplit_laplace_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.F.t < T.G.t) :
+    ∃ coeffIcc :
+        RawMinorPair.BiReshuffle.ContainingSplit.IccSplit T.toRawPair → k,
+      coeffIcc
+          (RawMinorPair.BiReshuffle.ContainingSplit.toIccSplit
+            (RawMinorPair.BiReshuffle.ContainingSplit.pivot T.toRawPair)) =
+        (-1 : k) ∧
+      (∑ S : RawMinorPair.BiReshuffle.ContainingSplit.IccSplit T.toRawPair,
+        MvPolynomial.C (coeffIcc S) *
+          RawMinorPair.laplacePolynomial (k := k)
+            (RawMinorPair.BiReshuffle.ContainingSplit.ofIccSplit S).toBiReshuffle.toPair) =
+        0 := by
+  classical
+  refine ⟨swan_corollary2_8_size_iccCoeff (k := k) T,
+    swan_corollary2_8_size_iccCoeff_pivot (k := k) T, ?_⟩
+  have hcont :=
+    swan_corollary2_8_size_containing_total_laplace_sum (k := k) T hsize
+  rw [RawMinorPair.BiReshuffle.ContainingSplit.sum_containingSplit_eq_sum_iccSplit] at hcont
+  simpa [swan_corollary2_8_size_iccCoeff,
+    swan_corollary2_8_size_containingCoeff] using hcont
+
+/-- Swan Corollary 2.8, size-defect determinant identity, in the raw
+sorted-promotable form.
+
+This is the genuine determinant/Laplace identity for the branch
+`T.F.t < T.G.t`.  The finite sum ranges over raw bi-reshuffles whose four
+determinants survive after deleting repeated rows/columns and whose sorted
+first factor is promotable to a strictly smaller Swan first factor.
+
+The downstream theorem `swan_corollary2_8_size_signed_determinant_laplace_identity`
+is obtained from this statement by collecting equal sorted support terms in
+`BiReshuffleSupport`. -/
+theorem swan_corollary2_8_size_raw_sortedPromotable_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (_hp : 0 < p)
+    (_hsize : T.F.t < T.G.t) :
+    ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+        SwanRawLaplaceProductTerm.BiReshuffleSupport.IsSortedPromotable T E } → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+            SwanRawLaplaceProductTerm.BiReshuffleSupport.IsSortedPromotable T E },
+          MvPolynomial.C (coeff E) *
+            RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+  classical
+  have hLaplaceSupport :
+      ∃ coeff : { E : RawMinorPair.BiReshuffle T.toRawPair //
+          BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } → k,
+        - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ E : { E : RawMinorPair.BiReshuffle T.toRawPair //
+              BiReshuffleSupport.IsSizeBranchLaplaceSupport T E },
+            MvPolynomial.C (coeff E) *
+              RawMinorPair.laplacePolynomial (k := k) E.1.toPair = 0 := by
+    rcases swan_corollary2_8_size_total_iccSplit_laplace_sum
+        (k := k) T _hsize with ⟨coeffIcc, hpivotIcc, hsumIcc⟩
+    rcases swan_corollary2_8_size_containingSplit_total_laplace_sum_of_iccSplit
+        (k := k) T coeffIcc hpivotIcc hsumIcc with
+      ⟨coeff, hpivot, hsum⟩
+    exact exists_coeff_sizeBranchLaplaceSupport_of_total_containingSplit_laplace_sum
+      (k := k) T coeff hpivot hsum
+  rcases hLaplaceSupport with ⟨coeffSupport, hSupport⟩
+  rcases BiReshuffleSupport.exists_coeff_sortedPromotable_sum_of_sizeBranchLaplaceSupport
+      (k := k) (T := T) coeffSupport with ⟨coeff, hpush⟩
+  refine ⟨coeff, ?_⟩
+  rw [← hpush]
+  exact hSupport
+
+/-- Swan's signed determinant/Laplace identity for the size-defect branch.
+
+In Swan's proof of Theorem 3.1 this is the `|A| < |B|` bad-product case:
+Corollary 2.8 gives a signed sum of Laplace products equal to zero, containing
+the original product as the distinguished term.  After deleting determinant-zero
+terms and promoting the surviving raw pairs to `BiReshuffleSupport`, this is the
+exact signed identity needed by `swan_corollary2_7_size_pivot_laplace_identity`.
+
+The theorem is deliberately stated at the raw Laplace-product level: the
+following proof block removes the common Laplace sign and converts raw pairs to
+`MinorWord`s. -/
+theorem swan_corollary2_8_size_signed_determinant_laplace_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.F.t < T.G.t) :
+    ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  rcases swan_corollary2_8_size_raw_sortedPromotable_identity
+      (k := k) T hp hsize with ⟨coeff, hraw⟩
+  rcases BiReshuffleSupport.exists_coeff_support_sum_raw_sortedPromotable
+      (k := k) (T := T) coeff with ⟨coeffRest, hsupport⟩
+  refine ⟨coeffRest, ?_⟩
+  rw [← hsupport]
+  exact hraw
+
+theorem LT_wellFounded {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q} :
+    WellFounded (@LT m n p q I J) := by
+  classical
+  exact InvImage.wf (fun T : SwanRawLaplaceProductTerm I J => T.F)
+    MinorFactor.pairLT_wellFounded
+
+def toGoodTerm {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) (hgood : T.IsGood) :
+    SwanLaplaceProductTerm I J where
+  F := T.F
+  G := T.G
+  pairLE := hgood
+  firstLE := T.firstLE
+  row_content := T.row_content
+  col_content := T.col_content
+
+lemma toGoodTerm_toWord {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) (hgood : T.IsGood) :
+    (T.toGoodTerm hgood).toWord = T.toWord := by
+  rfl
+
+noncomputable def initial {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    SwanRawLaplaceProductTerm I J where
+  F := { t := p, idx := I }
+  G := { t := q, idx := J }
+  firstLE := MinorIndex.PairLE.refl I
+  row_content := by
+    simp [MinorFactor.rowContent]
+  col_content := by
+    simp [MinorFactor.colContent]
+
+lemma initial_isGood_iff {m n p q : ℕ}
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    (SwanRawLaplaceProductTerm.initial I J).IsGood ↔
+      MinorIndex.PairLE I J := by
+  rfl
+
+lemma toPolynomial_initial {m n p q : ℕ}
+    {k : Type*} [CommRing k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    MinorWord.toPolynomial (k := k)
+        (SwanRawLaplaceProductTerm.initial I J).toWord =
+      genericMinor (k := k) I * genericMinor (k := k) J := by
+  simp [SwanRawLaplaceProductTerm.initial, SwanRawLaplaceProductTerm.toWord,
+    MinorFactor.toPolynomial]
+
+/-- Package a replacement pair whose first factor is strictly below the old
+first factor as a raw Laplace-product term below `T`.  The row and column
+content hypotheses are the content-preservation part of Swan's Corollary 2.8
+after moving the original term to the other side. -/
+def mkLower {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (F G : MinorFactor m n)
+    (hF : MinorFactor.PairLT F T.F)
+    (hrow :
+      MinorWord.rowContent ⟨[F, G]⟩ =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      MinorWord.colContent ⟨[F, G]⟩ =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    SwanRawLaplaceProductTerm I J where
+  F := F
+  G := G
+  firstLE := MinorIndex.PairLE.trans hF.pairLE T.firstLE
+  row_content := hrow
+  col_content := hcol
+
+@[simp] lemma mkLower_F {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (F G : MinorFactor m n)
+    (hF : MinorFactor.PairLT F T.F)
+    (hrow :
+      MinorWord.rowContent ⟨[F, G]⟩ =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      MinorWord.colContent ⟨[F, G]⟩ =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    (T.mkLower F G hF hrow hcol).F = F := rfl
+
+lemma mkLower_LT {m n p q : ℕ}
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (F G : MinorFactor m n)
+    (hF : MinorFactor.PairLT F T.F)
+    (hrow :
+      MinorWord.rowContent ⟨[F, G]⟩ =
+        MinorIndex.rowContent I + MinorIndex.rowContent J)
+    (hcol :
+      MinorWord.colContent ⟨[F, G]⟩ =
+        MinorIndex.colContent I + MinorIndex.colContent J) :
+    LT (T.mkLower F G hF hrow hcol) T := by
+  simpa [LT, mkLower] using hF
+
+end SwanRawLaplaceProductTerm
+
+/-- One step of Swan Corollary 2.7: a bad raw Laplace product is rewritten as
+a finite sum of raw products of strictly smaller bad-product rank. -/
+structure SwanRawLaplaceReduction
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) where
+  ι : Type
+  instFintype : Fintype ι
+  coeff : ι → k
+  term : ι → SwanRawLaplaceProductTerm I J
+  term_decrease :
+    ∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T
+  poly_eq :
+    MinorWord.toPolynomial (k := k) T.toWord =
+      ∑ x : ι,
+        MvPolynomial.C (coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanRawLaplaceProductTerm.toWord (term x))
+
+attribute [instance] SwanRawLaplaceReduction.instFintype
+
+/-- A finished expansion of a raw Laplace product into good products.  This is
+the induction target for Swan Corollary 2.8. -/
+structure SwanRawGoodExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J) where
+  ι : Type
+  instFintype : Fintype ι
+  coeff : ι → k
+  term : ι → SwanLaplaceProductTerm I J
+  poly_eq :
+    MinorWord.toPolynomial (k := k) T.toWord =
+      ∑ x : ι,
+        MvPolynomial.C (coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanLaplaceProductTerm.toWord (term x))
+
+attribute [instance] SwanRawGoodExpansion.instFintype
+
+namespace SwanRawGoodExpansion
+
+def toInitialExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanRawGoodExpansion (k := k)
+      (SwanRawLaplaceProductTerm.initial I J)) :
+    SwanLaplaceProductExpansion (k := k) I J where
+  ι := E.ι
+  instFintype := E.instFintype
+  coeff := E.coeff
+  term := E.term
+  poly_eq := by
+    rw [← SwanRawLaplaceProductTerm.toPolynomial_initial (k := k) I J]
+    exact E.poly_eq
+
+end SwanRawGoodExpansion
+
+lemma swan_raw_good_expansion_of_good
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hgood : T.IsGood) :
+    Nonempty (SwanRawGoodExpansion (k := k) T) := by
+  classical
+  let G : SwanLaplaceProductTerm I J := T.toGoodTerm hgood
+  refine ⟨
+    { ι := PUnit
+      instFintype := inferInstance
+      coeff := fun _ => (1 : k)
+      term := fun _ => G
+      poly_eq := ?_ }⟩
+  simp [G, SwanRawLaplaceProductTerm.toGoodTerm,
+    SwanRawLaplaceProductTerm.toWord, SwanLaplaceProductTerm.toWord]
+
+lemma swanRawLaplaceReduction_of_finite_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    {ι : Type} (inst : Fintype ι)
+    (coeff : ι → k)
+    (term : ι → SwanRawLaplaceProductTerm I J)
+    (hdecr : ∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T)
+    (hpoly :
+      letI := inst
+      MinorWord.toPolynomial (k := k) T.toWord =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanRawLaplaceProductTerm.toWord (term x))) :
+    Nonempty (SwanRawLaplaceReduction (k := k) T) := by
+  exact ⟨
+    { ι := ι
+      instFintype := inst
+      coeff := coeff
+      term := term
+      term_decrease := hdecr
+      poly_eq := hpoly }⟩
+
+namespace SwanRawLaplaceReduction
+
+noncomputable def bindGoodExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {T : SwanRawLaplaceProductTerm I J}
+    (R : SwanRawLaplaceReduction (k := k) T)
+    (E : ∀ x : R.ι, SwanRawGoodExpansion (k := k) (R.term x)) :
+    SwanRawGoodExpansion (k := k) T where
+  ι := Sigma (fun x : R.ι => (E x).ι)
+  instFintype := by
+    classical
+    infer_instance
+  coeff := fun xy => R.coeff xy.1 * (E xy.1).coeff xy.2
+  term := fun xy => (E xy.1).term xy.2
+  poly_eq := by
+    classical
+    rw [R.poly_eq]
+    calc
+      (∑ x : R.ι,
+        MvPolynomial.C (R.coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanRawLaplaceProductTerm.toWord (R.term x)))
+          =
+        ∑ x : R.ι,
+          MvPolynomial.C (R.coeff x) *
+            (∑ y : (E x).ι,
+              MvPolynomial.C ((E x).coeff y) *
+                MinorWord.toPolynomial (k := k)
+                  (SwanLaplaceProductTerm.toWord ((E x).term y))) := by
+          apply Finset.sum_congr rfl
+          intro x _hx
+          rw [(E x).poly_eq]
+      _ =
+        ∑ x : R.ι, ∑ y : (E x).ι,
+          MvPolynomial.C (R.coeff x * (E x).coeff y) *
+            MinorWord.toPolynomial (k := k)
+              (SwanLaplaceProductTerm.toWord ((E x).term y)) := by
+          apply Finset.sum_congr rfl
+          intro x _hx
+          rw [Finset.mul_sum]
+          apply Finset.sum_congr rfl
+          intro y _hy
+          rw [MvPolynomial.C_mul]
+          ring
+      _ =
+        ∑ xy : Sigma (fun x : R.ι => (E x).ι),
+          MvPolynomial.C (R.coeff xy.1 * (E xy.1).coeff xy.2) *
+            MinorWord.toPolynomial (k := k)
+              (SwanLaplaceProductTerm.toWord ((E xy.1).term xy.2)) := by
+          exact (Fintype.sum_sigma' (fun x y =>
+            MvPolynomial.C (R.coeff x * (E x).coeff y) *
+              MinorWord.toPolynomial (k := k)
+                (SwanLaplaceProductTerm.toWord ((E x).term y)))).symm
+
+end SwanRawLaplaceReduction
+
+/-- Convert a signed raw Laplace identity supported on promotable bi-reshuffles
+into the finite raw-reduction identity used by Corollary 2.7.
+
+The determinant identity is naturally stated with `RawMinorPair.laplacePolynomial`,
+so every term carries the same signed Laplace coefficient.  This helper removes
+that common unit and promotes the surviving support terms to
+`SwanRawLaplaceProductTerm`s. -/
+lemma swan_raw_finite_identity_of_signed_support_laplace_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hSigned :
+      ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+        -RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+          ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+            MvPolynomial.C (coeffRest S) *
+              RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ term : ι → SwanRawLaplaceProductTerm I J,
+        (∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T) ∧
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) := by
+  classical
+  let Support := SwanRawLaplaceProductTerm.BiReshuffleSupport T
+  rcases hSigned with ⟨coeffRest, hSigned⟩
+  let a : k := RawMinorPair.laplaceCoeff (k := k) T.toRawPair
+  let P : MvPolynomial (Fin m × Fin n) k :=
+    MinorWord.toPolynomial (k := k) T.toWord
+  let Q : Support → MvPolynomial (Fin m × Fin n) k :=
+    fun S => MinorWord.toPolynomial (k := k) S.toRawTerm.toWord
+  have hSigned' :
+      - (MvPolynomial.C a * P) +
+        ∑ S : Support, MvPolynomial.C (coeffRest S) *
+          (MvPolynomial.C a * Q S) = 0 := by
+    have hpivot :
+        RawMinorPair.laplacePolynomial (k := k) T.toRawPair =
+          MvPolynomial.C a * P := by
+      simpa [a, P] using
+        SwanRawLaplaceProductTerm.toRawPair_laplacePolynomial
+          (k := k) T
+    have hterm :
+        ∀ S : Support,
+          RawMinorPair.laplacePolynomial (k := k) S.E.toPair =
+            MvPolynomial.C a * Q S := by
+      intro S
+      simpa [a, Q] using
+        SwanRawLaplaceProductTerm.ofBiReshuffleOfStrictMono_laplacePolynomial
+          (k := k) T S.E S.hLrow S.hLcol S.hRrow S.hRcol S.firstLE
+    simpa [Support, hpivot, hterm] using hSigned
+  have hUnsigned :
+      - P + ∑ S : Support, MvPolynomial.C (coeffRest S) * Q S = 0 := by
+    exact signed_sum_cancel_common_C_unit
+      (α := Support) (σ := Fin m × Fin n) (k := k)
+      a (RawMinorPair.laplaceCoeff_isUnit (k := k) T.toRawPair)
+      coeffRest P Q hSigned'
+  have hpoly :
+      P =
+        ∑ S : Support, MvPolynomial.C (coeffRest S) * Q S := by
+    have h' :
+        (∑ S : Support, MvPolynomial.C (coeffRest S) * Q S) + -P = 0 := by
+      simpa [add_comm] using hUnsigned
+    have hneg :
+        (∑ S : Support, MvPolynomial.C (coeffRest S) * Q S) = -(-P) :=
+      eq_neg_of_add_eq_zero_left h'
+    simpa using hneg.symm
+  refine ⟨Support, inferInstance, coeffRest, (fun S : Support => S.toRawTerm),
+    ?_, ?_⟩
+  · intro S
+    exact S.toRawTerm_LT
+  · simpa [Support, P, Q] using hpoly
+
+/-- Swan Corollary 2.7, size-defect case, before moving the distinguished
+bad product to the other side.  The finite Laplace identity contains one
+distinguished term equal to the original raw product, with coefficient `-1`;
+all other terms have strictly smaller first factor.
+
+This is the determinant-theoretic core of the size branch. -/
+theorem swan_corollary2_7_size_pivot_laplace_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.F.t < T.G.t) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ pivot : ι,
+      ∃ coeff : ι → k,
+      ∃ F : ι → MinorFactor m n,
+      ∃ G : ι → MinorFactor m n,
+        coeff pivot = (-1 : k) ∧
+        F pivot = T.F ∧
+        G pivot = T.G ∧
+        (∀ x : ι, x ≠ pivot → MinorFactor.PairLT (F x) T.F) ∧
+        (∀ x : ι,
+          MinorWord.rowContent ⟨[F x, G x]⟩ =
+            MinorIndex.rowContent I + MinorIndex.rowContent J) ∧
+        (∀ x : ι,
+          MinorWord.colContent ⟨[F x, G x]⟩ =
+            MinorIndex.colContent I + MinorIndex.colContent J) ∧
+        (letI := inst
+        (∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k) ⟨[F x, G x]⟩) = 0) := by
+  classical
+  have hLaplace :
+      ∃ ι : Type, ∃ inst : Fintype ι,
+        ∃ pivot : ι,
+        ∃ coeff : ι → k,
+        ∃ term : ι → SwanRawLaplaceProductTerm I J,
+          coeff pivot = (-1 : k) ∧
+          term pivot = T ∧
+          (∀ x : ι, x ≠ pivot → SwanRawLaplaceProductTerm.LT (term x) T) ∧
+          (letI := inst
+          (∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) = 0) := by
+    let Support := SwanRawLaplaceProductTerm.BiReshuffleSupport T
+    have hSupportLaplace :
+        ∃ coeffRest : Support → k,
+        let coeffOpt : Option Support → k
+          | none => (-1 : k)
+          | some S => coeffRest S
+        let termOpt : Option Support → SwanRawLaplaceProductTerm I J
+          | none => T
+          | some S => S.toRawTerm
+          (∑ x : Option Support,
+            MvPolynomial.C (coeffOpt x) *
+              MinorWord.toPolynomial (k := k)
+                (termOpt x).toWord) = 0 := by
+      /- Core remaining determinant step: expand Swan's alternating Laplace
+         relation for the size defect `T.F.t < T.G.t`, then discard zero terms.
+         The surviving nonzero terms are exactly the promotable
+         `BiReshuffleSupport`s.  The algebra below removes the common
+         Laplace sign attached to every raw pair in this bi-reshuffle family. -/
+      have hSignedSupportLaplace :
+          ∃ coeffRest : Support → k,
+            - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+              ∑ S : Support,
+                MvPolynomial.C (coeffRest S) *
+                  RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+        exact
+          SwanRawLaplaceProductTerm.swan_corollary2_8_size_signed_determinant_laplace_identity
+            (k := k) T hp hsize
+      rcases hSignedSupportLaplace with ⟨coeffRest, hSigned⟩
+      let a : k := RawMinorPair.laplaceCoeff (k := k) T.toRawPair
+      let P : MvPolynomial (Fin m × Fin n) k :=
+        MinorWord.toPolynomial (k := k) T.toWord
+      let Q : Support → MvPolynomial (Fin m × Fin n) k :=
+        fun S => MinorWord.toPolynomial (k := k) S.toRawTerm.toWord
+      have hSigned' :
+          - (MvPolynomial.C a * P) +
+            ∑ S : Support, MvPolynomial.C (coeffRest S) *
+              (MvPolynomial.C a * Q S) = 0 := by
+        have hpivot :
+            RawMinorPair.laplacePolynomial (k := k) T.toRawPair =
+              MvPolynomial.C a * P := by
+          simpa [a, P] using
+            SwanRawLaplaceProductTerm.toRawPair_laplacePolynomial
+              (k := k) T
+        have hterm :
+            ∀ S : Support,
+              RawMinorPair.laplacePolynomial (k := k) S.E.toPair =
+                MvPolynomial.C a * Q S := by
+          intro S
+          simpa [a, Q] using
+            SwanRawLaplaceProductTerm.ofBiReshuffleOfStrictMono_laplacePolynomial
+              (k := k) T S.E S.hLrow S.hLcol S.hRrow S.hRcol S.firstLE
+        simpa [hpivot, hterm] using hSigned
+      have hUnsigned :
+          - P + ∑ S : Support, MvPolynomial.C (coeffRest S) * Q S = 0 := by
+        exact signed_sum_cancel_common_C_unit
+          (α := Support) (σ := Fin m × Fin n) (k := k)
+          a (RawMinorPair.laplaceCoeff_isUnit (k := k) T.toRawPair)
+          coeffRest P Q hSigned'
+      refine ⟨coeffRest, ?_⟩
+      let coeffOpt : Option Support → k
+        | none => (-1 : k)
+        | some S => coeffRest S
+      let termOpt : Option Support → SwanRawLaplaceProductTerm I J
+        | none => T
+        | some S => S.toRawTerm
+      simpa [coeffOpt, termOpt, P, Q] using hUnsigned
+    rcases hSupportLaplace with ⟨coeffRest, hsum⟩
+    let coeffOpt : Option Support → k
+      | none => (-1 : k)
+      | some S => coeffRest S
+    let termOpt : Option Support → SwanRawLaplaceProductTerm I J
+      | none => T
+      | some S => S.toRawTerm
+    refine ⟨Option Support, inferInstance, none,
+      coeffOpt, termOpt, ?_, ?_, ?_, ?_⟩
+    · rfl
+    · rfl
+    · intro x hx
+      cases x with
+      | none => exact False.elim (hx rfl)
+      | some S => exact S.toRawTerm_LT
+    · exact hsum
+  rcases hLaplace with
+    ⟨ι, inst, pivot, coeff, term, hpivot_coeff, hpivot_term, hdecr, hsum⟩
+  let F : ι → MinorFactor m n := fun x => (term x).F
+  let G : ι → MinorFactor m n := fun x => (term x).G
+  refine ⟨ι, inst, pivot, coeff, F, G, hpivot_coeff, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [F, hpivot_term]
+  · simp [G, hpivot_term]
+  · intro x hx
+    exact hdecr x hx
+  · intro x
+    simpa [F, G, SwanRawLaplaceProductTerm.toWord] using (term x).row_content
+  · intro x
+    simpa [F, G, SwanRawLaplaceProductTerm.toWord] using (term x).col_content
+  · simpa [F, G, SwanRawLaplaceProductTerm.toWord] using hsum
+
+/-- Swan Corollary 2.7, size-defect case, in the support form supplied by
+the Laplace-product computation: each produced pair has the same total
+row/column content and a strictly smaller first factor. -/
+theorem swan_corollary2_7_size_lower_factor_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.F.t < T.G.t) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ F : ι → MinorFactor m n,
+      ∃ G : ι → MinorFactor m n,
+      ∃ hF : ∀ x : ι, MinorFactor.PairLT (F x) T.F,
+      ∃ hrow :
+        ∀ x : ι,
+          MinorWord.rowContent ⟨[F x, G x]⟩ =
+            MinorIndex.rowContent I + MinorIndex.rowContent J,
+      ∃ hcol :
+        ∀ x : ι,
+          MinorWord.colContent ⟨[F x, G x]⟩ =
+            MinorIndex.colContent I + MinorIndex.colContent J,
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord
+                  (T.mkLower (F x) (G x) (hF x) (hrow x) (hcol x)))) := by
+  classical
+  rcases swan_corollary2_7_size_pivot_laplace_identity
+      (k := k) T hp hsize with
+    ⟨ι, inst, pivot, coeff₀, F₀, G₀, hpivot_coeff, hpivot_F, hpivot_G,
+      hlower, hrow₀, hcol₀, hsum_zero⟩
+  let s : Finset ι := Finset.univ.erase pivot
+  let ι' : Type := { x : ι // x ∈ s }
+  let inst' : Fintype ι' := by infer_instance
+  let coeff : ι' → k := fun x => coeff₀ x.1
+  let F : ι' → MinorFactor m n := fun x => F₀ x.1
+  let G : ι' → MinorFactor m n := fun x => G₀ x.1
+  have hF : ∀ x : ι', MinorFactor.PairLT (F x) T.F := by
+    intro x
+    have hxne : x.1 ≠ pivot := (Finset.mem_erase.mp x.2).1
+    exact hlower x.1 hxne
+  have hrow : ∀ x : ι',
+      MinorWord.rowContent ⟨[F x, G x]⟩ =
+        MinorIndex.rowContent I + MinorIndex.rowContent J := by
+    intro x
+    exact hrow₀ x.1
+  have hcol : ∀ x : ι',
+      MinorWord.colContent ⟨[F x, G x]⟩ =
+        MinorIndex.colContent I + MinorIndex.colContent J := by
+    intro x
+    exact hcol₀ x.1
+  refine ⟨ι', inst', coeff, F, G, hF, hrow, hcol, ?_⟩
+  let P : ι → MvPolynomial (Fin m × Fin n) k :=
+    fun x =>
+      MvPolynomial.C (coeff₀ x) *
+        MinorWord.toPolynomial (k := k) ⟨[F₀ x, G₀ x]⟩
+  have hpivot_term :
+      P pivot = - MinorWord.toPolynomial (k := k) T.toWord := by
+    simp [P, hpivot_coeff, hpivot_F, hpivot_G,
+      SwanRawLaplaceProductTerm.toWord]
+  have hsum_split :
+      (∑ x : ι, P x) =
+        P pivot + ∑ x : ι', P x.1 := by
+    have hnot_mem : pivot ∉ s := by
+      simp [s]
+    have hsplit_univ :
+        P pivot + Finset.sum s P = ∑ x : ι, P x := by
+      simp [s]
+    have hsubtype_sum :
+        Finset.sum s P = ∑ x : ι', P x.1 := by
+      simpa [ι'] using
+        (s.sum_attach P).symm
+    calc
+      (∑ x : ι, P x) = P pivot + Finset.sum s P := hsplit_univ.symm
+      _ = P pivot + ∑ x : ι', P x.1 := by rw [hsubtype_sum]
+  have hsumP_zero : (∑ x : ι, P x) = 0 := by
+    simpa [P] using hsum_zero
+  have hrest :
+      (∑ x : ι', P x.1) =
+        MinorWord.toPolynomial (k := k) T.toWord := by
+    have h := hsumP_zero
+    rw [hsum_split, hpivot_term] at h
+    have h' :
+        (∑ x : ι', P x.1) + -MinorWord.toPolynomial (k := k) T.toWord = 0 := by
+      simpa [add_comm] using h
+    have hneg :
+        (∑ x : ι', P x.1) = -(-MinorWord.toPolynomial (k := k) T.toWord) :=
+      eq_neg_of_add_eq_zero_left h'
+    simpa using hneg
+  simpa [P, coeff, F, G, SwanRawLaplaceProductTerm.toWord] using hrest.symm
+
+/-- Swan Corollary 2.7, size-defect case, as the raw finite identity with
+strict first-factor decrease.  This is the determinant/Laplace content needed
+to build one reduction step. -/
+theorem swan_corollary2_7_size_finite_raw_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.F.t < T.G.t) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ term : ι → SwanRawLaplaceProductTerm I J,
+        (∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T) ∧
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) := by
+  rcases swan_corollary2_7_size_lower_factor_identity
+      (k := k) T hp hsize with
+    ⟨ι, inst, coeff, F, G, hF, hrow, hcol, hpoly⟩
+  let term : ι → SwanRawLaplaceProductTerm I J :=
+    fun x => T.mkLower (F x) (G x) (hF x) (hrow x) (hcol x)
+  refine ⟨ι, inst, coeff, term, ?_, ?_⟩
+  · intro x
+    exact T.mkLower_LT (F x) (G x) (hF x) (hrow x) (hcol x)
+  · simpa [term] using hpoly
+
+/-- The component branch is immediate when the two raw factors are comparable
+in the reverse order: commute the two minors and make the old second factor the
+new first factor. -/
+lemma swan_corollary2_7_reverse_pairLE_finite_raw_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hnotFG : ¬ MinorIndex.PairLE T.F.idx T.G.idx)
+    (hGF : MinorIndex.PairLE T.G.idx T.F.idx) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ term : ι → SwanRawLaplaceProductTerm I J,
+        (∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T) ∧
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) := by
+  classical
+  have hF : MinorFactor.PairLT T.G T.F :=
+    MinorIndex.PairLT.of_pairLE_not_symm hGF hnotFG
+  have hrow :
+      MinorWord.rowContent ⟨[T.G, T.F]⟩ =
+        MinorIndex.rowContent I + MinorIndex.rowContent J := by
+    simpa [SwanRawLaplaceProductTerm.toWord, add_comm] using T.row_content
+  have hcol :
+      MinorWord.colContent ⟨[T.G, T.F]⟩ =
+        MinorIndex.colContent I + MinorIndex.colContent J := by
+    simpa [SwanRawLaplaceProductTerm.toWord, add_comm] using T.col_content
+  let term : PUnit → SwanRawLaplaceProductTerm I J :=
+    fun _ => T.mkLower T.G T.F hF hrow hcol
+  refine ⟨PUnit, inferInstance, (fun _ => (1 : k)), term, ?_, ?_⟩
+  · intro x
+    exact T.mkLower_LT T.G T.F hF hrow hcol
+  · simp only [SwanRawLaplaceProductTerm.toWord, MinorWord.toPolynomial_cons,
+    MinorFactor.toPolynomial, MinorWord.toPolynomial_nil, mul_one, Finset.univ_unique,
+    PUnit.default_eq_unit, MvPolynomial.C_1, SwanRawLaplaceProductTerm.mkLower_F, mul_comm, one_mul,
+    Finset.sum_const, Finset.card_singleton, one_smul, term]
+    exact CommMonoid.mul_comm (genericMinor T.F.idx) (genericMinor T.G.idx)
+
+/-- Swan Corollary 2.7, componentwise-defect case, as the raw finite identity
+with strict first-factor decrease. -/
+lemma swan_corollary2_7_component_finite_raw_identity_of_signed_identities
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t)
+    (hj :
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j))
+    (hrowSigned :
+      ∀ (ν : Fin T.G.t) (_hνp : ν.val < T.F.t),
+        (∀ μ : Fin T.G.t, μ < ν →
+          T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤ T.G.idx.row μ) →
+        SwanRawLaplaceProductTerm.RowBadAt T hsize ν →
+        ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+          - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+            ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+              MvPolynomial.C (coeffRest S) *
+                RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0)
+    (hcolSigned :
+      ∀ (ν : Fin T.G.t) (_hνp : ν.val < T.F.t),
+        (∀ μ : Fin T.G.t, μ < ν →
+          T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤ T.G.idx.col μ) →
+        SwanRawLaplaceProductTerm.ColBadAt T hsize ν →
+        ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+          - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+            ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+              MvPolynomial.C (coeffRest S) *
+                RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ term : ι → SwanRawLaplaceProductTerm I J,
+        (∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T) ∧
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) := by
+  classical
+  rcases SwanRawLaplaceProductTerm.rowBad_or_colBad_of_component_violation
+      T hsize j hj with hrowj | hcolj
+  · have hne : (SwanRawLaplaceProductTerm.rowBadFinset T hsize).Nonempty := by
+      refine ⟨j, ?_⟩
+      simp [SwanRawLaplaceProductTerm.rowBadFinset, hrowj]
+    let ν := SwanRawLaplaceProductTerm.minimalRowBadIndex T hsize hne
+    have hνbad : SwanRawLaplaceProductTerm.RowBadAt T hsize ν :=
+      SwanRawLaplaceProductTerm.minimalRowBadIndex_bad T hsize hne
+    have hνmin :
+        ∀ μ : Fin T.G.t, μ < ν →
+          T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+            T.G.idx.row μ := by
+      intro μ hμ
+      exact SwanRawLaplaceProductTerm.row_le_before_minimalRowBadIndex
+        T hsize hne μ hμ
+    have hνp : ν.val < T.F.t := lt_of_lt_of_le ν.isLt hsize
+    rcases hrowSigned ν hνp hνmin hνbad with ⟨coeffRest, hSigned⟩
+    exact swan_raw_finite_identity_of_signed_support_laplace_identity
+      (k := k) T ⟨coeffRest, hSigned⟩
+  · have hne : (SwanRawLaplaceProductTerm.colBadFinset T hsize).Nonempty := by
+      refine ⟨j, ?_⟩
+      simp [SwanRawLaplaceProductTerm.colBadFinset, hcolj]
+    let ν := SwanRawLaplaceProductTerm.minimalColBadIndex T hsize hne
+    have hνbad : SwanRawLaplaceProductTerm.ColBadAt T hsize ν :=
+      SwanRawLaplaceProductTerm.minimalColBadIndex_bad T hsize hne
+    have hνmin :
+        ∀ μ : Fin T.G.t, μ < ν →
+          T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+            T.G.idx.col μ := by
+      intro μ hμ
+      exact SwanRawLaplaceProductTerm.col_le_before_minimalColBadIndex
+        T hsize hne μ hμ
+    have hνp : ν.val < T.F.t := lt_of_lt_of_le ν.isLt hsize
+    rcases hcolSigned ν hνp hνmin hνbad with ⟨coeffRest, hSigned⟩
+    exact swan_raw_finite_identity_of_signed_support_laplace_identity
+      (k := k) T ⟨coeffRest, hSigned⟩
+
+theorem swan_corollary2_7_component_row_signed_determinant_laplace_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.row ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.row μ)
+    (hνbad : SwanRawLaplaceProductTerm.RowBadAt T hsize ν) :
+    ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  exact SwanRawLaplaceProductTerm.swan_component_row_signed_identity_of_total_hodge_sum
+    (k := k) T ν hνp
+    (SwanRawLaplaceProductTerm.swan_component_row_hodgeCoeff
+      (k := k) T ν hνp)
+    (SwanRawLaplaceProductTerm.swan_component_row_hodgeCoeff_pivot
+      (k := k) T ν hνp)
+    (fun {E} hE =>
+      SwanRawLaplaceProductTerm.BiReshuffleSupport.isSortedPromotable_of_componentRowLaplaceSupport
+        T hsize ν hνp hνmin hνbad hE)
+    (SwanRawLaplaceProductTerm.swan_component_row_hodgeSplit_total_laplace_sum
+      (k := k) T ν hνp)
+
+theorem swan_corollary2_7_component_col_signed_determinant_laplace_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hsize : T.G.t ≤ T.F.t)
+    (ν : Fin T.G.t) (hνp : ν.val < T.F.t)
+    (hνmin :
+      ∀ μ : Fin T.G.t, μ < ν →
+        T.F.idx.col ⟨μ.val, lt_of_lt_of_le μ.isLt hsize⟩ ≤
+          T.G.idx.col μ)
+    (hνbad : SwanRawLaplaceProductTerm.ColBadAt T hsize ν) :
+    ∃ coeffRest : SwanRawLaplaceProductTerm.BiReshuffleSupport T → k,
+      - RawMinorPair.laplacePolynomial (k := k) T.toRawPair +
+        ∑ S : SwanRawLaplaceProductTerm.BiReshuffleSupport T,
+          MvPolynomial.C (coeffRest S) *
+            RawMinorPair.laplacePolynomial (k := k) S.E.toPair = 0 := by
+  classical
+  exact SwanRawLaplaceProductTerm.swan_component_col_signed_identity_of_total_hodge_sum
+    (k := k) T ν hνp
+    (SwanRawLaplaceProductTerm.swan_component_col_hodgeCoeff
+      (k := k) T ν hνp)
+    (SwanRawLaplaceProductTerm.swan_component_col_hodgeCoeff_pivot
+      (k := k) T ν hνp)
+    (fun {E} hE =>
+      SwanRawLaplaceProductTerm.BiReshuffleSupport.isSortedPromotable_of_componentColLaplaceSupport
+        T hsize ν hνp hνmin hνbad hE)
+    (SwanRawLaplaceProductTerm.swan_component_col_hodgeSplit_total_laplace_sum
+      (k := k) T ν hνp)
+
+theorem swan_corollary2_7_component_finite_raw_identity
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (_hp : 0 < p)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t)
+    (hj :
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j)) :
+    ∃ ι : Type, ∃ inst : Fintype ι,
+      ∃ coeff : ι → k,
+      ∃ term : ι → SwanRawLaplaceProductTerm I J,
+        (∀ x : ι, SwanRawLaplaceProductTerm.LT (term x) T) ∧
+        (letI := inst
+        MinorWord.toPolynomial (k := k) T.toWord =
+          ∑ x : ι,
+            MvPolynomial.C (coeff x) *
+              MinorWord.toPolynomial (k := k)
+                (SwanRawLaplaceProductTerm.toWord (term x))) := by
+  classical
+  have hnotFG : ¬ MinorIndex.PairLE T.F.idx T.G.idx :=
+    MinorIndex.not_pairLE_of_violation hsize j hj
+  by_cases hGF : MinorIndex.PairLE T.G.idx T.F.idx
+  · exact swan_corollary2_7_reverse_pairLE_finite_raw_identity
+      (k := k) T hnotFG hGF
+  · exact swan_corollary2_7_component_finite_raw_identity_of_signed_identities
+      (k := k) T hsize j hj
+      (fun ν hνp hνmin hνbad =>
+        swan_corollary2_7_component_row_signed_determinant_laplace_identity
+          (k := k) T hsize ν hνp hνmin hνbad)
+      (fun ν hνp hνmin hνbad =>
+        swan_corollary2_7_component_col_signed_determinant_laplace_identity
+          (k := k) T hsize ν hνp hνmin hνbad)
+
+/-- Swan Corollary 2.7 in its correct one-step form. -/
+theorem swan_corollary2_7_raw_bad_reduction_size
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.F.t < T.G.t) :
+    Nonempty (SwanRawLaplaceReduction (k := k) T) := by
+  rcases swan_corollary2_7_size_finite_raw_identity
+      (k := k) T hp hsize with
+    ⟨ι, inst, coeff, term, hdecr, hpoly⟩
+  exact swanRawLaplaceReduction_of_finite_identity
+    (k := k) (T := T) inst coeff term hdecr hpoly
+
+theorem swan_corollary2_7_raw_bad_reduction_component
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hsize : T.G.t ≤ T.F.t) (j : Fin T.G.t)
+    (hj :
+      ¬
+        (T.F.idx.row ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.row j ∧
+         T.F.idx.col ⟨j.val, lt_of_lt_of_le j.isLt hsize⟩ ≤ T.G.idx.col j)) :
+    Nonempty (SwanRawLaplaceReduction (k := k) T) := by
+  rcases swan_corollary2_7_component_finite_raw_identity
+      (k := k) T hp hsize j hj with
+    ⟨ι, inst, coeff, term, hdecr, hpoly⟩
+  exact swanRawLaplaceReduction_of_finite_identity
+    (k := k) (T := T) inst coeff term hdecr hpoly
+
+theorem swan_corollary2_7_raw_bad_reduction_of_witness
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (w : SwanRawLaplaceProductTerm.BadWitness T) :
+    Nonempty (SwanRawLaplaceReduction (k := k) T) := by
+  cases w with
+  | size hsize =>
+      exact swan_corollary2_7_raw_bad_reduction_size (k := k) T hp hsize
+  | component hsize j hj =>
+      exact swan_corollary2_7_raw_bad_reduction_component (k := k) T hp hsize j hj
+
+theorem swan_corollary2_7_raw_bad_reduction
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (T : SwanRawLaplaceProductTerm I J)
+    (hp : 0 < p)
+    (hbad : ¬ T.IsGood) :
+    Nonempty (SwanRawLaplaceReduction (k := k) T) := by
+  exact swan_corollary2_7_raw_bad_reduction_of_witness
+    (k := k) T hp (T.badWitness hbad)
+
+/-- Swan Corollary 2.8 in the form needed for induction: every raw Laplace
+product expands into good products. -/
+theorem swan_corollary2_8_raw_good_expansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hp : 0 < p)
+    (T : SwanRawLaplaceProductTerm I J) :
+    Nonempty (SwanRawGoodExpansion (k := k) T) := by
+  classical
+  let C : SwanRawLaplaceProductTerm I J → Prop :=
+    fun T => Nonempty (SwanRawGoodExpansion (k := k) T)
+  change C T
+  refine (SwanRawLaplaceProductTerm.LT_wellFounded
+    (I := I) (J := J)).induction T ?_
+  intro T ih
+  by_cases hgood : T.IsGood
+  · exact swan_raw_good_expansion_of_good (k := k) T hgood
+  · rcases swan_corollary2_7_raw_bad_reduction (k := k) T hp hgood with ⟨R⟩
+    let E : ∀ x : R.ι, SwanRawGoodExpansion (k := k) (R.term x) :=
+      fun x => Classical.choice (ih (R.term x) (R.term_decrease x))
+    exact ⟨R.bindGoodExpansion E⟩
+
+/-- Swan Corollary 2.8: iterating Corollary 2.7 terminates and rewrites a
+Laplace product as a finite sum of good products. -/
+theorem swan_corollary2_8_laplace_product_good_expansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (_hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    Nonempty (SwanLaplaceProductExpansion (k := k) I J) := by
+  rcases swan_corollary2_8_raw_good_expansion
+      (k := k) hp (SwanRawLaplaceProductTerm.initial I J) with ⟨E⟩
+  exact ⟨E.toInitialExpansion⟩
+
+namespace SwanLaplaceProductExpansion
+
+lemma poly_eq'
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J) :
+    letI := E.instFintype
+    genericMinor (k := k) I * genericMinor (k := k) J =
+      ∑ x : E.ι,
+        MvPolynomial.C (E.coeff x) *
+          MinorWord.toPolynomial (k := k)
+            (SwanLaplaceProductTerm.toWord (E.term x)) := by
+  letI := E.instFintype
+  exact E.poly_eq
+
+lemma term_pairwisePairLE
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (x : E.ι) :
+    MinorWord.PairwisePairLE (E.term x).toWord :=
+  (E.term x).pairwisePairLE_toWord
+
+lemma term_degree
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (x : E.ι) :
+    MinorWord.degree (E.term x).toWord = p + q :=
+  (E.term x).degree_toWord
+
+lemma term_length_nondec
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (x : E.ι) :
+    p ≤ MinorWord.length (E.term x).toWord :=
+  (E.term x).length_nondec_toWord
+
+/-- Upgrade a Laplace-product expansion to the local Swan two-minor expansion
+once Swan Lemma 4.3 has supplied strict first-factor decrease for every
+supported term. -/
+def toSwanTwoMinorExpansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (hstrict : ∀ x : E.ι, MinorIndex.PairLT (E.term x).F.idx I) :
+    SwanTwoMinorExpansion (k := k) I J where
+  ι := E.ι
+  instFintype := E.instFintype
+  coeff := E.coeff
+  term := fun x => (E.term x).toSwanTwoMinorTerm (hstrict x)
+  poly_eq := by
+    letI := E.instFintype
+    simpa using E.poly_eq
+
+end SwanLaplaceProductExpansion
+
+lemma swan_two_minor_finite_sum_of_laplace_expansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (hstrict : ∀ x : E.ι, MinorIndex.PairLT (E.term x).F.idx I) :
+    ∃ (ι : Type) (inst : Fintype ι)
+        (coeff : ι → k) (term : ι → SwanTwoMinorTerm I J),
+      letI := inst
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord (term x)) := by
+  let E' := E.toSwanTwoMinorExpansion hstrict
+  exact ⟨E'.ι, E'.instFintype, E'.coeff, E'.term, E'.poly_eq⟩
+
+lemma swan_two_minor_finite_sum_of_reverse_pairLE
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    {I : MinorIndex m n p} {J : MinorIndex m n q}
+    (hJI : MinorIndex.PairLE J I) (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ (ι : Type) (inst : Fintype ι)
+        (coeff : ι → k) (term : ι → SwanTwoMinorTerm I J),
+      letI := inst
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord (term x)) := by
+  classical
+  let F : MinorFactor m n := { t := q, idx := J }
+  let G : MinorFactor m n := { t := p, idx := I }
+  have hfirst : MinorIndex.PairLT F.idx I :=
+    MinorIndex.PairLT.of_pairLE_not_symm hJI hnot
+  let T : SwanTwoMinorTerm I J :=
+    { F := F
+      G := G
+      pairLE := hJI
+      firstLT := hfirst
+      row_content := by
+        simp [F, G, MinorFactor.rowContent, add_comm]
+      col_content := by
+        simp [F, G, MinorFactor.colContent, add_comm] }
+  refine ⟨PUnit, inferInstance, (fun _ => (1 : k)), (fun _ => T), ?_⟩
+  simp [T, SwanTwoMinorTerm.toWord, F, G, MinorFactor.toPolynomial, mul_comm]
+
+/-- Swan Theorem 3.1: the Laplace-product straightening expansion into good
+two-minor products.
+
+In this local encoding, "good" means that each output term is a
+`SwanLaplaceProductTerm`: the two produced factors are ordered, the first
+factor is weakly improved relative to the original first factor, and row/column
+content is preserved.  No strict first-factor decrease is asserted here; that
+is Swan Lemma 4.3 below. -/
+theorem swan_theorem3_1_laplace_product_expansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q) :
+    Nonempty (SwanLaplaceProductExpansion (k := k) I J) := by
+  exact swan_corollary2_8_laplace_product_good_expansion
+    (k := k) hp hq I J
+
+/-- Swan Lemma 4.3: for a nonstandard incomparable local pair, every good
+product occurring in the Laplace-product expansion has first factor strictly
+smaller than the original first factor. -/
+theorem swan_lemma4_3_first_factor_strict
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hIJ : ¬ MinorIndex.PairLE I J)
+    (_hJI : ¬ MinorIndex.PairLE J I)
+    (E : SwanLaplaceProductExpansion (k := k) I J)
+    (x : E.ι) :
+    MinorIndex.PairLT (E.term x).F.idx I := by
+  classical
+  let T : SwanLaplaceProductTerm I J := E.term x
+  apply T.firstLT_of_not_original_le_first
+  intro hIF
+  have hF_eq :
+      T.F = ({ t := p, idx := I } : MinorFactor m n) :=
+    MinorFactor.eq_of_pairLE_pairLE T.firstLE hIF
+  have hrow_sum :
+      MinorFactor.rowContent T.F + MinorFactor.rowContent T.G =
+        MinorIndex.rowContent I + MinorIndex.rowContent J := by
+    simpa [SwanLaplaceProductTerm.toWord] using T.row_content
+  have hcol_sum :
+      MinorFactor.colContent T.F + MinorFactor.colContent T.G =
+        MinorIndex.colContent I + MinorIndex.colContent J := by
+    simpa [SwanLaplaceProductTerm.toWord] using T.col_content
+  have hG_row :
+      MinorFactor.rowContent T.G =
+        MinorFactor.rowContent ({ t := q, idx := J } : MinorFactor m n) := by
+    rw [hF_eq] at hrow_sum
+    simpa [MinorFactor.rowContent] using
+      (add_left_cancel hrow_sum)
+  have hG_col :
+      MinorFactor.colContent T.G =
+        MinorFactor.colContent ({ t := q, idx := J } : MinorFactor m n) := by
+    rw [hF_eq] at hcol_sum
+    simpa [MinorFactor.colContent] using
+      (add_left_cancel hcol_sum)
+  have hG_eq :
+      T.G = ({ t := q, idx := J } : MinorFactor m n) :=
+    MinorFactor.eq_of_rowContent_eq_colContent hG_row hG_col
+  have hIJ' : MinorIndex.PairLE I J := by
+    have hpair := T.pairLE
+    rw [hF_eq, hG_eq] at hpair
+    simpa using hpair
+  exact hIJ hIJ'
+
+/-- Swan's square Laplace-product straightening theorem, in the finite-sum
+form used in the proof of Theorem 4.1.
+
+This is the formal target corresponding to Swan Theorem 3.1.  The auxiliary
+square matrix and the "good" replacement data are hidden in the output
+`SwanTwoMinorTerm` after transport through the row/column maps of Theorem 4.1;
+the next lemma isolates that transport step. -/
+theorem swan_square_laplace_product_straightening
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ (ι : Type) (inst : Fintype ι)
+        (coeff : ι → k) (term : ι → SwanTwoMinorTerm I J),
+      letI := inst
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord (term x)) := by
+  classical
+  by_cases hJI : MinorIndex.PairLE J I
+  · exact swan_two_minor_finite_sum_of_reverse_pairLE
+      (k := k) (I := I) (J := J) hJI hnot
+  · -- The genuinely Hodge-theoretic branch: neither adjacent minor is below
+    -- the other.  This is where Swan Theorem 3.1 supplies a Laplace-product
+    -- finite expansion and Swan Lemma 4.3 upgrades weak first-factor
+    -- improvement to strict improvement.
+    rcases swan_theorem3_1_laplace_product_expansion
+        (k := k) hp hq I J with ⟨E⟩
+    exact swan_two_minor_finite_sum_of_laplace_expansion E
+      (fun x => swan_lemma4_3_first_factor_strict
+        (k := k) I J hnot hJI E x)
+
+/-- Rectangular lifting step in Swan Theorem 4.1.
+
+Given the square Laplace-product straightening theorem for the auxiliary
+matrix `Y`, this transports the terms through the order-preserving row and
+column maps of Lemma 4.2, removes zero terms where the maps are not injective,
+and records Remark 4.4 as row/column content preservation. -/
+theorem swan_rectangular_lift_from_square_laplace
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ (ι : Type) (inst : Fintype ι)
+        (coeff : ι → k) (term : ι → SwanTwoMinorTerm I J),
+      letI := inst
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord (term x)) := by
+  -- TODO: prove Swan Lemma 4.2 and Lemma 4.3 in the current `MinorIndex`
+  -- encoding, then transport `swan_square_laplace_product_straightening`.
+  exact swan_square_laplace_product_straightening
+    (m := m) (n := n) (p := p) (q := q) (k := k) hp hq I J hnot
+
+/-- Swan Theorem 4.1 in the unbundled finite-sum form.
+
+This is the determinant/Hodge part of the local straightening argument.  It is
+kept unbundled so the downstream packaging theorem
+`exists_swan_two_minor_expansion` has a small proof and the remaining
+mathematical obligation is exactly the finite sum displayed in Swan's theorem. -/
+theorem swan_theorem4_1_finite_sum
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ (ι : Type) (inst : Fintype ι)
+        (coeff : ι → k) (term : ι → SwanTwoMinorTerm I J),
+      letI := inst
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        ∑ x : ι,
+          MvPolynomial.C (coeff x) *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord (term x)) := by
+  exact swan_rectangular_lift_from_square_laplace
+    (m := m) (n := n) (p := p) (q := q) (k := k) hp hq I J hnot
+
+/-- Determinant-theoretic Swan Theorem 4.1 input in finite-expansion form. -/
+theorem exists_swan_two_minor_expansion
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    Nonempty (SwanTwoMinorExpansion (k := k) I J) := by
+  classical
+  rcases swan_theorem4_1_finite_sum
+      (m := m) (n := n) (p := p) (q := q) (k := k)
+      hp hq I J hnot with ⟨ι, inst, coeff, term, hpoly⟩
+  letI := inst
+  exact ⟨
+    { ι := ι
+      instFintype := inst
+      coeff := coeff
+      term := term
+      poly_eq := by
+        simpa using hpoly }⟩
+
+/-- Raw local Swan two-minor straightening relation.
+
+This is the remaining determinant-theoretic input: Swan Theorem 4.1 supplies a
+finite linear combination of replacement pairs satisfying the support data
+recorded in `SwanTwoMinorTerm`. -/
+theorem swan_two_minor_straightening_relation_raw
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ c : SwanTwoMinorTerm I J →₀ k,
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        c.sum (fun T a =>
+          MvPolynomial.C a *
+            MinorWord.toPolynomial (k := k)
+              (SwanTwoMinorTerm.toWord T)) := by
+  classical
+  rcases exists_swan_two_minor_expansion
+      (m := m) (n := n) (p := p) (q := q) (k := k)
+      hp hq I J hnot with ⟨E⟩
+  let cι : E.ι →₀ k := Finsupp.equivFunOnFinite.symm E.coeff
+  let c : SwanTwoMinorTerm I J →₀ k := Finsupp.mapDomain E.term cι
+  refine ⟨c, ?_⟩
+  rw [E.poly_eq]
+  change
+    (∑ x : E.ι,
+      MvPolynomial.C (E.coeff x) *
+        MinorWord.toPolynomial (k := k)
+          (SwanTwoMinorTerm.toWord (E.term x))) =
+    c.sum (fun T a =>
+      MvPolynomial.C a *
+        MinorWord.toPolynomial (k := k) (SwanTwoMinorTerm.toWord T))
+  change
+    (∑ x : E.ι,
+      MvPolynomial.C (E.coeff x) *
+        MinorWord.toPolynomial (k := k)
+          (SwanTwoMinorTerm.toWord (E.term x))) =
+    (Finsupp.mapDomain E.term cι).sum (fun T a =>
+      MvPolynomial.C a *
+        MinorWord.toPolynomial (k := k) (SwanTwoMinorTerm.toWord T))
+  rw [Finsupp.sum_mapDomain_index]
+  · simp [cι, Finsupp.sum_fintype]
+  · intro T
+    simp
+  · intro T a b
+    simp [add_mul, MvPolynomial.C_add]
+
+/-- Local Swan two-minor straightening relation needed for the nonstandard
+branch of `straightening_law_exists_filtered`.
+
+The output is a finite `MinorWord` expansion rather than a `YoungBitableau`
+expansion because Swan's local relation may contain a unit factor
+`(∅|∅) = 1`; `YoungBitableau.consMinor` only accepts positive-size factors.
+
+The support data is exactly what is needed after embedding the rewritten local
+word back into a larger bitableau product:
+
+* polynomial equality for the two-minor product;
+* every produced local word is explicitly a two-factor word;
+* the two factors are standardly ordered;
+* the new first factor is strictly smaller than the original first factor in
+  Swan's minor-pair order;
+* row and column content are preserved.
+
+Degree preservation, local standardness as `MinorWord.PairwisePairLE`, and
+nondecrease of the first-factor length are derived below from this primitive
+support description. -/
+theorem swan_two_minor_straightening_relation
+    {m n p q : ℕ}
+    {k : Type*} [Field k]
+    (hp : 0 < p) (hq : 0 < q)
+    (I : MinorIndex m n p) (J : MinorIndex m n q)
+    (hnot : ¬ MinorIndex.PairLE I J) :
+    ∃ c : MinorWord m n →₀ k,
+      genericMinor (k := k) I * genericMinor (k := k) J =
+        c.sum (fun W a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) W)
+      ∧
+      (∀ W, c W ≠ 0 →
+        ∃ F G : MinorFactor m n,
+          W.factors = [F, G]
+          ∧ MinorIndex.PairLE F.idx G.idx
+          ∧ MinorIndex.PairLT F.idx I
+          ∧ MinorWord.rowContent W =
+              MinorIndex.rowContent I + MinorIndex.rowContent J
+          ∧ MinorWord.colContent W =
+              MinorIndex.colContent I + MinorIndex.colContent J) := by
+  classical
+  rcases swan_two_minor_straightening_relation_raw
+      (m := m) (n := n) (p := p) (q := q) (k := k)
+      hp hq I J hnot with ⟨cRaw, hpolyRaw⟩
+  let emb : SwanTwoMinorTerm I J → MinorWord m n :=
+    fun T => SwanTwoMinorTerm.toWord T
+  let c : MinorWord m n →₀ k := Finsupp.mapDomain emb cRaw
+  refine ⟨c, ?_, ?_⟩
+  · rw [hpolyRaw]
+    change
+      cRaw.sum (fun T a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) (emb T)) =
+        (Finsupp.mapDomain emb cRaw).sum (fun W a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) W)
+    rw [Finsupp.sum_mapDomain_index]
+    · simp
+    · intro W a b
+      simp [add_mul]
+  · intro W hW
+    have hWmem : W ∈ c.support := by
+      simpa [Finsupp.mem_support_iff] using hW
+    have hWimage : W ∈ Finset.image emb cRaw.support := by
+      exact Finsupp.mapDomain_support hWmem
+    rcases Finset.mem_image.mp hWimage with ⟨T, hTmem, hTW⟩
+    have hTW' : W = SwanTwoMinorTerm.toWord T := hTW.symm
+    rw [hTW']
+    exact SwanTwoMinorTerm.support_data T
+
+lemma swan_two_minor_support_pairwisePairLE
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n}
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    MinorWord.PairwisePairLE W := by
+  rcases hW with ⟨F, G, hfac, hFG, _hFI, _hrow, _hcol⟩
+  rw [MinorWord.PairwisePairLE, hfac]
+  simp [hFG]
+
+lemma swan_two_minor_support_length_nondec
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n}
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    p ≤ MinorWord.length W := by
+  rcases hW with ⟨F, G, hfac, _hFG, hFI, _hrow, _hcol⟩
+  have hpF : p ≤ F.t := MinorIndex.PairLE.size_le hFI.pairLE
+  rw [MinorWord.length, hfac]
+  simp only [MinorFactor.length, List.foldr_cons, List.foldr_nil, zero_le, sup_of_le_left,
+    le_sup_iff]
+  exact Or.inl hpF
+
+lemma swan_two_minor_support_degree
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n}
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    MinorWord.degree W = p + q := by
+  classical
+  rcases hW with ⟨F, G, _hfac, _hFG, _hFI, hrow, _hcol⟩
+  calc
+    MinorWord.degree W
+        = ∑ i : Fin m, MinorWord.rowContent W i := by
+          exact (MinorWord.rowContent_total W).symm
+    _ = ∑ i : Fin m, (MinorIndex.rowContent I + MinorIndex.rowContent J) i := by
+          rw [hrow]
+    _ = (∑ i : Fin m, MinorIndex.rowContent I i) +
+          (∑ i : Fin m, MinorIndex.rowContent J i) := by
+          simp [Pi.add_apply, Finset.sum_add_distrib]
+    _ = p + q := by
+          rw [MinorIndex.rowContent_total I, MinorIndex.rowContent_total J]
+
+lemma swan_two_minor_support_append_head_lt
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n} (rest : List (MinorFactor m n))
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    ∃ F G : MinorFactor m n,
+      (⟨W.factors ++ rest⟩ : MinorWord m n).factors = F :: G :: rest ∧
+      MinorIndex.PairLE F.idx G.idx ∧
+      MinorIndex.PairLT F.idx I := by
+  rcases hW with ⟨F, G, hfac, hFG, hFI, _hrow, _hcol⟩
+  refine ⟨F, G, ?_, hFG, hFI⟩
+  simp [hfac]
+
+lemma swan_two_minor_support_append_degree
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n} (rest : List (MinorFactor m n))
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    MinorWord.degree (⟨W.factors ++ rest⟩ : MinorWord m n) =
+      p + q + MinorWord.degree ⟨rest⟩ := by
+  rw [MinorWord.degree_append]
+  rw [swan_two_minor_support_degree hW]
+
+lemma swan_two_minor_support_append_degree_factor
+    {m n : ℕ} (H G : MinorFactor m n)
+    {W : MinorWord m n} (rest : List (MinorFactor m n))
+    (hW :
+      ∃ F G' : MinorFactor m n,
+        W.factors = [F, G']
+        ∧ MinorIndex.PairLE F.idx G'.idx
+        ∧ MinorIndex.PairLT F.idx H.idx
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent H.idx + MinorIndex.rowContent G.idx
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent H.idx + MinorIndex.colContent G.idx) :
+    MinorWord.degree (⟨W.factors ++ rest⟩ : MinorWord m n) =
+      H.t + MinorWord.degree ⟨G :: rest⟩ := by
+  have hdeg := swan_two_minor_support_append_degree
+    (I := H.idx) (J := G.idx) (W := W) rest hW
+  simpa [MinorFactor.degree, Nat.add_assoc] using hdeg
+
+lemma swan_two_minor_support_append_length_nondec
+    {m n p q : ℕ} {I : MinorIndex m n p} {J : MinorIndex m n q}
+    {W : MinorWord m n} (rest : List (MinorFactor m n))
+    (hW :
+      ∃ F G : MinorFactor m n,
+        W.factors = [F, G]
+        ∧ MinorIndex.PairLE F.idx G.idx
+        ∧ MinorIndex.PairLT F.idx I
+        ∧ MinorWord.rowContent W =
+            MinorIndex.rowContent I + MinorIndex.rowContent J
+        ∧ MinorWord.colContent W =
+            MinorIndex.colContent I + MinorIndex.colContent J) :
+    p ≤ MinorWord.length (⟨W.factors ++ rest⟩ : MinorWord m n) := by
+  have hlocal : p ≤ MinorWord.length W :=
+    swan_two_minor_support_length_nondec hW
+  rw [MinorWord.length_append]
+  exact le_trans hlocal (le_max_left _ _)
+
+lemma minorWord_straightening_exists_degree_of_pairwise
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (W : MinorWord m n)
+    (hW : MinorWord.PairwisePairLE W) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) W =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = MinorWord.degree W) := by
+  classical
+  let S : StandardMinorWord m n := ⟨W, hW⟩
+  refine ⟨Finsupp.single S (1 : k), ?_, ?_⟩
+  · simp [S]
+  · intro U hU
+    have hU_eq : U = S := by
+      by_contra hne
+      have hzero : (Finsupp.single S (1 : k)) U = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hU hzero
+    simp [hU_eq, S]
+
+lemma minorWord_straightening_exists_degree_of_pairwise_factorCount
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (W : MinorWord m n)
+    (hW : MinorWord.PairwisePairLE W) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) W =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = MinorWord.degree W)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.factorCount U.1 ≤ MinorWord.factorCount W) := by
+  classical
+  let S : StandardMinorWord m n := ⟨W, hW⟩
+  refine ⟨Finsupp.single S (1 : k), ?_, ?_, ?_⟩
+  · simp [S]
+  · intro U hU
+    have hU_eq : U = S := by
+      by_contra hne
+      have hzero : (Finsupp.single S (1 : k)) U = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hU hzero
+    simp [hU_eq, S]
+  · intro U hU
+    have hU_eq : U = S := by
+      by_contra hne
+      have hzero : (Finsupp.single S (1 : k)) U = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hU hzero
+    simp [hU_eq, S]
+
+lemma minorWord_finsupp_sum_append_right
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (c : MinorWord m n →₀ k)
+    (rest : List (MinorFactor m n)) :
+    (c.sum fun W a =>
+        MvPolynomial.C a *
+          MinorWord.toPolynomial (k := k) ⟨W.factors ++ rest⟩) =
+      (Finsupp.mapDomain
+          (fun W : MinorWord m n => (⟨W.factors ++ rest⟩ : MinorWord m n))
+          c).sum fun W a =>
+        MvPolynomial.C a * MinorWord.toPolynomial (k := k) W := by
+  classical
+  rw [Finsupp.sum_mapDomain_index]
+  · simp
+  · intro W a b
+    simp [add_mul, MvPolynomial.C_add]
+
+lemma minorWord_finsupp_sum_mul_tail
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (c : MinorWord m n →₀ k)
+    (rest : List (MinorFactor m n)) :
+    (c.sum fun W a =>
+        MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) *
+      MinorWord.toPolynomial (k := k) ⟨rest⟩ =
+      (Finsupp.mapDomain
+          (fun W : MinorWord m n => (⟨W.factors ++ rest⟩ : MinorWord m n))
+          c).sum fun W a =>
+        MvPolynomial.C a * MinorWord.toPolynomial (k := k) W := by
+  classical
+  calc
+    (c.sum fun W a =>
+        MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) *
+      MinorWord.toPolynomial (k := k) ⟨rest⟩
+        =
+      c.sum fun W a =>
+        MvPolynomial.C a *
+          MinorWord.toPolynomial (k := k) ⟨W.factors ++ rest⟩ := by
+          rw [Finsupp.sum, Finset.sum_mul, Finsupp.sum]
+          apply Finset.sum_congr rfl
+          intro W _hW
+          rw [MinorWord.toPolynomial_append]
+          ring
+    _ =
+      (Finsupp.mapDomain
+          (fun W : MinorWord m n => (⟨W.factors ++ rest⟩ : MinorWord m n))
+          c).sum fun W a =>
+        MvPolynomial.C a * MinorWord.toPolynomial (k := k) W :=
+          minorWord_finsupp_sum_append_right (k := k) c rest
+
+noncomputable def finsuppScalarBind
+    {α β : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k) : β →₀ k :=
+  c.sum fun a ca => ca • d a
+
+lemma finsuppScalarBind_apply
+    {α β : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k) (b : β) :
+    finsuppScalarBind c d b = c.sum fun a ca => ca * d a b := by
+  classical
+  rw [finsuppScalarBind, Finsupp.sum]
+  conv_rhs => rw [Finsupp.sum]
+  simp
+
+lemma finsuppScalarBind_apply_ne_zero_exists
+    {α β : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k) {b : β}
+    (hb : finsuppScalarBind c d b ≠ 0) :
+    ∃ a : α, c a ≠ 0 ∧ d a b ≠ 0 := by
+  classical
+  by_contra h
+  push_neg at h
+  apply hb
+  rw [finsuppScalarBind_apply]
+  rw [Finsupp.sum]
+  refine Finset.sum_eq_zero ?_
+  intro a _ha
+  by_cases hca : c a = 0
+  · simp [hca]
+  · have hda : d a b = 0 := h a hca
+    simp [hda]
+
+lemma finsuppScalarBind_support_property
+    {α β : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k) (P : β → Prop)
+    (h : ∀ a b, c a ≠ 0 → d a b ≠ 0 → P b) :
+    ∀ b, finsuppScalarBind c d b ≠ 0 → P b := by
+  intro b hb
+  rcases finsuppScalarBind_apply_ne_zero_exists c d hb with
+    ⟨a, hca, hdb⟩
+  exact h a b hca hdb
+
+lemma finsupp_mapDomain_support_property
+    {α β : Type*} {k : Type*} [AddCommMonoid k]
+    (f : α → β) (c : α →₀ k) (P : β → Prop)
+    (h : ∀ a, c a ≠ 0 → P (f a)) :
+    ∀ b, Finsupp.mapDomain f c b ≠ 0 → P b := by
+  classical
+  intro b hb
+  have hbmem : b ∈ (Finsupp.mapDomain f c).support := by
+    simpa [Finsupp.mem_support_iff] using hb
+  have himage : b ∈ Finset.image f c.support :=
+    Finsupp.mapDomain_support hbmem
+  rcases Finset.mem_image.mp himage with ⟨a, hamem, rfl⟩
+  exact h a (by simpa [Finsupp.mem_support_iff] using hamem)
+
+lemma finsuppScalarBind_polynomial_sum
+    {α β σ : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k)
+    (v : β → MvPolynomial σ k) :
+    (finsuppScalarBind c d).sum
+        (fun b a => MvPolynomial.C a * v b) =
+      c.sum fun a ca =>
+        MvPolynomial.C ca *
+          (d a).sum (fun b db => MvPolynomial.C db * v b) := by
+  classical
+  unfold finsuppScalarBind
+  change
+    ((∑ a ∈ c.support, c a • d a).sum
+        (fun b a => MvPolynomial.C a * v b)) =
+      ∑ a ∈ c.support,
+        MvPolynomial.C (c a) *
+          (d a).sum (fun b db => MvPolynomial.C db * v b)
+  rw [←Finsupp.sum_finset_sum_index]
+  · apply Finset.sum_congr rfl
+    intro a _ha
+    rw [Finsupp.sum_smul_index]
+    · calc
+        (d a).sum (fun b db => MvPolynomial.C (c a * db) * v b)
+            =
+          (d a).sum (fun b db =>
+            MvPolynomial.C (c a) * (MvPolynomial.C db * v b)) := by
+            apply Finsupp.sum_congr
+            intro b db
+            simp [MvPolynomial.C_mul, mul_assoc]
+        _ =
+          MvPolynomial.C (c a) *
+            (d a).sum (fun b db => MvPolynomial.C db * v b) := by
+            rw [← Finsupp.mul_sum]
+    · intro b
+      simp
+  · intro a
+    simp
+  · intro a x y
+    rw [MvPolynomial.C_add, add_mul]
+
+lemma minorWord_head_insert_after_tail_straightening
+    {m n : ℕ} {k : Type*} [Field k]
+    (F : MinorFactor m n) (tail : MinorWord m n)
+    (cTail : StandardMinorWord m n →₀ k)
+    (hTail_poly :
+      MinorWord.toPolynomial (k := k) tail =
+        cTail.sum (fun S a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1))
+    (hTail_degree :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.degree S.1 = MinorWord.degree tail)
+    (insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k)
+    (hinsert_poly :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ =
+          (insertCoeff S).sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1))
+    (hinsert_degree :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          MinorWord.degree U.1 = F.t + MinorWord.degree S.1) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 =
+          MinorWord.degree (⟨F :: tail.factors⟩ : MinorWord m n)) := by
+  classical
+  let c : StandardMinorWord m n →₀ k :=
+    finsuppScalarBind cTail insertCoeff
+  refine ⟨c, ?_, ?_⟩
+  · have hhead_tail :
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+      calc
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩
+            =
+          MinorFactor.toPolynomial (k := k) F *
+            MinorWord.toPolynomial (k := k) tail := by
+            simp
+        _ =
+          MinorFactor.toPolynomial (k := k) F *
+            (cTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1) := by
+            rw [hTail_poly]
+        _ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+            rw [Finsupp.mul_sum]
+            apply Finsupp.sum_congr
+            intro S a
+            simp [mul_assoc, mul_comm]
+    rw [hhead_tail]
+    have hdist :
+        (cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩) =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              (insertCoeff S).sum (fun U b =>
+                MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1) := by
+      apply Finsupp.sum_congr
+      intro S a
+      by_cases hS : cTail S = 0
+      · simp [hS]
+      · rw [hinsert_poly S hS]
+    rw [hdist]
+    rw [← finsuppScalarBind_polynomial_sum
+      (c := cTail) (d := insertCoeff)
+      (v := fun U : StandardMinorWord m n =>
+        MinorWord.toPolynomial (k := k) U.1)]
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cTail insertCoeff hU with ⟨S, hS, hSU⟩
+    have hUdeg := hinsert_degree S U hS hSU
+    have hSdeg := hTail_degree S hS
+    rw [hUdeg, hSdeg]
+    simp [MinorFactor.degree]
+
+lemma minorWord_head_insert_after_tail_straightening_filtered
+    {m n : ℕ} {k : Type*} [Field k]
+    (F : MinorFactor m n) (tail : MinorWord m n)
+    (cTail : StandardMinorWord m n →₀ k)
+    (hTail_poly :
+      MinorWord.toPolynomial (k := k) tail =
+        cTail.sum (fun S a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1))
+    (hTail_degree :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.degree S.1 = MinorWord.degree tail)
+    (insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k)
+    (hinsert_poly :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ =
+          (insertCoeff S).sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1))
+    (hinsert_degree :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          MinorWord.degree U.1 = F.t + MinorWord.degree S.1)
+    (hinsert_length :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          F.t ≤ MinorWord.length U.1) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 =
+          MinorWord.degree (⟨F :: tail.factors⟩ : MinorWord m n))
+      ∧
+      (∀ U, c U ≠ 0 → F.t ≤ MinorWord.length U.1) := by
+  classical
+  let c : StandardMinorWord m n →₀ k :=
+    finsuppScalarBind cTail insertCoeff
+  refine ⟨c, ?_, ?_, ?_⟩
+  · have hhead_tail :
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+      calc
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩
+            =
+          MinorFactor.toPolynomial (k := k) F *
+            MinorWord.toPolynomial (k := k) tail := by
+            simp
+        _ =
+          MinorFactor.toPolynomial (k := k) F *
+            (cTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1) := by
+            rw [hTail_poly]
+        _ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+            rw [Finsupp.mul_sum]
+            apply Finsupp.sum_congr
+            intro S a
+            simp [mul_assoc, mul_comm]
+    rw [hhead_tail]
+    have hdist :
+        (cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩) =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              (insertCoeff S).sum (fun U b =>
+                MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1) := by
+      apply Finsupp.sum_congr
+      intro S a
+      by_cases hS : cTail S = 0
+      · simp [hS]
+      · rw [hinsert_poly S hS]
+    rw [hdist]
+    rw [← finsuppScalarBind_polynomial_sum
+      (c := cTail) (d := insertCoeff)
+      (v := fun U : StandardMinorWord m n =>
+        MinorWord.toPolynomial (k := k) U.1)]
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cTail insertCoeff hU with ⟨S, hS, hSU⟩
+    have hUdeg := hinsert_degree S U hS hSU
+    have hSdeg := hTail_degree S hS
+    rw [hUdeg, hSdeg]
+    simp [MinorFactor.degree]
+  · exact finsuppScalarBind_support_property cTail insertCoeff
+      (fun U => F.t ≤ MinorWord.length U.1)
+      (by
+        intro S U hS hSU
+        exact hinsert_length S U hS hSU)
+
+lemma minorWord_finsupp_bind_after_local_expansion
+    {m n : ℕ} {k : Type*} [Field k]
+    (cLocal : MinorWord m n →₀ k)
+    (straighten : MinorWord m n → StandardMinorWord m n →₀ k)
+    (hstraighten_poly :
+      ∀ W : MinorWord m n, cLocal W ≠ 0 →
+        MinorWord.toPolynomial (k := k) W =
+          (straighten W).sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1))
+    (hstraighten_degree :
+      ∀ W : MinorWord m n, ∀ U : StandardMinorWord m n,
+        cLocal W ≠ 0 → straighten W U ≠ 0 →
+          MinorWord.degree U.1 = MinorWord.degree W) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      cLocal.sum (fun W a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        ∃ W : MinorWord m n,
+          cLocal W ≠ 0 ∧ straighten W U ≠ 0 ∧
+          MinorWord.degree U.1 = MinorWord.degree W) := by
+  classical
+  let c : StandardMinorWord m n →₀ k :=
+    finsuppScalarBind cLocal straighten
+  refine ⟨c, ?_, ?_⟩
+  · have hdist :
+        cLocal.sum (fun W a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) =
+          cLocal.sum (fun W a =>
+            MvPolynomial.C a *
+              (straighten W).sum (fun U b =>
+                MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1)) := by
+      apply Finsupp.sum_congr
+      intro W a
+      by_cases hW : cLocal W = 0
+      · simp [hW]
+      · rw [hstraighten_poly W hW]
+    rw [hdist]
+    rw [← finsuppScalarBind_polynomial_sum
+      (c := cLocal) (d := straighten)
+      (v := fun U : StandardMinorWord m n =>
+        MinorWord.toPolynomial (k := k) U.1)]
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cLocal straighten hU with ⟨W, hW, hWU⟩
+    exact ⟨W, hW, hWU, hstraighten_degree W U hW hWU⟩
+
+lemma minorWord_head_insert_after_tail_straightening_factorCount
+    {m n : ℕ} {k : Type*} [Field k]
+    (F : MinorFactor m n) (tail : MinorWord m n)
+    (cTail : StandardMinorWord m n →₀ k)
+    (hTail_poly :
+      MinorWord.toPolynomial (k := k) tail =
+        cTail.sum (fun S a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1))
+    (hTail_degree :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.degree S.1 = MinorWord.degree tail)
+    (hTail_factorCount :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.factorCount S.1 ≤ MinorWord.factorCount tail)
+    (insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k)
+    (hinsert_poly :
+      ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+        MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ =
+          (insertCoeff S).sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1))
+    (hinsert_degree :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          MinorWord.degree U.1 = F.t + MinorWord.degree S.1)
+    (hinsert_length :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          F.t ≤ MinorWord.length U.1)
+    (hinsert_factorCount :
+      ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+        insertCoeff S U ≠ 0 →
+          MinorWord.factorCount U.1 ≤ MinorWord.factorCount S.1 + 1) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 =
+          MinorWord.degree (⟨F :: tail.factors⟩ : MinorWord m n))
+      ∧
+      (∀ U, c U ≠ 0 → F.t ≤ MinorWord.length U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.factorCount U.1 ≤
+          MinorWord.factorCount (⟨F :: tail.factors⟩ : MinorWord m n)) := by
+  classical
+  let c : StandardMinorWord m n →₀ k :=
+    finsuppScalarBind cTail insertCoeff
+  refine ⟨c, ?_, ?_, ?_, ?_⟩
+  · have hhead_tail :
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+      calc
+        MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩
+            =
+          MinorFactor.toPolynomial (k := k) F *
+            MinorWord.toPolynomial (k := k) tail := by
+            simp
+        _ =
+          MinorFactor.toPolynomial (k := k) F *
+            (cTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1) := by
+            rw [hTail_poly]
+        _ =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ := by
+            rw [Finsupp.mul_sum]
+            apply Finsupp.sum_congr
+            intro S a
+            simp [mul_assoc, mul_comm]
+    rw [hhead_tail]
+    have hdist :
+        (cTail.sum fun S a =>
+            MvPolynomial.C a *
+              MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩) =
+          cTail.sum fun S a =>
+            MvPolynomial.C a *
+              (insertCoeff S).sum (fun U b =>
+                MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1) := by
+      apply Finsupp.sum_congr
+      intro S a
+      by_cases hS : cTail S = 0
+      · simp [hS]
+      · rw [hinsert_poly S hS]
+    rw [hdist]
+    rw [← finsuppScalarBind_polynomial_sum
+      (c := cTail) (d := insertCoeff)
+      (v := fun U : StandardMinorWord m n =>
+        MinorWord.toPolynomial (k := k) U.1)]
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cTail insertCoeff hU with ⟨S, hS, hSU⟩
+    have hUdeg := hinsert_degree S U hS hSU
+    have hSdeg := hTail_degree S hS
+    rw [hUdeg, hSdeg]
+    simp [MinorFactor.degree]
+  · exact finsuppScalarBind_support_property cTail insertCoeff
+      (fun U => F.t ≤ MinorWord.length U.1)
+      (by
+        intro S U hS hSU
+        exact hinsert_length S U hS hSU)
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cTail insertCoeff hU with ⟨S, hS, hSU⟩
+    have hUS := hinsert_factorCount S U hS hSU
+    have hStail := hTail_factorCount S hS
+    cases tail with
+    | mk factors =>
+        simp [MinorWord.factorCount] at hUS hStail ⊢
+        omega
+
+lemma minorWord_finsupp_bind_after_local_expansion_factorCount
+    {m n : ℕ} {k : Type*} [Field k]
+    (cLocal : MinorWord m n →₀ k)
+    (straighten : MinorWord m n → StandardMinorWord m n →₀ k)
+    (hstraighten_poly :
+      ∀ W : MinorWord m n, cLocal W ≠ 0 →
+        MinorWord.toPolynomial (k := k) W =
+          (straighten W).sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1))
+    (hstraighten_degree :
+      ∀ W : MinorWord m n, ∀ U : StandardMinorWord m n,
+        cLocal W ≠ 0 → straighten W U ≠ 0 →
+          MinorWord.degree U.1 = MinorWord.degree W)
+    (hstraighten_factorCount :
+      ∀ W : MinorWord m n, ∀ U : StandardMinorWord m n,
+        cLocal W ≠ 0 → straighten W U ≠ 0 →
+          MinorWord.factorCount U.1 ≤ MinorWord.factorCount W) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      cLocal.sum (fun W a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        ∃ W : MinorWord m n,
+          cLocal W ≠ 0 ∧ straighten W U ≠ 0 ∧
+          MinorWord.degree U.1 = MinorWord.degree W ∧
+          MinorWord.factorCount U.1 ≤ MinorWord.factorCount W) := by
+  classical
+  let c : StandardMinorWord m n →₀ k :=
+    finsuppScalarBind cLocal straighten
+  refine ⟨c, ?_, ?_⟩
+  · have hdist :
+        cLocal.sum (fun W a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) =
+          cLocal.sum (fun W a =>
+            MvPolynomial.C a *
+              (straighten W).sum (fun U b =>
+                MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1)) := by
+      apply Finsupp.sum_congr
+      intro W a
+      by_cases hW : cLocal W = 0
+      · simp [hW]
+      · rw [hstraighten_poly W hW]
+    rw [hdist]
+    rw [← finsuppScalarBind_polynomial_sum
+      (c := cLocal) (d := straighten)
+      (v := fun U : StandardMinorWord m n =>
+        MinorWord.toPolynomial (k := k) U.1)]
+  · intro U hU
+    rcases finsuppScalarBind_apply_ne_zero_exists
+        cLocal straighten hU with ⟨W, hW, hWU⟩
+    exact ⟨W, hW, hWU,
+      hstraighten_degree W U hW hWU,
+      hstraighten_factorCount W U hW hWU⟩
+
+lemma minorFactor_mul_standardMinorWord_exists_filtered_of_ordered
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (H : MinorFactor m n)
+    (S : StandardMinorWord m n)
+    (hHS : ∀ G ∈ S.1.factors, MinorIndex.PairLE H.idx G.idx) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = H.t + MinorWord.degree S.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        H.t ≤ MinorWord.length U.1) := by
+  classical
+  let U : StandardMinorWord m n :=
+    ⟨⟨H :: S.1.factors⟩,
+      (MinorWord.PairwisePairLE_cons_iff H S.1.factors).mpr ⟨hHS, S.2⟩⟩
+  refine ⟨Finsupp.single U (1 : k), ?_, ?_, ?_⟩
+  · simp [U]
+  · intro V hV
+    have hV_eq : V = U := by
+      by_contra hne
+      have hzero : (Finsupp.single U (1 : k)) V = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hV hzero
+    subst V
+    simp [U, MinorFactor.degree]
+  · intro V hV
+    have hV_eq : V = U := by
+      by_contra hne
+      have hzero : (Finsupp.single U (1 : k)) V = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hV hzero
+    subst V
+    simp [U, MinorFactor.length]
+
+lemma minorFactor_mul_standardMinorWord_exists_filtered_of_ordered_factorCount
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (H : MinorFactor m n)
+    (S : StandardMinorWord m n)
+    (hHS : ∀ G ∈ S.1.factors, MinorIndex.PairLE H.idx G.idx) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = H.t + MinorWord.degree S.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        H.t ≤ MinorWord.length U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.factorCount U.1 ≤ MinorWord.factorCount S.1 + 1) := by
+  classical
+  let U : StandardMinorWord m n :=
+    ⟨⟨H :: S.1.factors⟩,
+      (MinorWord.PairwisePairLE_cons_iff H S.1.factors).mpr ⟨hHS, S.2⟩⟩
+  refine ⟨Finsupp.single U (1 : k), ?_, ?_, ?_, ?_⟩
+  · simp [U]
+  · intro V hV
+    have hV_eq : V = U := by
+      by_contra hne
+      have hzero : (Finsupp.single U (1 : k)) V = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hV hzero
+    subst V
+    simp [U, MinorFactor.degree]
+  · intro V hV
+    have hV_eq : V = U := by
+      by_contra hne
+      have hzero : (Finsupp.single U (1 : k)) V = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hV hzero
+    subst V
+    simp [U, MinorFactor.length]
+  · intro V hV
+    have hV_eq : V = U := by
+      by_contra hne
+      have hzero : (Finsupp.single U (1 : k)) V = 0 := by
+        rw [Finsupp.single_eq_of_ne hne]
+      exact hV hzero
+    subst V
+    simp [U, MinorWord.factorCount]
+
+lemma StandardMinorWord.exists_head_not_pairLE_of_not_forall_pairLE
+    {m n : ℕ}
+    (H : MinorFactor m n)
+    (S : StandardMinorWord m n)
+    (hnot : ¬ ∀ G ∈ S.1.factors, MinorIndex.PairLE H.idx G.idx) :
+    ∃ G rest,
+      S.1.factors = G :: rest ∧
+      ¬ MinorIndex.PairLE H.idx G.idx ∧
+      MinorWord.PairwisePairLE ⟨G :: rest⟩ := by
+  classical
+  cases hfac : S.1.factors with
+  | nil =>
+      exfalso
+      apply hnot
+      intro G hG
+      simp [hfac] at hG
+  | cons G rest =>
+      refine ⟨G, rest, rfl, ?_, ?_⟩
+      · intro hHG
+        apply hnot
+        intro K hK
+        have hK' : K ∈ G :: rest := by
+          simpa [hfac] using hK
+        rcases List.mem_cons.mp hK' with rfl | hKrest
+        · exact hHG
+        · have hGK : MinorIndex.PairLE G.idx K.idx := by
+            have hpair : MinorWord.PairwisePairLE ⟨G :: rest⟩ := by
+              simpa [MinorWord.PairwisePairLE, hfac] using S.2
+            exact (MinorWord.PairwisePairLE_cons_iff G rest).mp hpair |>.1 K hKrest
+          exact MinorIndex.PairLE.trans hHG hGK
+      · simpa [MinorWord.PairwisePairLE, hfac] using S.2
+
+lemma minorFactor_insert_tail_measure_lt
+    {m n : ℕ}
+    {H G G' : MinorFactor m n}
+    {S : StandardMinorWord m n} {rest : List (MinorFactor m n)}
+    (hfac : S.1.factors = G :: rest) :
+    Prod.Lex (fun x y : ℕ => x < y) MinorFactor.PairLT
+      (MinorWord.factorCount (⟨rest⟩ : MinorWord m n) + 1, G')
+      (MinorWord.factorCount S.1 + 1, H) := by
+  apply Prod.Lex.left
+  cases S with
+  | mk W hpair =>
+      cases W with
+      | mk factors =>
+          have hfac' : factors = G :: rest := hfac
+          subst factors
+          simp [MinorWord.factorCount]
+
+lemma minorFactor_insert_head_measure_lt
+    {m n : ℕ}
+    {H F G G' : MinorFactor m n}
+    {S S' : StandardMinorWord m n} {rest : List (MinorFactor m n)}
+    (hfac : S.1.factors = G :: rest)
+    (hcount :
+      MinorWord.factorCount S'.1 ≤
+        MinorWord.factorCount (⟨G' :: rest⟩ : MinorWord m n))
+    (hFH : MinorIndex.PairLT F.idx H.idx) :
+    Prod.Lex (fun x y : ℕ => x < y) MinorFactor.PairLT
+      (MinorWord.factorCount S'.1 + 1, F)
+      (MinorWord.factorCount S.1 + 1, H) := by
+  have hle :
+      MinorWord.factorCount S'.1 + 1 ≤
+        MinorWord.factorCount S.1 + 1 := by
+    cases S with
+    | mk W hpair =>
+        cases W with
+        | mk factors =>
+            have hfac' : factors = G :: rest := hfac
+            subst factors
+            simp [MinorWord.factorCount] at hcount ⊢
+            omega
+  rcases lt_or_eq_of_le hle with hlt | heq
+  · exact Prod.Lex.left _ _ hlt
+  · rw [heq]
+    exact Prod.Lex.right _ (by
+      simpa [MinorFactor.PairLT] using hFH)
+
+theorem minorFactor_mul_standardMinorWord_exists_filtered_strong
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (H : MinorFactor m n) (hH : 0 < H.t)
+    (S : StandardMinorWord m n) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = H.t + MinorWord.degree S.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        H.t ≤ MinorWord.length U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.factorCount U.1 ≤ MinorWord.factorCount S.1 + 1) := by
+  classical
+  by_cases hHS : ∀ G ∈ S.1.factors, MinorIndex.PairLE H.idx G.idx
+  · exact minorFactor_mul_standardMinorWord_exists_filtered_of_ordered_factorCount
+      (m := m) (n := n) (k := k) H S hHS
+  · rcases S.exists_head_not_pairLE_of_not_forall_pairLE H hHS with
+      ⟨G, rest, hfac, hHG, hTail⟩
+    have hRest : MinorWord.PairwisePairLE ⟨rest⟩ :=
+      ((MinorWord.PairwisePairLE_cons_iff G rest).mp hTail).2
+    let restStd : StandardMinorWord m n :=
+      ⟨⟨rest⟩, hRest⟩
+    have hGpos : 0 < G.t := by
+      exact Nat.pos_of_ne_zero (by
+        intro hzero
+        apply hHG
+        refine MinorIndex.PairLE.of_components ?_ ?_
+        · simp [hzero]
+        · intro j
+          exact False.elim (Nat.not_lt_zero j.val (by
+            simpa [hzero] using j.isLt)))
+    rcases swan_two_minor_straightening_relation
+        (m := m) (n := n) (k := k)
+        hH hGpos H.idx G.idx hHG with
+      ⟨cLocal, hLocal_poly, hLocal_support⟩
+    let appendWord : MinorWord m n → MinorWord m n :=
+      fun W => (⟨W.factors ++ rest⟩ : MinorWord m n)
+    let cAppended : MinorWord m n →₀ k :=
+      Finsupp.mapDomain appendWord cLocal
+    have hLocal_tail_appended :
+        MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+          cAppended.sum fun W a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) W := by
+      have hLocal_tail :
+          MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+            (cLocal.sum fun W a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) *
+              MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+        calc
+          MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩
+              =
+            MinorFactor.toPolynomial (k := k) H *
+              MinorFactor.toPolynomial (k := k) G *
+                MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+              rw [hfac]
+              simp [mul_assoc]
+          _ =
+            (genericMinor (k := k) H.idx * genericMinor (k := k) G.idx) *
+              MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+              simp [MinorFactor.toPolynomial, mul_assoc]
+          _ =
+            (cLocal.sum fun W a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) *
+              MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+              rw [hLocal_poly]
+      rw [hLocal_tail]
+      simpa [cAppended, appendWord] using
+        minorWord_finsupp_sum_mul_tail (k := k) cLocal rest
+    have hAppended_degree :
+        ∀ W : MinorWord m n, cAppended W ≠ 0 →
+          MinorWord.degree W = H.t + MinorWord.degree ⟨G :: rest⟩ := by
+      exact finsupp_mapDomain_support_property appendWord cLocal
+        (fun W => MinorWord.degree W = H.t + MinorWord.degree ⟨G :: rest⟩)
+        (by
+          intro W hW
+          exact swan_two_minor_support_append_degree_factor
+            H G rest (hLocal_support W hW))
+    have hAppended_length :
+        ∀ W : MinorWord m n, cAppended W ≠ 0 →
+          H.t ≤ MinorWord.length W := by
+      exact finsupp_mapDomain_support_property appendWord cLocal
+        (fun W => H.t ≤ MinorWord.length W)
+        (by
+          intro W hW
+          exact swan_two_minor_support_append_length_nondec
+            (I := H.idx) (J := G.idx) (W := W) rest
+            (hLocal_support W hW))
+    have hAppended_head_lt :
+        ∀ W : MinorWord m n, cAppended W ≠ 0 →
+          ∃ F G' : MinorFactor m n,
+            W.factors = F :: G' :: rest ∧
+            MinorIndex.PairLE F.idx G'.idx ∧
+            MinorIndex.PairLT F.idx H.idx := by
+      exact finsupp_mapDomain_support_property appendWord cLocal
+        (fun W =>
+          ∃ F G' : MinorFactor m n,
+            W.factors = F :: G' :: rest ∧
+            MinorIndex.PairLE F.idx G'.idx ∧
+            MinorIndex.PairLT F.idx H.idx)
+        (by
+          intro W hW
+          exact swan_two_minor_support_append_head_lt
+            (I := H.idx) (J := G.idx) (W := W) rest
+            (hLocal_support W hW))
+    have hAppended_straighten :
+        ∀ W : MinorWord m n, cAppended W ≠ 0 →
+          ∃ c : StandardMinorWord m n →₀ k,
+            MinorWord.toPolynomial (k := k) W =
+              c.sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+            ∧
+            (∀ U, c U ≠ 0 →
+              MinorWord.degree U.1 = MinorWord.degree W)
+            ∧
+            (∀ U, c U ≠ 0 → H.t ≤ MinorWord.length U.1)
+            ∧
+            (∀ U, c U ≠ 0 →
+              MinorWord.factorCount U.1 ≤ MinorWord.factorCount W) := by
+      intro W hW
+      rcases hAppended_head_lt W hW with ⟨F, G', hWfac, _hFG', hFH⟩
+      have hFpos : 0 < F.t :=
+        lt_of_lt_of_le hH hFH.pairLE.size_le
+      have hTailStraight :
+          ∃ cTail : StandardMinorWord m n →₀ k,
+            MinorWord.toPolynomial (k := k) ⟨G' :: rest⟩ =
+              cTail.sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+            ∧
+            (∀ U, cTail U ≠ 0 →
+              MinorWord.degree U.1 =
+                MinorWord.degree (⟨G' :: rest⟩ : MinorWord m n))
+            ∧
+            (∀ U, cTail U ≠ 0 →
+              MinorWord.factorCount U.1 ≤
+                MinorWord.factorCount (⟨G' :: rest⟩ : MinorWord m n)) := by
+        by_cases hG' : G'.t = 0
+        · refine ⟨Finsupp.single restStd (1 : k), ?_, ?_, ?_⟩
+          · have hGpoly :
+                MinorFactor.toPolynomial (k := k) G' = 1 :=
+              MinorFactor.toPolynomial_eq_one_of_size_zero G' hG'
+            simp [restStd, hGpoly]
+          · intro U hU
+            have hU_eq : U = restStd := by
+              by_contra hne
+              have hzero : (Finsupp.single restStd (1 : k)) U = 0 := by
+                rw [Finsupp.single_eq_of_ne hne]
+              exact hU hzero
+            subst U
+            simp [restStd, MinorFactor.degree, hG']
+          · intro U hU
+            have hU_eq : U = restStd := by
+              by_contra hne
+              have hzero : (Finsupp.single restStd (1 : k)) U = 0 := by
+                rw [Finsupp.single_eq_of_ne hne]
+              exact hU hzero
+            subst U
+            simp [restStd, MinorWord.factorCount]
+        · have hGpos' : 0 < G'.t := Nat.pos_of_ne_zero hG'
+          rcases minorFactor_mul_standardMinorWord_exists_filtered_strong
+              (m := m) (n := n) (k := k) G' hGpos' restStd with
+            ⟨cTail, hTail_poly, hTail_degree, _hTail_length,
+              hTail_factorCount⟩
+          refine ⟨cTail, hTail_poly, ?_, ?_⟩
+          · intro U hU
+            have hdeg := hTail_degree U hU
+            simpa [restStd, MinorFactor.degree] using hdeg
+          · intro U hU
+            have hcnt := hTail_factorCount U hU
+            simpa [restStd, MinorWord.factorCount] using hcnt
+      rcases hTailStraight with
+        ⟨cTail, hTail_poly, hTail_degree, hTail_factorCount⟩
+      let insertWitness :
+          (S' : { S' : StandardMinorWord m n // cTail S' ≠ 0 }) →
+            ∃ c : StandardMinorWord m n →₀ k,
+              MinorWord.toPolynomial (k := k) ⟨F :: S'.1.1.factors⟩ =
+                c.sum (fun U a =>
+                  MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+              ∧
+              (∀ U, c U ≠ 0 →
+                MinorWord.degree U.1 = F.t + MinorWord.degree S'.1.1)
+              ∧
+              (∀ U, c U ≠ 0 → F.t ≤ MinorWord.length U.1)
+              ∧
+              (∀ U, c U ≠ 0 →
+                MinorWord.factorCount U.1 ≤
+                  MinorWord.factorCount S'.1.1 + 1) :=
+        fun S' =>
+          minorFactor_mul_standardMinorWord_exists_filtered_strong
+            (m := m) (n := n) (k := k) F hFpos S'.1
+      let insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k :=
+        fun S' =>
+          if hS' : cTail S' ≠ 0 then
+            Classical.choose (insertWitness ⟨S', hS'⟩)
+          else 0
+      have hinsert_poly :
+          ∀ S' : StandardMinorWord m n, cTail S' ≠ 0 →
+            MinorWord.toPolynomial (k := k) ⟨F :: S'.1.factors⟩ =
+              (insertCoeff S').sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+        intro S' hS'
+        have hspec := Classical.choose_spec (insertWitness ⟨S', hS'⟩)
+        simpa [insertCoeff, hS'] using hspec.1
+      have hinsert_degree :
+          ∀ S' U : StandardMinorWord m n, cTail S' ≠ 0 →
+            insertCoeff S' U ≠ 0 →
+              MinorWord.degree U.1 = F.t + MinorWord.degree S'.1 := by
+        intro S' U hS' hU
+        have hspec := Classical.choose_spec (insertWitness ⟨S', hS'⟩)
+        exact hspec.2.1 U (by simpa [insertCoeff, hS'] using hU)
+      have hinsert_length :
+          ∀ S' U : StandardMinorWord m n, cTail S' ≠ 0 →
+            insertCoeff S' U ≠ 0 →
+              F.t ≤ MinorWord.length U.1 := by
+        intro S' U hS' hU
+        have hspec := Classical.choose_spec (insertWitness ⟨S', hS'⟩)
+        exact hspec.2.2.1 U (by simpa [insertCoeff, hS'] using hU)
+      have hinsert_factorCount :
+          ∀ S' U : StandardMinorWord m n, cTail S' ≠ 0 →
+            insertCoeff S' U ≠ 0 →
+              MinorWord.factorCount U.1 ≤ MinorWord.factorCount S'.1 + 1 := by
+        intro S' U hS' hU
+        have hspec := Classical.choose_spec (insertWitness ⟨S', hS'⟩)
+        exact hspec.2.2.2 U (by simpa [insertCoeff, hS'] using hU)
+      rcases minorWord_head_insert_after_tail_straightening_factorCount
+          (k := k) F ⟨G' :: rest⟩ cTail hTail_poly hTail_degree
+          hTail_factorCount insertCoeff hinsert_poly hinsert_degree
+          hinsert_length hinsert_factorCount with
+        ⟨c, hpoly, hdegree, hlengthF, hfactorCount⟩
+      refine ⟨c, ?_, ?_, ?_, ?_⟩
+      · cases W with
+        | mk factors =>
+            have hWfac' : factors = F :: G' :: rest := hWfac
+            subst factors
+            simpa using hpoly
+      · intro U hU
+        have hdeg := hdegree U hU
+        cases W with
+        | mk factors =>
+            have hWfac' : factors = F :: G' :: rest := hWfac
+            subst factors
+            simpa using hdeg
+      · intro U hU
+        exact le_trans hFH.pairLE.size_le (hlengthF U hU)
+      · intro U hU
+        have hcnt := hfactorCount U hU
+        cases W with
+        | mk factors =>
+            have hWfac' : factors = F :: G' :: rest := hWfac
+            subst factors
+            simpa using hcnt
+    let straighten : MinorWord m n → StandardMinorWord m n →₀ k :=
+      fun W =>
+        if hW : cAppended W ≠ 0 then
+          Classical.choose (hAppended_straighten W hW)
+        else 0
+    have hstraighten_poly :
+        ∀ W : MinorWord m n, cAppended W ≠ 0 →
+          MinorWord.toPolynomial (k := k) W =
+            (straighten W).sum (fun U a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+      intro W hW
+      have hspec := Classical.choose_spec (hAppended_straighten W hW)
+      simpa [straighten, hW] using hspec.1
+    have hstraighten_degree :
+        ∀ W U, cAppended W ≠ 0 → straighten W U ≠ 0 →
+          MinorWord.degree U.1 = MinorWord.degree W := by
+      intro W U hW hU
+      have hspec := Classical.choose_spec (hAppended_straighten W hW)
+      exact hspec.2.1 U (by simpa [straighten, hW] using hU)
+    have hstraighten_length :
+        ∀ W U, cAppended W ≠ 0 → straighten W U ≠ 0 →
+          H.t ≤ MinorWord.length U.1 := by
+      intro W U hW hU
+      have hspec := Classical.choose_spec (hAppended_straighten W hW)
+      exact hspec.2.2.1 U (by simpa [straighten, hW] using hU)
+    have hstraighten_factorCount :
+        ∀ W U, cAppended W ≠ 0 → straighten W U ≠ 0 →
+          MinorWord.factorCount U.1 ≤ MinorWord.factorCount W := by
+      intro W U hW hU
+      have hspec := Classical.choose_spec (hAppended_straighten W hW)
+      exact hspec.2.2.2 U (by simpa [straighten, hW] using hU)
+    rcases minorWord_finsupp_bind_after_local_expansion_factorCount
+        (k := k) cAppended straighten hstraighten_poly hstraighten_degree
+        hstraighten_factorCount with ⟨c, hbind_poly, hbind_support⟩
+    refine ⟨c, ?_, ?_, ?_, ?_⟩
+    · rw [hLocal_tail_appended]
+      exact hbind_poly
+    · intro U hU
+      rcases hbind_support U hU with ⟨W, hW, _hWU, hUdeg, _hUcount⟩
+      have hWdeg := hAppended_degree W hW
+      have hSdeg :
+          MinorWord.degree S.1 =
+            MinorWord.degree (⟨G :: rest⟩ : MinorWord m n) := by
+        cases S with
+        | mk W hpair =>
+            cases W with
+            | mk factors =>
+                have hfac' : factors = G :: rest := hfac
+                subst factors
+                rfl
+      rw [hUdeg, hWdeg, hSdeg]
+    · intro U hU
+      rcases hbind_support U hU with ⟨W, hW, hWU, _hUdeg, _hUcount⟩
+      exact hstraighten_length W U hW hWU
+    · intro U hU
+      rcases hbind_support U hU with ⟨W, hW, _hWU, _hUdeg, hUcount⟩
+      rcases hAppended_head_lt W hW with ⟨F, G', hWfac, _hFG', _hFH⟩
+      have hWcount :
+          MinorWord.factorCount W = rest.length + 2 := by
+        cases W with
+        | mk factors =>
+            have hWfac' : factors = F :: G' :: rest := hWfac
+            subst factors
+            simp [MinorWord.factorCount]
+      have hScount :
+          MinorWord.factorCount S.1 + 1 = rest.length + 2 := by
+        cases S with
+        | mk W hpair =>
+            cases W with
+            | mk factors =>
+                have hfac' : factors = G :: rest := hfac
+                subst factors
+                simp [MinorWord.factorCount]
+      omega
+termination_by
+  (MinorWord.factorCount S.1 + 1, H)
+decreasing_by
+  all_goals
+    simp_wf
+    first
+    | exact minorFactor_insert_tail_measure_lt
+        (S := S) (H := H) (G := G) (G' := G') (rest := rest) hfac
+    | exact minorFactor_insert_head_measure_lt
+        (S := S) (H := H) (F := F) (G := G) (rest := rest)
+        hfac (hTail_factorCount _ (by
+          first
+          | exact S'.2
+          )) hFH
+
+/-- Filtered insertion of a positive head factor into a standard minor word.
+
+This is the filtered part of Swan Corollary 5.1.  It should be proved by
+well-founded induction on `H` using `MinorFactor.pairLT_wellFounded`; the
+nonordered branch applies `swan_two_minor_straightening_relation` to the head
+and the first factor of the standard tail, erases any zero-size unit factors,
+and recurses on the new first factor supplied by `MinorIndex.PairLT`. -/
+theorem minorFactor_mul_standardMinorWord_exists_filtered
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (H : MinorFactor m n) (hH : 0 < H.t)
+    (S : StandardMinorWord m n) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = H.t + MinorWord.degree S.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        H.t ≤ MinorWord.length U.1) := by
+  classical
+  rcases minorFactor_mul_standardMinorWord_exists_filtered_strong
+      (m := m) (n := n) (k := k) H hH S with
+    ⟨c, hpoly, hdegree, hlength, _hfactorCount⟩
+  exact ⟨c, hpoly, hdegree, hlength⟩
+
+lemma minorWord_cons_of_tail_straightening_exists_degree
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (F : MinorFactor m n) (tail : MinorWord m n)
+    (hTail :
+      ∃ cTail : StandardMinorWord m n →₀ k,
+        MinorWord.toPolynomial (k := k) tail =
+          cTail.sum (fun S a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1)
+        ∧
+        (∀ S, cTail S ≠ 0 →
+          MinorWord.degree S.1 = MinorWord.degree tail)) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) ⟨F :: tail.factors⟩ =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 =
+          MinorWord.degree (⟨F :: tail.factors⟩ : MinorWord m n)) := by
+  classical
+  rcases hTail with ⟨cTail, hTail_poly, hTail_degree⟩
+  by_cases hF : F.t = 0
+  · refine ⟨cTail, ?_, ?_⟩
+    · have hFpoly :
+          MinorFactor.toPolynomial (k := k) F = 1 :=
+        MinorFactor.toPolynomial_eq_one_of_size_zero F hF
+      simp only [MinorWord.toPolynomial_cons, hFpoly, one_mul]
+      exact hTail_poly
+    · intro U hU
+      have hUdeg := hTail_degree U hU
+      simpa [MinorFactor.degree, hF] using hUdeg
+  · have hFpos : 0 < F.t := Nat.pos_of_ne_zero hF
+    let insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k :=
+      fun S => Classical.choose
+        (minorFactor_mul_standardMinorWord_exists_filtered
+          (m := m) (n := n) (k := k) F hFpos S)
+    have hinsert_poly :
+        ∀ S : StandardMinorWord m n, cTail S ≠ 0 →
+          MinorWord.toPolynomial (k := k) ⟨F :: S.1.factors⟩ =
+            (insertCoeff S).sum (fun U a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+      intro S _hS
+      have hspec := Classical.choose_spec
+        (minorFactor_mul_standardMinorWord_exists_filtered
+          (m := m) (n := n) (k := k) F hFpos S)
+      simpa [insertCoeff] using hspec.1
+    have hinsert_degree :
+        ∀ S U : StandardMinorWord m n, cTail S ≠ 0 →
+          insertCoeff S U ≠ 0 →
+            MinorWord.degree U.1 = F.t + MinorWord.degree S.1 := by
+      intro S U _hS hU
+      have hspec := Classical.choose_spec
+        (minorFactor_mul_standardMinorWord_exists_filtered
+          (m := m) (n := n) (k := k) F hFpos S)
+      exact hspec.2.1 U (by simpa [insertCoeff] using hU)
+    exact minorWord_head_insert_after_tail_straightening
+      (k := k) F tail cTail hTail_poly hTail_degree
+      insertCoeff hinsert_poly hinsert_degree
+
+/-- Degree-preserving straightening on arbitrary minor words.
+
+This unfiltered statement is the recursive tool for straightening tails.  Unit
+factors should be erased by `MinorWord.eraseUnits` before applying the
+head/tail recursion. -/
+theorem minorWord_straightening_exists_degree
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (W : MinorWord m n) :
+    ∃ c : StandardMinorWord m n →₀ k,
+      MinorWord.toPolynomial (k := k) W =
+        c.sum (fun U a =>
+          MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      ∧
+      (∀ U, c U ≠ 0 →
+        MinorWord.degree U.1 = MinorWord.degree W) := by
+  classical
+  by_cases hW : MinorWord.PairwisePairLE W
+  · exact minorWord_straightening_exists_degree_of_pairwise (k := k) W hW
+  · have hcount : 2 ≤ MinorWord.factorCount W :=
+      MinorWord.two_le_factorCount_of_not_pairwisePairLE hW
+    rcases MinorWord.exists_two_cons_of_two_le_factorCount hcount with
+      ⟨F, G, rest, hfac⟩
+    by_cases hFG : MinorIndex.PairLE F.idx G.idx
+    · have hTail :
+          ¬ MinorWord.PairwisePairLE ⟨G :: rest⟩ := by
+        have hWcons : ¬ MinorWord.PairwisePairLE ⟨F :: G :: rest⟩ := by
+          intro hpair
+          apply hW
+          cases W with
+          | mk factors =>
+              rw [MinorWord.PairwisePairLE, hfac]
+              simpa [MinorWord.PairwisePairLE] using hpair
+        exact MinorWord.tail_not_pairwisePairLE_of_cons_cons_not_pairwise_of_head_le
+          hFG hWcons
+      have hTailStraight :
+          ∃ c : StandardMinorWord m n →₀ k,
+            MinorWord.toPolynomial (k := k) ⟨G :: rest⟩ =
+              c.sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+            ∧
+            (∀ U, c U ≠ 0 →
+              MinorWord.degree U.1 =
+                MinorWord.degree (⟨G :: rest⟩ : MinorWord m n)) :=
+        minorWord_straightening_exists_degree (k := k) ⟨G :: rest⟩
+      rcases minorWord_cons_of_tail_straightening_exists_degree
+          (k := k) F ⟨G :: rest⟩ hTailStraight with
+        ⟨c, hpoly, hdegree⟩
+      refine ⟨c, ?_, ?_⟩
+      · cases W with
+        | mk factors =>
+            have hfac' : factors = F :: G :: rest := hfac
+            subst factors
+            simpa using hpoly
+      · intro U hU
+        have hdeg := hdegree U hU
+        cases W with
+        | mk factors =>
+            have hfac' : factors = F :: G :: rest := hfac
+            subst factors
+            simpa using hdeg
+    · -- TODO: apply the two-minor straightening relation to `F * G`, then
+      -- recursively straighten each appended local word.
+      have hFpos_or_zero : F.t = 0 ∨ 0 < F.t := Nat.eq_zero_or_pos F.t
+      rcases hFpos_or_zero with hFzero | hFpos
+      · have hTailStraight :
+            ∃ c : StandardMinorWord m n →₀ k,
+              MinorWord.toPolynomial (k := k) ⟨G :: rest⟩ =
+                c.sum (fun U a =>
+                  MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+              ∧
+              (∀ U, c U ≠ 0 →
+                MinorWord.degree U.1 =
+                  MinorWord.degree (⟨G :: rest⟩ : MinorWord m n)) :=
+          minorWord_straightening_exists_degree (k := k) ⟨G :: rest⟩
+        rcases minorWord_cons_of_tail_straightening_exists_degree
+            (k := k) F ⟨G :: rest⟩ hTailStraight with
+          ⟨c, hpoly, hdegree⟩
+        refine ⟨c, ?_, ?_⟩
+        · cases W with
+          | mk factors =>
+              have hfac' : factors = F :: G :: rest := hfac
+              subst factors
+              simpa using hpoly
+        · intro U hU
+          have hdeg := hdegree U hU
+          cases W with
+          | mk factors =>
+              have hfac' : factors = F :: G :: rest := hfac
+              subst factors
+              simpa using hdeg
+      have hGpos : 0 < G.t := by
+        by_cases hGzero : G.t = 0
+        · exfalso
+          apply hFG
+          refine MinorIndex.PairLE.of_components ?_ ?_
+          · simp [hGzero]
+          · intro j
+            exact False.elim (Nat.not_lt_zero j.val (by
+              simpa [hGzero] using j.isLt))
+        · exact Nat.pos_of_ne_zero hGzero
+      rcases swan_two_minor_straightening_relation
+          (m := m) (n := n) (k := k)
+          hFpos hGpos F.idx G.idx hFG with
+        ⟨cLocal, hLocal_poly, hLocal_support⟩
+      let appendWord : MinorWord m n → MinorWord m n :=
+        fun W => (⟨W.factors ++ rest⟩ : MinorWord m n)
+      let cAppended : MinorWord m n →₀ k :=
+        Finsupp.mapDomain appendWord cLocal
+      have hLocal_appended :
+          MinorWord.toPolynomial (k := k) ⟨F :: G :: rest⟩ =
+            cAppended.sum fun W a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) W := by
+        calc
+          MinorWord.toPolynomial (k := k) ⟨F :: G :: rest⟩
+              =
+            (cLocal.sum fun W a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) W) *
+              MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+              simp only [MinorWord.toPolynomial_cons,
+                MinorFactor.toPolynomial]
+              calc
+                genericMinor F.idx *
+                    (genericMinor G.idx *
+                      MinorWord.toPolynomial (k := k) ⟨rest⟩)
+                    =
+                  (genericMinor F.idx * genericMinor G.idx) *
+                    MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+                    ring
+                _ =
+                  (cLocal.sum fun W a =>
+                      MvPolynomial.C a *
+                        MinorWord.toPolynomial (k := k) W) *
+                    MinorWord.toPolynomial (k := k) ⟨rest⟩ := by
+                    rw [hLocal_poly]
+          _ =
+            cAppended.sum fun W a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) W := by
+              simpa [cAppended, appendWord] using
+                minorWord_finsupp_sum_mul_tail (k := k) cLocal rest
+      have hAppended_degree :
+          ∀ W' : MinorWord m n, cAppended W' ≠ 0 →
+            MinorWord.degree W' =
+              MinorWord.degree (⟨F :: G :: rest⟩ : MinorWord m n) := by
+        intro W' hW'
+        have hdeg :
+            MinorWord.degree W' =
+              F.t + MinorWord.degree ⟨G :: rest⟩ :=
+          finsupp_mapDomain_support_property appendWord cLocal
+            (fun W' => MinorWord.degree W' =
+              F.t + MinorWord.degree ⟨G :: rest⟩)
+            (by
+              intro W hW
+              exact swan_two_minor_support_append_degree_factor
+                F G rest (hLocal_support W hW))
+            W' hW'
+        simpa [MinorFactor.degree, Nat.add_assoc] using hdeg
+      have hAppended_head :
+          ∀ W' : MinorWord m n, cAppended W' ≠ 0 →
+            ∃ F' G' : MinorFactor m n,
+              W'.factors = F' :: G' :: rest ∧
+              MinorIndex.PairLE F'.idx G'.idx ∧
+              MinorIndex.PairLT F'.idx F.idx := by
+        exact finsupp_mapDomain_support_property appendWord cLocal
+          (fun W' =>
+            ∃ F' G' : MinorFactor m n,
+              W'.factors = F' :: G' :: rest ∧
+              MinorIndex.PairLE F'.idx G'.idx ∧
+              MinorIndex.PairLT F'.idx F.idx)
+          (by
+            intro W hW
+            exact swan_two_minor_support_append_head_lt
+              (I := F.idx) (J := G.idx) (W := W) rest
+              (hLocal_support W hW))
+      have hAppended_straighten :
+          ∀ W' : MinorWord m n, cAppended W' ≠ 0 →
+            ∃ c : StandardMinorWord m n →₀ k,
+              MinorWord.toPolynomial (k := k) W' =
+                c.sum (fun U a =>
+                  MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+              ∧
+              (∀ U, c U ≠ 0 →
+                MinorWord.degree U.1 = MinorWord.degree W') := by
+        intro W' hW'
+        rcases hAppended_head W' hW' with ⟨F', G', hWfac, _hFG', _hFlt⟩
+        have hTailStraight :
+            ∃ c : StandardMinorWord m n →₀ k,
+              MinorWord.toPolynomial (k := k) ⟨G' :: rest⟩ =
+                c.sum (fun U a =>
+                  MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+              ∧
+              (∀ U, c U ≠ 0 →
+                MinorWord.degree U.1 =
+                  MinorWord.degree (⟨G' :: rest⟩ : MinorWord m n)) :=
+          minorWord_straightening_exists_degree (k := k) ⟨G' :: rest⟩
+        rcases minorWord_cons_of_tail_straightening_exists_degree
+            (k := k) F' ⟨G' :: rest⟩ hTailStraight with
+          ⟨c, hpoly, hdegree⟩
+        refine ⟨c, ?_, ?_⟩
+        · cases W' with
+          | mk factors =>
+              have hWfac' : factors = F' :: G' :: rest := hWfac
+              subst factors
+              simpa using hpoly
+        · intro U hU
+          have hdeg := hdegree U hU
+          cases W' with
+          | mk factors =>
+              have hWfac' : factors = F' :: G' :: rest := hWfac
+              subst factors
+              simpa using hdeg
+      let straighten : MinorWord m n → StandardMinorWord m n →₀ k :=
+        fun W' =>
+          if hW' : cAppended W' ≠ 0 then
+            Classical.choose (hAppended_straighten W' hW')
+          else 0
+      have hstraighten_poly :
+          ∀ W' : MinorWord m n, cAppended W' ≠ 0 →
+            MinorWord.toPolynomial (k := k) W' =
+              (straighten W').sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+        intro W' hW'
+        have hspec := Classical.choose_spec (hAppended_straighten W' hW')
+        simpa [straighten, hW'] using hspec.1
+      have hstraighten_degree :
+          ∀ W' : MinorWord m n, ∀ U : StandardMinorWord m n,
+            cAppended W' ≠ 0 → straighten W' U ≠ 0 →
+              MinorWord.degree U.1 = MinorWord.degree W' := by
+        intro W' U hW' hU
+        have hspec := Classical.choose_spec (hAppended_straighten W' hW')
+        exact hspec.2 U (by simpa [straighten, hW'] using hU)
+      rcases minorWord_finsupp_bind_after_local_expansion
+          (k := k) cAppended straighten hstraighten_poly
+          hstraighten_degree with ⟨c, hbind_poly, hbind_support⟩
+      refine ⟨c, ?_, ?_⟩
+      · cases W with
+        | mk factors =>
+            have hfac' : factors = F :: G :: rest := hfac
+            subst factors
+            rw [hLocal_appended]
+            exact hbind_poly
+      · intro U hU
+        rcases hbind_support U hU with ⟨W', hW', _hWU, hUdeg⟩
+        rw [hUdeg, hAppended_degree W' hW']
+        cases W with
+        | mk factors =>
+            have hfac' : factors = F :: G :: rest := hfac
+            subst factors
+            rfl
+termination_by MinorWord.factorCount W
+decreasing_by
+  all_goals
+    cases W with
+    | mk factors =>
+        simp [MinorWord.factorCount] at hfac ⊢
+        subst factors
+        simp
+
+/-- Swan filtered existence input: every bitableau straightens to standard
+bitableaux of the same degree and no smaller length. -/
+theorem straightening_law_exists_filtered
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n) :
+    ∃ c : StandardYoungBitableau m n →₀ k,
+      YoungBitableau.toPolynomial B =
+        c.sum (fun S a =>
+          MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)
+      ∧
+      (∀ S, c S ≠ 0 →
+        YoungBitableau.degree S.1 = YoungBitableau.degree B)
+      ∧
+      (∀ S, c S ≠ 0 →
+        YoungBitableau.length B ≤ YoungBitableau.length S.1) := by
+  classical
+  by_cases hv : 0 < B.v
+  · let H : MinorFactor m n :=
+      { t := B.size ⟨0, hv⟩, idx := B.minorindex ⟨0, hv⟩ }
+    let T : MinorWord m n :=
+      MinorWord.eraseUnits (YoungBitableau.toMinorWord (YoungBitableau.tail B hv))
+    have hH : 0 < H.t := by
+      simpa [H] using B.size_pos ⟨0, hv⟩
+    rcases minorWord_straightening_exists_degree (m := m) (n := n) (k := k) T with
+      ⟨dTail, hdTail_poly, hdTail_degree⟩
+    have hinsert :
+        ∀ S : StandardMinorWord m n, dTail S ≠ 0 →
+          ∃ cS : StandardMinorWord m n →₀ k,
+            MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+              cS.sum (fun U a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+            ∧
+            (∀ U, cS U ≠ 0 →
+              MinorWord.degree U.1 = H.t + MinorWord.degree S.1)
+            ∧
+            (∀ U, cS U ≠ 0 →
+              H.t ≤ MinorWord.length U.1) := by
+      intro S _hS
+      exact minorFactor_mul_standardMinorWord_exists_filtered
+        (m := m) (n := n) (k := k) H hH S
+    /- Interface layer for nonempty Young bitableaux:
+
+       Since Young-bitableau sizes are weakly decreasing,
+       `YoungBitableau.length B = H.t`.  Straighten the tail as a degree-only
+       minor word, insert the positive head with the filtered insertion theorem,
+       then transport standard minor words back to standard Young bitableaux
+       after deleting unit factors. -/
+    let insertCoeff : StandardMinorWord m n → StandardMinorWord m n →₀ k :=
+      fun S =>
+        if hS : dTail S ≠ 0 then Classical.choose (hinsert S hS) else 0
+    have hinsert_poly :
+        ∀ S : StandardMinorWord m n, dTail S ≠ 0 →
+          MinorWord.toPolynomial (k := k) ⟨H :: S.1.factors⟩ =
+            (insertCoeff S).sum (fun U a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+      intro S hS
+      have hspec := Classical.choose_spec (hinsert S hS)
+      simpa [insertCoeff, hS] using hspec.1
+    have hinsert_degree :
+        ∀ S : StandardMinorWord m n, ∀ U : StandardMinorWord m n,
+          dTail S ≠ 0 → insertCoeff S U ≠ 0 →
+            MinorWord.degree U.1 = H.t + MinorWord.degree S.1 := by
+      intro S U hS hU
+      have hspec := Classical.choose_spec (hinsert S hS)
+      exact hspec.2.1 U (by simpa [insertCoeff, hS] using hU)
+    have hinsert_length :
+        ∀ S : StandardMinorWord m n, ∀ U : StandardMinorWord m n,
+          dTail S ≠ 0 → insertCoeff S U ≠ 0 →
+            H.t ≤ MinorWord.length U.1 := by
+      intro S U hS hU
+      have hspec := Classical.choose_spec (hinsert S hS)
+      exact hspec.2.2 U (by simpa [insertCoeff, hS] using hU)
+    let cMinor : StandardMinorWord m n →₀ k :=
+      finsuppScalarBind dTail insertCoeff
+    have hminor_poly :
+        YoungBitableau.toPolynomial (k := k) B =
+          cMinor.sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1) := by
+      rw [YoungBitableau.toPolynomial_eq_head_minorWord_mul_erased_tail
+        (k := k) B hv]
+      change
+        MinorWord.toPolynomial (k := k) ⟨H :: T.factors⟩ =
+          cMinor.sum (fun U a =>
+            MvPolynomial.C a * MinorWord.toPolynomial (k := k) U.1)
+      have hhead_tail :
+          MinorWord.toPolynomial (k := k) ⟨H :: T.factors⟩ =
+            dTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k)
+                ⟨H :: S.1.factors⟩ := by
+        calc
+          MinorWord.toPolynomial (k := k) ⟨H :: T.factors⟩
+              =
+            MinorFactor.toPolynomial (k := k) H *
+              MinorWord.toPolynomial (k := k) T := by
+              simp
+          _ =
+            MinorFactor.toPolynomial (k := k) H *
+              (dTail.sum fun S a =>
+                MvPolynomial.C a * MinorWord.toPolynomial (k := k) S.1) := by
+              rw [hdTail_poly]
+          _ =
+            dTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k)
+                ⟨H :: S.1.factors⟩ := by
+              rw [Finsupp.mul_sum]
+              apply Finsupp.sum_congr
+              intro S a
+              simp [mul_assoc, mul_left_comm, mul_comm]
+      rw [hhead_tail]
+      have hdist :
+          (dTail.sum fun S a =>
+              MvPolynomial.C a * MinorWord.toPolynomial (k := k)
+                ⟨H :: S.1.factors⟩) =
+            dTail.sum fun S a =>
+              MvPolynomial.C a *
+                (insertCoeff S).sum (fun U b =>
+                  MvPolynomial.C b * MinorWord.toPolynomial (k := k) U.1) := by
+        apply Finsupp.sum_congr
+        intro S a
+        by_cases hS : dTail S = 0
+        · simp [hS]
+        · rw [hinsert_poly S hS]
+      rw [hdist]
+      rw [← finsuppScalarBind_polynomial_sum
+        (c := dTail) (d := insertCoeff)
+        (v := fun U : StandardMinorWord m n =>
+          MinorWord.toPolynomial (k := k) U.1)]
+    have hminor_degree :
+        ∀ U : StandardMinorWord m n, cMinor U ≠ 0 →
+          MinorWord.degree U.1 = YoungBitableau.degree B := by
+      intro U hU
+      rcases finsuppScalarBind_apply_ne_zero_exists
+          dTail insertCoeff hU with ⟨S, hS, hSU⟩
+      have hUdeg := hinsert_degree S U hS hSU
+      have hSdeg := hdTail_degree S hS
+      rw [hUdeg, hSdeg]
+      exact YoungBitableau.degree_eq_head_minorWord_add_erased_tail B hv
+    have hminor_length :
+        ∀ U : StandardMinorWord m n, cMinor U ≠ 0 →
+          YoungBitableau.length B ≤ MinorWord.length U.1 := by
+      intro U hU
+      rcases finsuppScalarBind_apply_ne_zero_exists
+          dTail insertCoeff hU with ⟨S, hS, hSU⟩
+      have hlen := hinsert_length S U hS hSU
+      simpa [H, YoungBitableau.length_eq_head_size B hv] using hlen
+    rcases standardMinorWord_pushforward_toYoungBitableauAfterEraseUnits
+        (m := m) (n := n) (k := k) cMinor with
+      ⟨cY, hpush_poly, hpush_support⟩
+    refine ⟨cY, ?_, ?_, ?_⟩
+    · rw [hminor_poly, hpush_poly]
+    · intro S hS
+      rcases hpush_support S hS with ⟨U, hU, hUS⟩
+      rw [← hUS]
+      rw [StandardMinorWord.toYoungBitableauAfterEraseUnits_degree]
+      exact hminor_degree U hU
+    · intro S hS
+      rcases hpush_support S hS with ⟨U, hU, hUS⟩
+      rw [← hUS]
+      rw [StandardMinorWord.toYoungBitableauAfterEraseUnits_length]
+      exact hminor_length U hU
+  · have hBstd : YoungBitableau.IsStandard B :=
+      YoungBitableau.isStandard_of_v_le_one (B := B) (by omega)
+    exact straightening_law_exists_filtered_of_isStandard (m := m) (n := n) (k := k) B hBstd
+
+/-- A degree-`d` monomial lies in the span of standard bitableaux of degree `d`.
+This uses filtered straightening only for existence, not for uniqueness. -/
+lemma monomial_mem_span_standardBitableau_degree
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    {d : ℕ}
+    (E : (Fin m × Fin n) →₀ ℕ)
+    (hE : Finsupp.degree E = d) :
+    MvPolynomial.monomial E (1 : k) ∈
+      Submodule.span k
+        (Set.range
+          (fun S : { S : StandardYoungBitableau m n //
+              YoungBitableau.degree S.1 = d } =>
+            YoungBitableau.toPolynomial (k := k) S.1.1)) := by
+  classical
+  let W : Submodule k (MvPolynomial (Fin m × Fin n) k) :=
+    Submodule.span k
+      (Set.range
+        (fun S : { S : StandardYoungBitableau m n //
+            YoungBitableau.degree S.1 = d } =>
+          YoungBitableau.toPolynomial (k := k) S.1.1))
+  have hmono_all :
+      MvPolynomial.monomial E (1 : k) ∈
+        Submodule.span k
+          (Set.range
+            (fun B : YoungBitableau m n =>
+              YoungBitableau.toPolynomial (k := k) B)) :=
+    monomial_mem_span_youngBitableau_toPolynomial_aux (k := k) E
+  have hcomp_all :
+      MvPolynomial.homogeneousComponent d (MvPolynomial.monomial E (1 : k)) ∈ W := by
+    refine Submodule.span_induction
+      (p := fun p _hp => MvPolynomial.homogeneousComponent d p ∈ W)
+      ?mem ?zero ?add ?smul hmono_all
+    · rintro p ⟨B, rfl⟩
+      rcases straightening_law_exists_filtered (m := m) (n := n) (k := k) B with
+        ⟨c, hpoly, hdeg, _hlen⟩
+      change MvPolynomial.homogeneousComponent d
+        (YoungBitableau.toPolynomial (k := k) B) ∈ W
+      rw [hpoly]
+      rw [homogeneousComponent_standardBitableau_finsupp_sum]
+      rw [Finsupp.sum]
+      apply Submodule.sum_mem
+      intro S hS
+      by_cases hSd : YoungBitableau.degree S.1 = d
+      · have hgen : YoungBitableau.toPolynomial (k := k) S.1 ∈ W := by
+          exact Submodule.subset_span ⟨⟨S, hSd⟩, rfl⟩
+        simpa [Finsupp.filter_apply, hSd, MvPolynomial.C_mul'] using
+          W.smul_mem (c S) hgen
+      · have hnot : S ∉ (c.filter fun S => YoungBitableau.degree S.1 = d).support := by
+          rw [Finsupp.support_filter]
+          exact fun h => hSd (Finset.mem_filter.mp h).2
+        exact False.elim (hnot hS)
+    · simp [W]
+    · intro x y _hx _hy hxW hyW
+      simpa [map_add] using W.add_mem hxW hyW
+    · intro a x _hx hxW
+      simpa [map_smul] using W.smul_mem a hxW
+  have hmono_hom :
+      MvPolynomial.homogeneousComponent d (MvPolynomial.monomial E (1 : k)) =
+        MvPolynomial.monomial E (1 : k) := by
+    have hmem :
+        MvPolynomial.monomial E (1 : k) ∈
+          MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d := by
+      rw [MvPolynomial.mem_homogeneousSubmodule]
+      simpa [hE] using
+        (MvPolynomial.isHomogeneous_monomial (R := k) (d := E) (1 : k) hE)
+    simpa using MvPolynomial.homogeneousComponent_of_mem (m := d) hmem
+  simpa [W, hmono_hom] using hcomp_all
+
+/-- In each fixed degree, the standard bitableaux of that degree span the homogeneous
+component.  This is now a filtered-straightening existence consequence. -/
+theorem span_standardBitableau_degree_eq_homogeneousSubmodule
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ) :
+    Submodule.span k
+      (Set.range
+        (fun S : { S : StandardYoungBitableau m n //
+            YoungBitableau.degree S.1 = d } =>
+          YoungBitableau.toPolynomial (k := k) S.1.1)) =
+    MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d := by
+  classical
+  let StdDeg : Type :=
+    { S : StandardYoungBitableau m n // YoungBitableau.degree S.1 = d }
+  let W : Submodule k (MvPolynomial (Fin m × Fin n) k) :=
+    Submodule.span k
+      (Set.range
+        (fun S : StdDeg => YoungBitableau.toPolynomial (k := k) S.1.1))
+  change W = MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d
+  apply le_antisymm
+  · rw [Submodule.span_le]
+    rintro p ⟨S, rfl⟩
+    change YoungBitableau.toPolynomial (k := k) S.1.1 ∈
+      MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d
+    rw [MvPolynomial.mem_homogeneousSubmodule]
+    simpa [S.2] using YoungBitableau.toPolynomial_isHomogeneous (k := k) S.1.1
+  · intro p hp
+    have hxRestrict :
+        p ∈
+          MvPolynomial.restrictSupport k
+            { E : (Fin m × Fin n) →₀ ℕ | Finsupp.degree E = d } := by
+      simpa [MvPolynomial.homogeneousSubmodule_eq_finsupp_supported,
+        MvPolynomial.restrictSupport] using hp
+    rw [MvPolynomial.restrictSupport_eq_span] at hxRestrict
+    refine Submodule.span_induction
+      (p := fun p _hp => p ∈ W)
+      ?mem ?zero ?add ?smul hxRestrict
+    · rintro p ⟨E, hEd, rfl⟩
+      exact monomial_mem_span_standardBitableau_degree
+        (m := m) (n := n) (k := k) E hEd
+    · simp [W]
+    · intro p q _hp _hq hpW hqW
+      exact W.add_mem hpW hqW
+    · intro a p _hp hpW
+      exact W.smul_mem a hpW
+
+/-- Fixed-degree standard bitableaux are linearly independent: filtered
+straightening gives spanning, and KRS gives the matching cardinality. -/
+theorem standardBitableau_degree_linearIndependent
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (d : ℕ) :
+    LinearIndependent k
+      (fun S : { S : StandardYoungBitableau m n //
+          YoungBitableau.degree S.1 = d } =>
+        YoungBitableau.toPolynomial (k := k) S.1.1) := by
+  classical
+  let StdDeg : Type :=
+    { S : StandardYoungBitableau m n // YoungBitableau.degree S.1 = d }
+  let DegreeMonomials : Type :=
+    { E : (Fin m × Fin n) →₀ ℕ // Finsupp.degree E = d }
+  have hDegreeFinite :
+      Set.Finite
+        { E : (Fin m × Fin n) →₀ ℕ | Finsupp.degree E = d } := by
+    exact (Finsupp.finite_of_degree_le (σ := Fin m × Fin n) d).subset
+      (by
+        intro E hE
+        exact le_of_eq hE)
+  haveI : Finite DegreeMonomials := hDegreeFinite.to_subtype
+  haveI : Fintype DegreeMonomials := Fintype.ofFinite DegreeMonomials
+  rcases exists_krsEquiv_of_degree m n d with ⟨κd, _hwidth⟩
+  haveI : Fintype StdDeg := Fintype.ofEquiv DegreeMonomials κd
+  have hH_finrank :
+      Module.finrank k
+          (MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d) =
+        Nat.card DegreeMonomials := by
+    calc
+      Module.finrank k
+          (MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d)
+          =
+        Module.finrank k
+          (MvPolynomial.restrictSupport k
+            { E : (Fin m × Fin n) →₀ ℕ | Finsupp.degree E = d }) := by
+            rw [MvPolynomial.homogeneousSubmodule_eq_finsupp_supported,
+              MvPolynomial.restrictSupport]
+      _ = Nat.card DegreeMonomials := by
+            rw [Module.finrank_eq_nat_card_basis
+              (MvPolynomial.basisRestrictSupport
+                (R := k)
+                { E : (Fin m × Fin n) →₀ ℕ | Finsupp.degree E = d })]
+            rfl
+  have hcard :
+      Fintype.card StdDeg =
+        (Set.range
+          (fun S : StdDeg =>
+            YoungBitableau.toPolynomial (k := k) S.1.1)).finrank k := by
+    calc
+      Fintype.card StdDeg = Fintype.card DegreeMonomials := by
+        exact (Fintype.card_congr κd).symm
+      _ = Nat.card DegreeMonomials := Fintype.card_eq_nat_card
+      _ = Module.finrank k
+            (MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d) :=
+          hH_finrank.symm
+      _ =
+          (Set.range
+            (fun S : StdDeg =>
+              YoungBitableau.toPolynomial (k := k) S.1.1)).finrank k := by
+        rw [Set.finrank]
+        rw [span_standardBitableau_degree_eq_homogeneousSubmodule
+          (m := m) (n := n) (k := k) d]
+  exact (linearIndependent_iff_card_eq_finrank_span).2 hcard
+
+/-- Polynomial-level linear independence of standard bitableaux, supplied independently
+from straightening uniqueness to avoid a circular proof. -/
+theorem straightening_law_standardBitableau_linearIndependent
+    {m n : ℕ}
+    {k : Type*} [Field k] :
+    LinearIndependent k
+      (fun S : StandardYoungBitableau m n =>
+        YoungBitableau.toPolynomial (k := k) S.1) := by
+  apply standardBitableau_linearIndependent_of_degreewise
+  intro d
+  exact standardBitableau_degree_linearIndependent
+    (m := m) (n := n) (k := k) d
+
+/-- Existence of a polynomial expansion by standard bitableaux.  This is the spanning
+part of straightening. -/
+theorem straightening_law_polynomial_exists
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n) :
+    ∃ c : StandardYoungBitableau m n →₀ k,
+      YoungBitableau.toPolynomial B
+        =
+      c.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1) := by
+  rcases straightening_law_exists_filtered (m := m) (n := n) (k := k) B with
+    ⟨c, hpoly, _hdegree, _hlength⟩
+  exact ⟨c, hpoly⟩
+
+/-- Existence and uniqueness of the polynomial expansion by standard bitableaux. -/
+theorem straightening_law_polynomial_exists_unique
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n) :
+    ∃! c : StandardYoungBitableau m n →₀ k,
+      YoungBitableau.toPolynomial B
+        =
+      c.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1) := by
+  rcases straightening_law_polynomial_exists (m := m) (n := n) (k := k) B with
+    ⟨c, hc⟩
+  refine ⟨c, hc, ?_⟩
+  intro d hd
+  exact straightening_law_unique_of_linearIndependent
+    (m := m) (n := n) (k := k)
+    (straightening_law_standardBitableau_linearIndependent
+      (m := m) (n := n) (k := k))
+    B d c hd hc
+
+/-- Degree support for the unique straightening expansion. -/
+theorem straightening_law_degree_support
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (c : StandardYoungBitableau m n →₀ k)
+    (hpoly :
+      YoungBitableau.toPolynomial B
+        =
+      c.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)) :
+    ∀ S : StandardYoungBitableau m n,
+      c S ≠ 0 → YoungBitableau.degree S.1 = YoungBitableau.degree B := by
+  rcases straightening_law_exists_filtered (m := m) (n := n) (k := k) B with
+    ⟨d, hdpoly, hddegree, _hdlength⟩
+  have hcd : c = d := by
+    exact straightening_law_unique_of_linearIndependent
+      (m := m) (n := n) (k := k)
+      (straightening_law_standardBitableau_linearIndependent
+        (m := m) (n := n) (k := k))
+      B c d hpoly hdpoly
+  intro S hS
+  rw [hcd] at hS
+  exact hddegree S hS
+
+/-- Length support for the unique straightening expansion. -/
+theorem straightening_law_length_support
+    {m n : ℕ}
+    {k : Type*} [Field k]
+    (B : YoungBitableau m n)
+    (c : StandardYoungBitableau m n →₀ k)
+    (hpoly :
+      YoungBitableau.toPolynomial B
+        =
+      c.sum (fun S a =>
+        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) S.1)) :
+    ∀ S : StandardYoungBitableau m n,
+      c S ≠ 0 → YoungBitableau.length B ≤ YoungBitableau.length S.1 := by
+  rcases straightening_law_exists_filtered (m := m) (n := n) (k := k) B with
+    ⟨d, hdpoly, _hddegree, hdlength⟩
+  have hcd : c = d := by
+    exact straightening_law_unique_of_linearIndependent
+      (m := m) (n := n) (k := k)
+      (straightening_law_standardBitableau_linearIndependent
+        (m := m) (n := n) (k := k))
+      B c d hpoly hdpoly
+  intro S hS
+  rw [hcd] at hS
+  exact hdlength S hS
+
 
 /--
 Proposition 3: straightening law for Young bitableaux.
@@ -11064,7 +28136,18 @@ theorem straightening_law
       ∧
       (∀ S : StandardYoungBitableau m n,
         c S ≠ 0 → YoungBitableau.length B ≤ YoungBitableau.length S.1) := by
-  sorry
+  rcases straightening_law_polynomial_exists_unique
+      (m := m) (n := n) (k := k) B with
+    ⟨c, hpoly, huniq_poly⟩
+  refine ⟨c, ?_, ?_⟩
+  · exact ⟨hpoly,
+      straightening_law_degree_support
+        (m := m) (n := n) (k := k) B c hpoly,
+      straightening_law_length_support
+        (m := m) (n := n) (k := k) B c hpoly⟩
+  · intro d hd
+    exact huniq_poly d hd.1
+
 
 /--
 Straightening-basis package for the determinantal ring.
@@ -11638,55 +28721,6 @@ theorem standardBitableau_quotient_linearIndependent_of_Jr_coefficients_zero
   apply Finsupp.embDomain_injective emb
   simpa [cAll] using hcAll_zero
 
-/-- Homogeneous projection of one scalar multiple of a standard bitableau polynomial. -/
-lemma homogeneousComponent_C_mul_standardBitableau_toPolynomial'
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (d : ℕ) (a : k) (B : StandardYoungBitableau m n) :
-    MvPolynomial.homogeneousComponent d
-      (MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1)
-      =
-    if YoungBitableau.degree B.1 = d then
-      MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1
-    else
-      0 := by
-  rw [MvPolynomial.homogeneousComponent_C_mul]
-  have hmem :
-      YoungBitableau.toPolynomial (k := k) B.1 ∈
-        MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k
-          (YoungBitableau.degree B.1) := by
-    rw [MvPolynomial.mem_homogeneousSubmodule]
-    exact YoungBitableau.toPolynomial_isHomogeneous (k := k) B.1
-  rw [MvPolynomial.homogeneousComponent_of_mem (m := d) hmem]
-  by_cases hdeg : d = YoungBitableau.degree B.1
-  · simp [hdeg]
-  · have hdeg' : YoungBitableau.degree B.1 ≠ d := fun h => hdeg h.symm
-    simp [hdeg, hdeg']
-
-/-- Homogeneous projection of a finite standard-bitableau expansion. -/
-lemma homogeneousComponent_standardBitableau_finsupp_sum'
-    {m n : ℕ}
-    {k : Type*} [Field k]
-    (d : ℕ)
-    (c : StandardYoungBitableau m n →₀ k) :
-    MvPolynomial.homogeneousComponent d
-      (c.sum fun B a =>
-        MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1)
-      =
-    (c.filter fun B => YoungBitableau.degree B.1 = d).sum fun B a =>
-      MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1 := by
-  classical
-  rw [Finsupp.sum, map_sum]
-  simp_rw [homogeneousComponent_C_mul_standardBitableau_toPolynomial'
-    (d := d)]
-  rw [Finsupp.sum, Finsupp.support_filter]
-  rw [Finset.sum_filter]
-  apply Finset.sum_congr rfl
-  intro B hB
-  by_cases hdeg : YoungBitableau.degree B.1 = d
-  · simp [hdeg]
-  · simp [hdeg]
-
 /--
 Polynomial-level linear independence of standard bitableaux.  This is the
 uniqueness content of the straightening law, isolated for reuse.
@@ -11737,7 +28771,7 @@ theorem standardBitableau_toPolynomial_linearIndependent
       rw [hTzero]
       simp
     have hcomp :=
-      homogeneousComponent_standardBitableau_finsupp_sum'
+      homogeneousComponent_standardBitableau_finsupp_sum
         (m := m) (n := n) (k := k) e c
     rw [hcomp] at hcomp_zero
     rw [Finsupp.linearCombination_apply]
@@ -12282,7 +29316,7 @@ theorem span_standardBitableau_degree_le_RrDegree
     (YoungBitableau.toPolynomial_isHomogeneous (k := k) B.1.1.1)
 
 /-- Homogeneous projection of a scalar multiple of a standard bitableau polynomial. -/
-lemma homogeneousComponent_C_mul_standardBitableau_toPolynomial
+lemma homogeneousComponent_C_mul_standardBitableauOfLengthLE_toPolynomial
     {m n r : ℕ}
     {k : Type*} [Field k]
     (d : ℕ) (a : k) (B : StandardYoungBitableauOfLengthLE m n r) :
@@ -12311,7 +29345,7 @@ lemma homogeneousComponent_C_mul_standardBitableau_toPolynomial
 Homogeneous projection of a finite standard-bitableau expansion keeps exactly
 the terms whose bitableaux have the chosen degree.
 -/
-lemma homogeneousComponent_standardBitableau_finsupp_sum
+lemma homogeneousComponent_standardBitableauOfLengthLE_finsupp_sum
     {m n : ℕ}
     {k : Type*} [Field k]
     (r d : ℕ)
@@ -12324,7 +29358,7 @@ lemma homogeneousComponent_standardBitableau_finsupp_sum
       MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1.1 := by
   classical
   rw [Finsupp.sum, map_sum]
-  simp_rw [homogeneousComponent_C_mul_standardBitableau_toPolynomial
+  simp_rw [homogeneousComponent_C_mul_standardBitableauOfLengthLE_toPolynomial
     (r := r) (d := d)]
   rw [Finsupp.sum, Finsupp.support_filter]
   rw [Finset.sum_filter]
@@ -12404,7 +29438,7 @@ lemma standardBitableau_filter_eq_zero_of_homogeneousComponent_mem_Jr
       cf.sum fun B a =>
         MvPolynomial.C a * YoungBitableau.toPolynomial (k := k) B.1.1 := by
     simpa [cf] using
-      homogeneousComponent_standardBitableau_finsupp_sum
+      homogeneousComponent_standardBitableauOfLengthLE_finsupp_sum
         (r := r) (d := e) c
   have hqcf :
       q (cf.sum fun B a =>
@@ -12671,12 +29705,13 @@ The paper also says "reduced"; with Lean's `leadingTerm`, the anti-diagonal term
 a determinant carries the coefficient `sign(Fin.revPerm)`, so the reduced-basis
 refinement should be stated separately using the coefficient-normalized minors.
 -/
-theorem theorem1_GrPlusOne_isGroebnerBasis
+theorem theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
     {m n r : ℕ}
-    {k : Type*} [Field k] :
-    (antiDiagonalLex m n).IsGroebnerBasis (GrPlusOne m n r k) (Jr m n r k) := by
+    {k : Type*} [Field k]
+    (ord : MonomialOrder (Fin m × Fin n))
+    (hanti : IsAntidiagonalTermOrder ord) :
+    ord.IsGroebnerBasis (GrPlusOne m n r k) (Jr m n r k) := by
   classical
-  let ord : MonomialOrder (Fin m × Fin n) := antiDiagonalLex m n
   have hG_def :
       GrPlusOne m n r k = minorSet (m := m) (n := n) (k := k) (r + 1) := rfl
   have hJ_def : Jr m n r k = detIdeal m n (r + 1) k := rfl
@@ -12691,7 +29726,7 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
       ∀ I : MinorIndex m n (r + 1),
         ord.degree (genericMinor (k := k) I) = antidiagExp I := by
     intro I
-    exact lemma5_degree_minor_antiDiagonalLex (k := k) I
+    exact degree_minor_eq_antidiagExp (k := k) ord hanti I
   -- Hence `init(G_{r+1})` is exactly the monomial ideal generated by those
   -- anti-diagonal monomials; Lemma 6 gives the paper's width criterion for it.
   have hLemma6 :
@@ -12750,8 +29785,7 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
                 intro p hp
                 rcases hp with ⟨I, rfl⟩
                 rw [leadingCoeff_minor_eq_revPermCoeff
-                  (ord := antiDiagonalLex m n)
-                  (antiDiagonalLex_isAntidiagonal (m := m) (n := n)) I]
+                  (ord := ord) hanti I]
                 exact isUnit_iff_ne_zero.mpr
                   (permCoeff_ne_zero (k := k)
                     (Fin.revPerm : Equiv.Perm (Fin (r + 1)))))
@@ -12862,7 +29896,7 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
       simp_all only [minorSet_eq_range, Order.add_one_le_iff,
       Set.image_subset_iff, not_lt, true_and,
         Submodule.mem_comap, Submodule.subtype_apply,
-        Submodule.restrictScalars_mem, ord, initJr, d, H, InitJ_d]
+        Submodule.restrictScalars_mem,  initJr, d, H, InitJ_d]
     have hm_not_mem_InitG_d :
         (⟨MvPolynomial.monomial E (1 : k), hm_homogeneous⟩ :
           MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d) ∉ InitG_d := by
@@ -12870,7 +29904,7 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
       simp_all only [minorSet_eq_range, Order.add_one_le_iff,
       Set.image_subset_iff, not_lt, true_and,
         Submodule.mem_comap, Submodule.subtype_apply,
-        Submodule.restrictScalars_mem, ord, initJr, d, H, InitJ_d,
+        Submodule.restrictScalars_mem,  initJr, d, H, InitJ_d,
         InitG_d]
     have hInitG_lt_InitJ : InitG_d < InitJ_d := by
       -- The inclusion `init(G_{r+1}) ⊆ init(J_r)` comes from
@@ -13342,6 +30376,18 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
   have hstrict_self : Nat.card CountedMonomials < Nat.card CountedMonomials := by
     simp [CountedMonomials] at hstrict_hilbert
   exact (lt_irrefl _ hstrict_self)
+
+/--
+Theorem 1 specialized to the concrete anti-diagonal lexicographic order.
+-/
+theorem theorem1_GrPlusOne_isGroebnerBasis
+    {m n r : ℕ}
+    {k : Type*} [Field k] :
+    (antiDiagonalLex m n).IsGroebnerBasis (GrPlusOne m n r k) (Jr m n r k) := by
+  exact theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+    (m := m) (n := n) (r := r) (k := k)
+    (antiDiagonalLex m n)
+    (antiDiagonalLex_isAntidiagonal (m := m) (n := n))
 
 
 end Determinantal
