@@ -142,6 +142,18 @@ end CommRing
 
 namespace MinorIndex
 
+@[ext] theorem ext {m n t : ℕ} {I J : MinorIndex m n t}
+    (hrow : ∀ a, I.row a = J.row a)
+    (hcol : ∀ a, I.col a = J.col a) :
+    I = J := by
+  cases I
+  cases J
+  congr
+  · ext a
+    exact congrArg Fin.val (hrow a)
+  · ext a
+    exact congrArg Fin.val (hcol a)
+
 lemma genericMinor_eq_sum_delete_row_zero {m n s : ℕ}
     {k : Type*} [CommRing k]
     (I : MinorIndex m n (s + 1)) :
@@ -288,77 +300,88 @@ lemma colContent_support_eq_image {m n t : ℕ}
   rw [MinorIndex.mem_colContent_support_iff]
   simp
 
-lemma eq_of_rowContent_eq_colContent {m n t : ℕ}
+lemma row_eq_of_rowContent_eq {m n t : ℕ}
     {I J : MinorIndex m n t}
-    (hrow : I.rowContent = J.rowContent)
-    (hcol : I.colContent = J.colContent) :
-    I = J := by
+    (hrow : I.rowContent = J.rowContent) :
+    I.row = J.row := by
   classical
   have hrowSet :
       Finset.univ.map I.row.toEmbedding =
         Finset.univ.map J.row.toEmbedding := by
     rw [← I.rowContent_support_eq_image,
       ← J.rowContent_support_eq_image, hrow]
+  have hIcard :
+      (Finset.univ.map I.row.toEmbedding).card = t := by simp
+  have hImem :
+      ∀ i : Fin t, I.row i ∈ Finset.univ.map I.row.toEmbedding := by
+    intro i
+    simp
+  have hJmem :
+      ∀ i : Fin t, J.row i ∈ Finset.univ.map I.row.toEmbedding := by
+    intro i
+    rw [hrowSet]
+    simp
+  have hI :
+      (fun i => I.row i) =
+        fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
+    Finset.orderEmbOfFin_unique
+      (s := Finset.univ.map I.row.toEmbedding)
+      (h := hIcard) hImem I.row.strictMono
+  have hJ :
+      (fun i => J.row i) =
+        fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
+    Finset.orderEmbOfFin_unique
+      (s := Finset.univ.map I.row.toEmbedding)
+      (h := hIcard) hJmem J.row.strictMono
+  ext i
+  exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
+
+lemma col_eq_of_colContent_eq {m n t : ℕ}
+    {I J : MinorIndex m n t}
+    (hcol : I.colContent = J.colContent) :
+    I.col = J.col := by
+  classical
   have hcolSet :
       Finset.univ.map I.col.toEmbedding =
         Finset.univ.map J.col.toEmbedding := by
     rw [← I.colContent_support_eq_image,
       ← J.colContent_support_eq_image, hcol]
-  have hrowEmb : I.row = J.row := by
-    have hIcard :
-        (Finset.univ.map I.row.toEmbedding).card = t := by simp
-    have hImem :
-        ∀ i : Fin t, I.row i ∈ Finset.univ.map I.row.toEmbedding := by
-      intro i
-      simp
-    have hJmem :
-        ∀ i : Fin t, J.row i ∈ Finset.univ.map I.row.toEmbedding := by
-      intro i
-      rw [hrowSet]
-      simp
-    have hI :
-        (fun i => I.row i) =
-          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-        (s := Finset.univ.map I.row.toEmbedding)
-        (h := hIcard) hImem I.row.strictMono
-    have hJ :
-        (fun i => J.row i) =
-          fun i => (Finset.univ.map I.row.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-      (s := Finset.univ.map I.row.toEmbedding)
-      (h := hIcard) hJmem J.row.strictMono
-    ext i
-    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) i)
-  have hcolEmb : I.col = J.col := by
-    ext a
-    have hIcard :
-        (Finset.univ.map I.col.toEmbedding).card = t := by simp
-    have hImem :
-        ∀ i : Fin t, I.col i ∈ Finset.univ.map I.col.toEmbedding := by
-      intro i
-      simp
-    have hJmem :
-        ∀ i : Fin t, J.col i ∈ Finset.univ.map I.col.toEmbedding := by
-      intro i
-      rw [hcolSet]
-      simp
-    have hI :
-        (fun i => I.col i) =
-          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
-        (s := Finset.univ.map I.col.toEmbedding)
-        (h := hIcard) hImem I.col.strictMono
-    have hJ :
-        (fun i => J.col i) =
-          fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
-      Finset.orderEmbOfFin_unique
+  have hIcard :
+      (Finset.univ.map I.col.toEmbedding).card = t := by simp
+  have hImem :
+      ∀ i : Fin t, I.col i ∈ Finset.univ.map I.col.toEmbedding := by
+    intro i
+    simp
+  have hJmem :
+      ∀ i : Fin t, J.col i ∈ Finset.univ.map I.col.toEmbedding := by
+    intro i
+    rw [hcolSet]
+    simp
+  have hI :
+      (fun i => I.col i) =
+        fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
+    Finset.orderEmbOfFin_unique
+      (s := Finset.univ.map I.col.toEmbedding)
+      (h := hIcard) hImem I.col.strictMono
+  have hJ :
+      (fun i => J.col i) =
+        fun i => (Finset.univ.map I.col.toEmbedding).orderEmbOfFin hIcard i :=
+    Finset.orderEmbOfFin_unique
       (s := Finset.univ.map I.col.toEmbedding)
       (h := hIcard) hJmem J.col.strictMono
-    exact congrArg Fin.val (congrFun (hI.trans hJ.symm) a)
-  cases I
-  cases J
-  simp_all
+  ext a
+  exact congrArg Fin.val (congrFun (hI.trans hJ.symm) a)
+
+lemma eq_of_rowContent_eq_colContent {m n t : ℕ}
+    {I J : MinorIndex m n t}
+    (hrow : I.rowContent = J.rowContent)
+    (hcol : I.colContent = J.colContent) :
+    I = J := by
+  apply MinorIndex.ext
+  · intro a
+    rw [row_eq_of_rowContent_eq hrow]
+  · intro a
+    rw [col_eq_of_colContent_eq hcol]
 
 end MinorIndex
 

@@ -257,6 +257,815 @@ noncomputable def oneMinor {m n t : ℕ}
 
 end YoungBitableau
 
+/-- Sort a list of matrix indices in row-column order.
+
+This is the word of the generalized permutation attached to the input list.
+-/
+def generalizedPermutation
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    List (Fin m × Fin n) :=
+  ((xs.map toLex).insertionSort (fun x y : Fin m ×ₗ Fin n => x ≤ y)).map ofLex
+
+namespace generalizedPermutation
+
+theorem generalizedPermutation_sorted
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    (generalizedPermutation xs).Pairwise (fun x y => toLex x ≤ toLex y) := by
+  unfold generalizedPermutation
+  simpa [List.pairwise_map] using
+    (List.pairwise_insertionSort
+      (fun x y : Fin m ×ₗ Fin n => x ≤ y)
+      (xs.map toLex))
+
+/-- The generalized permutation word contains exactly the same indices as the input list. -/
+theorem generalizedPermutation_perm
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    (generalizedPermutation xs).Perm xs := by
+  unfold generalizedPermutation
+  simpa [Function.comp_def] using
+    ((List.perm_insertionSort
+      (fun x y : Fin m ×ₗ Fin n => x ≤ y)
+      (xs.map toLex)).map ofLex)
+
+theorem generalizedPermutation_unique
+    {m n : ℕ}
+    {xs w₁ w₂ : List (Fin m × Fin n)}
+    (h₁perm : w₁.Perm xs)
+    (h₁sorted : w₁.Pairwise (fun x y => toLex x ≤ toLex y))
+    (h₂perm : w₂.Perm xs)
+    (h₂sorted : w₂.Pairwise (fun x y => toLex x ≤ toLex y)) :
+    w₁ = w₂ := by
+  have h₁sortedLex :
+      (w₁.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n)).Pairwise
+        (fun x y => x ≤ y) := by
+    simpa [List.pairwise_map] using h₁sorted
+  have h₂sortedLex :
+      (w₂.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n)).Pairwise
+        (fun x y => x ≤ y) := by
+    simpa [List.pairwise_map] using h₂sorted
+  have hpermLex :
+      (w₁.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n)).Perm
+        (w₂.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n)) :=
+    (h₁perm.map toLex).trans (h₂perm.map toLex).symm
+  have hmap :
+      w₁.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n) =
+        w₂.map (toLex : Fin m × Fin n → Fin m ×ₗ Fin n) :=
+    hpermLex.eq_of_pairwise' h₁sortedLex h₂sortedLex
+  exact (toLex : (Fin m × Fin n) ≃ Fin m ×ₗ Fin n).injective.list_map hmap
+
+/-- The upper row of the generalized permutation. -/
+def upperWord
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    List (Fin m) :=
+  (generalizedPermutation xs).map fun x => x.1
+
+/-- The lower row of the generalized permutation. This is the row used to define width. -/
+def lowerWord
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    List (Fin n) :=
+  (generalizedPermutation xs).map fun x => x.2
+
+lemma lowerWord_length
+    {m n : ℕ}
+    (xs : List (Fin m × Fin n)) :
+    (lowerWord xs).length = xs.length := by
+  unfold lowerWord
+  rw [List.length_map]
+  exact (generalizedPermutation_perm xs).length_eq
+
+lemma lowerWord_ne_nil_of_ne_nil
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    (hxs : xs ≠ []) :
+    lowerWord xs ≠ [] := by
+  intro h
+  have hlen : xs.length = 0 := by
+    have hlen' := lowerWord_length xs
+    rw [h] at hlen'
+    exact hlen'.symm
+  apply hxs
+  cases xs with
+  | nil =>
+      rfl
+  | cons x xs =>
+      simp at hlen
+
+/-- Width of a monomial-index list.
+
+Given a list of matrix indices, first form the generalized permutation,
+then take the lower row, and finally take the maximal length of a strictly
+decreasing subsequence of that lower row.
+-/
+def width {m n : ℕ}
+    (xs : List (Fin m × Fin n)) : ℕ :=
+  (((lowerWord xs).sublists.filter
+    (fun s : List (Fin n) =>
+      (s.zip s.tail).all (fun p => decide (p.1 > p.2)))))
+    |>.foldl (fun acc s => max acc s.length) 0
+
+lemma foldl_max_length_ge_acc
+    {α : Type*}
+    (L : List (List α))
+    (acc : ℕ) :
+    acc ≤ L.foldl (fun acc s => max acc s.length) acc := by
+  induction L generalizing acc with
+  | nil =>
+      rfl
+  | cons s L ih =>
+      simpa using
+        le_trans
+          (Nat.le_max_left acc s.length)
+          (ih (max acc s.length))
+
+lemma length_le_foldl_max_length_of_mem_aux
+    {α : Type*}
+    {s : List α}
+    (L : List (List α))
+    (acc : ℕ)
+    (hs : s ∈ L) :
+    s.length ≤ L.foldl (fun acc t => max acc t.length) acc := by
+  induction L generalizing acc with
+  | nil =>
+      simp at hs
+  | cons t L ih =>
+      simp only [List.mem_cons] at hs
+      cases hs with
+      | inl h =>
+          rw [h]
+          exact
+            le_trans
+              (Nat.le_max_right acc t.length)
+              (foldl_max_length_ge_acc L (max acc t.length))
+      | inr h =>
+          exact ih (max acc t.length) h
+
+lemma length_le_foldl_max_length_of_mem
+    {α : Type*}
+    {L : List (List α)}
+    {s : List α}
+    (hs : s ∈ L) :
+    s.length ≤ L.foldl (fun acc t => max acc t.length) 0 := by
+  exact length_le_foldl_max_length_of_mem_aux L 0 hs
+
+lemma length_le_width_of_mem_filtered_sublists
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    {s : List (Fin n)}
+    (hs :
+      s ∈ ((lowerWord xs).sublists.filter
+        (fun s : List (Fin n) =>
+          (s.zip s.tail).all (fun p => decide (p.1 > p.2))))) :
+    s.length ≤ width xs := by
+  unfold width
+  exact length_le_foldl_max_length_of_mem hs
+
+lemma one_le_width_of_lowerWord_ne_nil
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    (h : lowerWord xs ≠ []) :
+    1 ≤ width xs := by
+  unfold width
+  cases hW : lowerWord xs with
+  | nil =>
+      exact False.elim (h hW)
+  | cons a t =>
+      have hmem :
+          [a] ∈ (((a :: t).sublists.filter
+            (fun s : List (Fin n) =>
+              (s.zip s.tail).all (fun p => decide (p.1 > p.2))))) := by
+        simp
+      simpa [hW] using
+        (length_le_foldl_max_length_of_mem
+          (L := ((a :: t).sublists.filter
+            (fun s : List (Fin n) =>
+              (s.zip s.tail).all (fun p => decide (p.1 > p.2)))))
+          (s := [a])
+          hmem)
+
+lemma two_le_width_of_desc_pair_sublist
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    {a b : Fin n}
+    (hsub : List.Sublist [a, b] (lowerWord xs))
+    (hab : a > b) :
+    2 ≤ width xs := by
+  apply length_le_width_of_mem_filtered_sublists
+    (xs := xs)
+    (s := [a, b])
+  have hmem_sub : [a, b] ∈ (lowerWord xs).sublists := by
+    exact (List.mem_sublists).2 hsub
+  simp [hmem_sub, hab]
+
+lemma not_desc_pair_sublist_of_width_eq_one
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    (hw : width xs = 1)
+    {a b : Fin n}
+    (hsub : List.Sublist [a, b] (lowerWord xs)) :
+    ¬ a > b := by
+  intro hab
+  have h2 : 2 ≤ width xs :=
+    two_le_width_of_desc_pair_sublist
+      (xs := xs) hsub hab
+  omega
+
+lemma foldl_max_length_le
+    {α : Type*}
+    (L : List (List α))
+    (B acc : ℕ)
+    (hacc : acc ≤ B)
+    (hL : ∀ s ∈ L, s.length ≤ B) :
+    L.foldl (fun acc s => max acc s.length) acc ≤ B := by
+  induction L generalizing acc with
+  | nil =>
+      simpa using hacc
+  | cons s L ih =>
+      simp only [List.mem_cons] at hL
+      have hs : s.length ≤ B := hL s (Or.inl rfl)
+      have htail : ∀ t ∈ L, t.length ≤ B := by
+        intro t ht
+        exact hL t (Or.inr ht)
+      exact ih (max acc s.length) (max_le hacc hs) htail
+
+lemma width_le_one_of_lowerWord_pairwise_le
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    (hmono : (lowerWord xs).Pairwise (fun a b => a ≤ b)) :
+    width xs ≤ 1 := by
+  unfold width
+  apply foldl_max_length_le
+  · exact Nat.zero_le 1
+  · intro s hs
+    have hs_mem :
+        s ∈ (lowerWord xs).sublists := by
+      exact (List.mem_filter.mp hs).1
+    have hs_dec :
+        (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true := by
+      exact (List.mem_filter.mp hs).2
+    have hsub : List.Sublist s (lowerWord xs) := by
+      exact (List.mem_sublists).1 hs_mem
+    have hs_mono : s.Pairwise (fun a b => a ≤ b) := by
+      exact hmono.sublist hsub
+    cases s with
+    | nil =>
+        simp
+    | cons a s' =>
+        cases s' with
+        | nil =>
+            simp
+        | cons b t =>
+            have hgt : a > b := by
+              have h := hs_dec
+              simp only [List.tail_cons, List.zip_cons_cons, gt_iff_lt, List.all_cons,
+                Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, Prod.forall] at h
+              exact h.1
+            have hle : a ≤ b := by
+              have h := hs_mono
+              simp only [List.pairwise_cons, List.mem_cons, forall_eq_or_imp] at h
+              exact h.1.1
+            exact False.elim ((not_lt_of_ge hle) hgt)
+
+lemma pairwise_le_of_no_desc_pair_sublist
+    {n : ℕ}
+    {l : List (Fin n)}
+    (hno :
+      ∀ a b : Fin n,
+        List.Sublist [a, b] l → ¬ a > b) :
+    l.Pairwise (fun a b => a ≤ b) := by
+  induction l with
+  | nil =>
+      simp
+  | cons a t ih =>
+      simp only [List.pairwise_cons]
+      constructor
+      · intro b hb
+        have hsub_tail : List.Sublist [b] t := by
+          exact (List.singleton_sublist).2 hb
+        have hsub : List.Sublist [a, b] (a :: t) := by
+          simpa using hsub_tail.cons₂ a
+        exact le_of_not_gt (hno a b hsub)
+      · apply ih
+        intro a' b' hsub'
+        exact hno a' b' (hsub'.cons a)
+
+lemma width_eq_one_iff_lowerWord_pairwise_le
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    (hxs : lowerWord xs ≠ []) :
+    width xs = 1 ↔
+      (lowerWord xs).Pairwise (fun a b => a ≤ b) := by
+  constructor
+  · intro hw
+    apply pairwise_le_of_no_desc_pair_sublist
+    intro a b hsub
+    exact
+      not_desc_pair_sublist_of_width_eq_one
+        (xs := xs) hw hsub
+  · intro hmono
+    apply le_antisymm
+    · exact width_le_one_of_lowerWord_pairwise_le
+        (xs := xs) hmono
+    · exact one_le_width_of_lowerWord_ne_nil
+        (xs := xs) hxs
+
+/-- Expand a monomial exponent vector into the list of all matrix-variable indices.
+
+The index `(i,j)` appears exactly `E (i,j)` times.
+-/
+def indicesOfMonomialExp {m n : ℕ}
+    (E : (Fin m × Fin n) →₀ ℕ) :
+    List (Fin m × Fin n) :=
+  List.flatMap
+    (fun i : Fin m =>
+      List.flatMap
+        (fun j : Fin n =>
+          List.replicate (E (i, j)) (i, j))
+        (List.finRange n))
+    (List.finRange m)
+
+lemma count_indicesOfMonomialExp
+    {m n : ℕ}
+    (E : (Fin m × Fin n) →₀ ℕ)
+    (p : Fin m × Fin n) :
+    (indicesOfMonomialExp E).count p = E p := by
+  classical
+  rcases p with ⟨pi, pj⟩
+  rw [indicesOfMonomialExp]
+  rw [List.count_flatMap]
+  calc
+    (List.map
+        (List.count (pi, pj) ∘
+          fun i => List.flatMap (fun j => List.replicate (E (i, j)) (i, j))
+            (List.finRange n))
+        (List.finRange m)).sum
+        =
+      ∑ i : Fin m,
+        List.count (pi, pj)
+          (List.flatMap (fun j => List.replicate (E (i, j)) (i, j))
+            (List.finRange n)) := by
+        simpa [Function.comp_def] using
+          (Fin.sum_univ_def
+            (fun i : Fin m =>
+              List.count (pi, pj)
+                (List.flatMap (fun j => List.replicate (E (i, j)) (i, j))
+                  (List.finRange n)))).symm
+    _ =
+      ∑ i : Fin m, ∑ j : Fin n,
+        List.count (pi, pj) (List.replicate (E (i, j)) (i, j)) := by
+        apply Finset.sum_congr rfl
+        intro i _
+        rw [List.count_flatMap]
+        simpa [Function.comp_def] using
+          (Fin.sum_univ_def
+            (fun j : Fin n =>
+              List.count (pi, pj) (List.replicate (E (i, j)) (i, j)))).symm
+    _ =
+      ∑ i : Fin m, ∑ j : Fin n,
+        if (i, j) = (pi, pj) then E (i, j) else 0 := by
+        simp [List.count_replicate, beq_iff_eq]
+    _ = E (pi, pj) := by
+        rw [Finset.sum_eq_single (s := Finset.univ) (a := pi)
+          (f := fun i : Fin m => ∑ j : Fin n,
+            if (i, j) = (pi, pj) then E (i, j) else 0)]
+        · simp
+        · intro i _ hi
+          simp [hi]
+        · intro hi
+          exact False.elim (hi (Finset.mem_univ pi))
+
+end generalizedPermutation
+
+/-- The paper's width of a monomial, with monomials represented by exponent vectors. -/
+def monomialWidth {m n : ℕ} (E : (Fin m × Fin n) →₀ ℕ) : ℕ :=
+  generalizedPermutation.width
+    (generalizedPermutation.indicesOfMonomialExp E)
+
+lemma antidiagExp_apply'
+    {m n t : ℕ}
+    (I : MinorIndex m n t) (a : Fin m) (b : Fin n) :
+    antidiagExp I (a, b) =
+      if ∃ i : Fin t, I.row i = a ∧ I.col i.rev = b then 1 else 0 := by
+  classical
+  by_cases h : ∃ i : Fin t, I.row i = a ∧ I.col i.rev = b
+  · rcases h with ⟨i, hrow, hcol⟩
+    have hpair :
+        ∀ j : Fin t, ((I.row j, I.col j.rev) = (a, b)) ↔ j = i := by
+      intro j
+      constructor
+      · intro hj
+        have hjrow : I.row j = I.row i := by
+          calc
+            I.row j = a := by simpa using congrArg Prod.fst hj
+            _ = I.row i := hrow.symm
+        exact I.row.injective hjrow
+      · intro hj
+        subst hj
+        simp [hrow, hcol]
+    simp [antidiagExp, Finsupp.single_apply, hpair]
+    subst hrow hcol
+    simp_all only [Prod.mk.injEq, EmbeddingLike.apply_eq_iff_eq, exists_eq]
+  · have hpairFalse :
+        ∀ j : Fin t, (I.row j, I.col j.rev) ≠ (a, b) := by
+      intro j hj
+      exact h ⟨j, by simpa using congrArg Prod.fst hj, by simpa using congrArg Prod.snd hj⟩
+    simp [antidiagExp, h, hpairFalse]
+
+/-- The list of anti-diagonal variables in a minor, in increasing row order. -/
+abbrev antidiagIndexList {m n t : ℕ} (I : MinorIndex m n t) :
+    List (Fin m × Fin n) :=
+  List.ofFn fun i : Fin t => (I.row i, I.col i.rev)
+
+lemma count_antidiagIndexList
+    {m n t : ℕ}
+    (I : MinorIndex m n t)
+    (p : Fin m × Fin n) :
+    (antidiagIndexList I).count p = antidiagExp I p := by
+  classical
+  rcases p with ⟨a, b⟩
+  rw [antidiagExp_apply']
+  by_cases h : ∃ i : Fin t, I.row i = a ∧ I.col i.rev = b
+  · rcases h with ⟨i, hirow, hicol⟩
+    have hex : ∃ i : Fin t, I.row i = a ∧ I.col i.rev = b := ⟨i, hirow, hicol⟩
+    have hcount : (antidiagIndexList I).count (a, b) = 1 := by
+      have hnodup : (antidiagIndexList I).Nodup := by
+        rw [antidiagIndexList, List.nodup_ofFn]
+        intro x y hxy
+        have hrow : I.row x = I.row y := by
+          simpa using congrArg Prod.fst hxy
+        exact I.row.injective hrow
+      have hmem : (a, b) ∈ antidiagIndexList I := by
+        rw [antidiagIndexList, List.mem_ofFn']
+        exact ⟨i, by simp [hirow, hicol]⟩
+      exact List.count_eq_one_of_mem hnodup hmem
+    simp [hex, hcount]
+  · have hnotmem : (a, b) ∉ antidiagIndexList I := by
+      simp [antidiagIndexList, h]
+    have hcount : (antidiagIndexList I).count (a, b) = 0 :=
+      List.count_eq_zero_of_not_mem hnotmem
+    simp [h, hcount]
+
+lemma antidiagIndexList_pairwise_lex
+    {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (antidiagIndexList I).Pairwise (fun x y => toLex x ≤ toLex y) := by
+  rw [antidiagIndexList, List.pairwise_ofFn]
+  intro i j hij
+  exact Prod.Lex.toLex_le_toLex.2
+    (Or.inl (I.row.strictMono hij))
+
+lemma antidiagIndexList_nodup
+    {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (antidiagIndexList I).Nodup := by
+  rw [antidiagIndexList, List.nodup_ofFn]
+  intro x y hxy
+  have hrow : I.row x = I.row y := by
+    simpa using congrArg Prod.fst hxy
+  exact I.row.injective hrow
+
+lemma mem_indicesOfMonomialExp_of_pos
+    {m n : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    {p : Fin m × Fin n}
+    (hp : 0 < E p) :
+    p ∈ generalizedPermutation.indicesOfMonomialExp E := by
+  rw [← List.count_pos_iff]
+  simpa [generalizedPermutation.count_indicesOfMonomialExp] using hp
+
+lemma antidiagExp_pos_of_mem_antidiagIndexList
+    {m n t : ℕ}
+    {I : MinorIndex m n t}
+    {p : Fin m × Fin n}
+    (hp : p ∈ antidiagIndexList I) :
+    0 < antidiagExp I p := by
+  rcases p with ⟨a, b⟩
+  rw [antidiagExp_apply']
+  rw [antidiagIndexList, List.mem_ofFn'] at hp
+  rcases hp with ⟨i, hi⟩
+  have hrow : I.row i = a := by
+    simpa using congrArg Prod.fst hi
+  have hcol : I.col i.rev = b := by
+    simpa using congrArg Prod.snd hi
+  rw [if_pos ⟨i, hrow, hcol⟩]
+  norm_num
+
+lemma antidiagIndexList_subperm_indicesOfMonomialExp_of_antidiagExp_le
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (I : MinorIndex m n t)
+    (hle : antidiagExp I ≤ E) :
+    List.Subperm (antidiagIndexList I)
+      (generalizedPermutation.indicesOfMonomialExp E) := by
+  exact (antidiagIndexList_nodup I).subperm fun p hp =>
+    mem_indicesOfMonomialExp_of_pos
+      (lt_of_lt_of_le (antidiagExp_pos_of_mem_antidiagIndexList hp) (hle p))
+
+lemma antidiagIndexList_sublist_generalizedPermutation_of_antidiagExp_le
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (I : MinorIndex m n t)
+    (hle : antidiagExp I ≤ E) :
+    List.Sublist (antidiagIndexList I)
+      (generalizedPermutation
+        (generalizedPermutation.indicesOfMonomialExp E)) := by
+  classical
+  haveI :
+      Std.Antisymm (fun x y : Fin m × Fin n => toLex x ≤ toLex y) :=
+    ⟨fun _ _ hxy hyx => (toLex : Fin m × Fin n ≃ Fin m ×ₗ Fin n).injective
+      (le_antisymm hxy hyx)⟩
+  refine List.sublist_of_subperm_of_pairwise
+    (r := fun x y : Fin m × Fin n => toLex x ≤ toLex y)
+    ?_ ?_ ?_
+  · exact (antidiagIndexList_subperm_indicesOfMonomialExp_of_antidiagExp_le
+      (E := E) I hle).trans
+      ((generalizedPermutation.generalizedPermutation_perm
+        (generalizedPermutation.indicesOfMonomialExp E)).symm.subperm)
+  · exact antidiagIndexList_pairwise_lex I
+  · exact generalizedPermutation.generalizedPermutation_sorted
+      (generalizedPermutation.indicesOfMonomialExp E)
+
+lemma antidiagIndexList_map_snd
+    {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (antidiagIndexList I).map Prod.snd =
+      List.ofFn (fun i : Fin t => I.col i.rev) := by
+  simp [antidiagIndexList, List.map_ofFn, Function.comp_def]
+
+lemma antidiagIndexList_lowerWord_sublist_of_antidiagExp_le
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (I : MinorIndex m n t)
+    (hle : antidiagExp I ≤ E) :
+    List.Sublist
+      (List.ofFn (fun i : Fin t => I.col i.rev))
+      (generalizedPermutation.lowerWord
+        (generalizedPermutation.indicesOfMonomialExp E)) := by
+  have hsub :=
+    (antidiagIndexList_sublist_generalizedPermutation_of_antidiagExp_le
+      (E := E) I hle).map Prod.snd
+  simpa [generalizedPermutation.lowerWord, antidiagIndexList_map_snd, Function.comp_def] using hsub
+
+lemma antidiagLower_pairwise_gt
+    {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (List.ofFn (fun i : Fin t => I.col i.rev)).Pairwise (fun a b => a > b) := by
+  rw [List.pairwise_ofFn]
+  intro i j hij
+  exact I.col.strictMono (Fin.rev_lt_rev.mpr hij)
+
+lemma zip_tail_all_gt_of_pairwise_gt
+    {n : ℕ}
+    {s : List (Fin n)}
+    (hs : s.Pairwise (fun a b => a > b)) :
+    (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true := by
+  induction s with
+  | nil =>
+      simp
+  | cons a s ih =>
+      cases s with
+      | nil =>
+          simp
+      | cons b t =>
+          have hs' :
+              (∀ x ∈ b :: t, a > x) ∧
+                (b :: t).Pairwise (fun a b => a > b) := by
+            simpa [List.pairwise_cons] using hs
+          have hab : a > b := hs'.1 b (by simp)
+          have htail : (b :: t).Pairwise (fun a b => a > b) := hs'.2
+          simp only [List.tail_cons, List.zip_cons_cons, List.all_cons,
+            Bool.and_eq_true, decide_eq_true_eq]
+          exact ⟨hab, ih htail⟩
+
+lemma length_le_width_of_lowerWord_sublist_pairwise_gt
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    {s : List (Fin n)}
+    (hsub : List.Sublist s (generalizedPermutation.lowerWord xs))
+    (hpair : s.Pairwise (fun a b => a > b)) :
+    s.length ≤ generalizedPermutation.width xs := by
+  apply generalizedPermutation.length_le_width_of_mem_filtered_sublists
+    (xs := xs) (s := s)
+  have hs_mem : s ∈ (generalizedPermutation.lowerWord xs).sublists :=
+    (List.mem_sublists).2 hsub
+  have hall :
+      (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true :=
+    zip_tail_all_gt_of_pairwise_gt hpair
+  simp [hs_mem, hall]
+
+namespace generalizedPermutation
+
+lemma exists_mem_of_pos_le_foldl_max_length_aux
+    {α : Type*}
+    {L : List (List α)}
+    {acc t : ℕ}
+    (hacc : acc < t)
+    (h : t ≤ L.foldl (fun acc s => max acc s.length) acc) :
+    ∃ s ∈ L, t ≤ s.length := by
+  induction L generalizing acc with
+  | nil =>
+      simp at h
+      omega
+  | cons s L ih =>
+      simp only [List.foldl_cons] at h
+      by_cases hs : t ≤ s.length
+      · exact ⟨s, by simp, hs⟩
+      · have hmax_lt : max acc s.length < t := by
+          rw [Nat.max_lt]
+          exact ⟨hacc, Nat.lt_of_not_ge hs⟩
+        rcases ih hmax_lt h with ⟨u, huL, htu⟩
+        exact ⟨u, by simp [huL], htu⟩
+
+lemma exists_mem_of_pos_le_foldl_max_length
+    {α : Type*}
+    {L : List (List α)}
+    {t : ℕ}
+    (ht : 0 < t)
+    (h : t ≤ L.foldl (fun acc s => max acc s.length) 0) :
+    ∃ s ∈ L, t ≤ s.length :=
+  exists_mem_of_pos_le_foldl_max_length_aux ht h
+
+lemma exists_decreasing_sublist_of_le_width
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    {t : ℕ}
+    (ht : 0 < t)
+    (h : t ≤ width xs) :
+    ∃ s : List (Fin n),
+      List.Sublist s (lowerWord xs) ∧
+      (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true ∧
+      t ≤ s.length := by
+  unfold width at h
+  rcases exists_mem_of_pos_le_foldl_max_length (L :=
+      (lowerWord xs).sublists.filter
+        (fun s : List (Fin n) =>
+          (s.zip s.tail).all (fun p => decide (p.1 > p.2)))) ht h with
+    ⟨s, hs, hlen⟩
+  simp only [List.mem_filter] at hs
+  exact ⟨s, (List.mem_sublists).1 hs.1, hs.2, hlen⟩
+
+lemma isChain_gt_of_zip_tail_all_gt
+    {n : ℕ}
+    {s : List (Fin n)}
+    (hall : (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true) :
+    s.IsChain (fun a b => a > b) := by
+  induction s with
+  | nil =>
+      simp
+  | cons a s ih =>
+      cases s with
+      | nil =>
+          simp
+      | cons b t =>
+          simp only [List.tail_cons, List.zip_cons_cons, List.all_cons,
+            Bool.and_eq_true, decide_eq_true_eq] at hall
+          exact List.isChain_cons_cons.2 ⟨hall.1, ih hall.2⟩
+
+lemma pairwise_gt_of_zip_tail_all_gt
+    {n : ℕ}
+    {s : List (Fin n)}
+    (hall : (s.zip s.tail).all (fun p => decide (p.1 > p.2)) = true) :
+    s.Pairwise (fun a b => a > b) := by
+  exact (List.sortedGT_iff_isChain.2
+    (isChain_gt_of_zip_tail_all_gt hall)).pairwise
+
+lemma exists_decreasing_sublistLen_of_le_width
+    {m n : ℕ}
+    {xs : List (Fin m × Fin n)}
+    {t : ℕ}
+    (ht : 0 < t)
+    (h : t ≤ width xs) :
+    ∃ s : List (Fin n),
+      s.length = t ∧
+      List.Sublist s (lowerWord xs) ∧
+      s.Pairwise (fun a b => a > b) := by
+  rcases exists_decreasing_sublist_of_le_width (xs := xs) ht h with
+    ⟨s, hsub, hall, hlen⟩
+  refine ⟨s.take t, ?_, ?_, ?_⟩
+  · simp [Nat.min_eq_left hlen]
+  · exact (List.take_sublist t s).trans hsub
+  · exact (pairwise_gt_of_zip_tail_all_gt hall).sublist (List.take_sublist t s)
+
+end generalizedPermutation
+
+lemma exists_antidiagIndexList_sublist_generalizedPermutation_of_le_monomialWidth
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (ht : 0 < t)
+    (hwidth : t ≤ monomialWidth E) :
+    ∃ I : MinorIndex m n t,
+      List.Sublist (antidiagIndexList I)
+        (generalizedPermutation
+          (generalizedPermutation.indicesOfMonomialExp E)) := by
+  classical
+  let xs := generalizedPermutation.indicesOfMonomialExp E
+  let w := generalizedPermutation xs
+  rcases generalizedPermutation.exists_decreasing_sublistLen_of_le_width
+      (xs := xs) ht (by simpa [monomialWidth, xs] using hwidth) with
+    ⟨s, hs_len, hs_sub, hs_pair⟩
+  have hs_sub_map :
+      s.Sublist (w.map Prod.snd) := by
+    simpa [generalizedPermutation.lowerWord, w, xs] using hs_sub
+  rcases List.sublist_map_iff.mp hs_sub_map with ⟨ys, hys_sub, hs_map⟩
+  have hys_len : ys.length = t := by
+    have hlen := congrArg List.length hs_map
+    simpa [hs_len] using hlen.symm
+  have hys_sorted : ys.Pairwise (fun x y => toLex x ≤ toLex y) := by
+    exact (generalizedPermutation.generalizedPermutation_sorted xs).sublist (by
+      simpa [w] using hys_sub)
+  have hys_cols_pair :
+      ys.Pairwise (fun x y : Fin m × Fin n => x.2 > y.2) := by
+    have hmap_pair :
+        (ys.map Prod.snd).Pairwise (fun a b => a > b) := by
+      simpa [← hs_map] using hs_pair
+    simpa [List.pairwise_map] using hmap_pair
+  let rowFun : Fin t → Fin m :=
+    fun i => (ys.get (i.cast hys_len.symm)).1
+  let colFun : Fin t → Fin n :=
+    fun i => (ys.get (i.rev.cast hys_len.symm)).2
+  have hrow_strict : StrictMono rowFun := by
+    intro i j hij
+    have hij' : i.cast hys_len.symm < j.cast hys_len.symm := by
+      simpa using hij
+    have hlex := hys_sorted.rel_get_of_lt hij'
+    have hcolgt := hys_cols_pair.rel_get_of_lt hij'
+    rcases Prod.Lex.toLex_le_toLex.1 hlex with hrow | hsame
+    · simpa [rowFun] using hrow
+    · rcases hsame with ⟨_hroweq, hcolle⟩
+      exact False.elim ((not_lt_of_ge hcolle) hcolgt)
+  have hcol_strict : StrictMono colFun := by
+    intro i j hij
+    have hrev : j.rev.cast hys_len.symm < i.rev.cast hys_len.symm := by
+      simpa using (Fin.rev_lt_rev.mpr hij)
+    have hcolgt := hys_cols_pair.rel_get_of_lt hrev
+    simpa [colFun] using hcolgt
+  let I : MinorIndex m n t :=
+    { row := OrderEmbedding.ofStrictMono rowFun hrow_strict
+      col := OrderEmbedding.ofStrictMono colFun hcol_strict }
+  refine ⟨I, ?_⟩
+  have hanti_eq : antidiagIndexList I = ys := by
+    apply List.ext_get
+    · simp [antidiagIndexList, hys_len]
+    · intro i hi₁ hi₂
+      have hidx : t - (t - (i + 1) + 1) = i := by
+        omega
+      simp [antidiagIndexList, I, rowFun, colFun, hidx]
+  simpa [hanti_eq, w] using hys_sub
+
+lemma antidiagExp_le_of_antidiagIndexList_sublist_generalizedPermutation
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (I : MinorIndex m n t)
+    (hsub : List.Sublist (antidiagIndexList I)
+      (generalizedPermutation
+        (generalizedPermutation.indicesOfMonomialExp E))) :
+    antidiagExp I ≤ E := by
+  intro p
+  have hsubperm :
+      List.Subperm (antidiagIndexList I)
+        (generalizedPermutation.indicesOfMonomialExp E) :=
+    hsub.subperm.trans
+      ((generalizedPermutation.generalizedPermutation_perm
+        (generalizedPermutation.indicesOfMonomialExp E)).subperm)
+  have hcount :
+      (antidiagIndexList I).count p ≤
+        (generalizedPermutation.indicesOfMonomialExp E).count p :=
+    hsubperm.count_le p
+  rw [count_antidiagIndexList I p,
+    generalizedPermutation.count_indicesOfMonomialExp] at hcount
+  exact hcount
+
+lemma antidiagExp_le_monomialWidth
+    {m n t : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (I : MinorIndex m n t)
+    (hle : antidiagExp I ≤ E) :
+    t ≤ monomialWidth E := by
+  have hsub :=
+    antidiagIndexList_lowerWord_sublist_of_antidiagExp_le
+      (E := E) I hle
+  have hpair := antidiagLower_pairwise_gt I
+  have hlen :
+      (List.ofFn (fun i : Fin t => I.col i.rev)).length = t := by
+    simp
+  simpa [monomialWidth, hlen] using
+    length_le_width_of_lowerWord_sublist_pairwise_gt
+      (xs := generalizedPermutation.indicesOfMonomialExp E)
+      hsub hpair
+
+lemma lemma6_forward_exists_antidiagExp_le_width
+    {m n r : ℕ}
+    {E : (Fin m × Fin n) →₀ ℕ}
+    (h : ∃ I : MinorIndex m n (r + 1), antidiagExp I ≤ E) :
+    r + 1 ≤ monomialWidth E := by
+  rcases h with ⟨I, hI⟩
+  exact antidiagExp_le_monomialWidth I hI
+
+
 namespace generalizedPermutation
 
 /-- The `1 × 1`-minor bitableau attached to a monomial exponent vector. -/
@@ -578,797 +1387,7 @@ lemma coordinateLaplaceAlternating_apply
 
 end SwanLaplace
 
-/-- A square minor with arbitrary row and column maps.
-
-Unlike `MinorIndex`, the maps are not required to be strictly increasing.
-This is the right workspace for Laplace relations: exchange terms may have
-repeated rows or columns, in which case the determinant is zero.  Nonzero
-terms can later be promoted back to honest `MinorIndex` terms after proving
-the row and column maps are injective. -/
-structure RawMinorIndex (m n t : ℕ) where
-  row : Fin t → Fin m
-  col : Fin t → Fin n
-
-namespace RawMinorIndex
-
-noncomputable def toPolynomial {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) : MvPolynomial (Fin m × Fin n) k :=
-  Matrix.det <| Matrix.submatrix (genericMatrix m n k) R.row R.col
-
-def ofMinorIndex {m n t : ℕ} (I : MinorIndex m n t) :
-    RawMinorIndex m n t where
-  row := I.row
-  col := I.col
-
-@[simp] lemma toPolynomial_ofMinorIndex {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n t) :
-    RawMinorIndex.toPolynomial (k := k) (RawMinorIndex.ofMinorIndex I) =
-      genericMinor (k := k) I := by
-  rfl
-
-noncomputable def rowContent {m n t : ℕ}
-    (R : RawMinorIndex m n t) : Fin m →₀ ℕ :=
-  ∑ a : Fin t, Finsupp.single (R.row a) 1
-
-noncomputable def colContent {m n t : ℕ}
-    (R : RawMinorIndex m n t) : Fin n →₀ ℕ :=
-  ∑ a : Fin t, Finsupp.single (R.col a) 1
-
-@[simp] lemma rowContent_ofMinorIndex {m n t : ℕ}
-    (I : MinorIndex m n t) :
-    RawMinorIndex.rowContent (RawMinorIndex.ofMinorIndex I) =
-      MinorIndex.rowContent I := by
-  rfl
-
-@[simp] lemma colContent_ofMinorIndex {m n t : ℕ}
-    (I : MinorIndex m n t) :
-    RawMinorIndex.colContent (RawMinorIndex.ofMinorIndex I) =
-      MinorIndex.colContent I := by
-  rfl
-
-lemma heq_of_cast_apply_eq {m n t u : ℕ} (h : t = u)
-    {R : RawMinorIndex m n t} {S : RawMinorIndex m n u}
-    (hrow : ∀ a : Fin u, R.row (Fin.cast h.symm a) = S.row a)
-    (hcol : ∀ a : Fin u, R.col (Fin.cast h.symm a) = S.col a) :
-    HEq R S := by
-  cases h
-  apply heq_of_eq
-  cases R with
-  | mk Rrow Rcol =>
-      cases S with
-      | mk Srow Scol =>
-          simp only [Fin.cast_eq_self] at hrow hcol
-          cases funext hrow
-          cases funext hcol
-          rfl
-
-lemma rowContent_total {m n t : ℕ} (R : RawMinorIndex m n t) :
-    (∑ i : Fin m, RawMinorIndex.rowContent R i) = t := by
-  classical
-  simp only [rowContent, Finsupp.coe_finset_sum, Finset.sum_apply]
-  rw [Finset.sum_comm]
-  simp
-
-lemma colContent_total {m n t : ℕ} (R : RawMinorIndex m n t) :
-    (∑ j : Fin n, RawMinorIndex.colContent R j) = t := by
-  classical
-  simp only [colContent, Finsupp.coe_finset_sum, Finset.sum_apply]
-  rw [Finset.sum_comm]
-  simp
-
-lemma toPolynomial_eq_zero_of_row_eq {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) {a b : Fin t}
-    (hab : a ≠ b) (hrow : R.row a = R.row b) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
-  classical
-  unfold RawMinorIndex.toPolynomial
-  exact Matrix.det_zero_of_row_eq hab (by
-    ext c
-    simp [Matrix.submatrix_apply, hrow])
-
-lemma toPolynomial_eq_zero_of_col_eq {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) {a b : Fin t}
-    (hab : a ≠ b) (hcol : R.col a = R.col b) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
-  classical
-  unfold RawMinorIndex.toPolynomial
-  exact Matrix.det_zero_of_column_eq hab (by
-    intro r
-    simp [Matrix.submatrix_apply, hcol])
-
-lemma toPolynomial_eq_zero_of_not_injective_row {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
-    (hrow : ¬ Function.Injective R.row) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
-  classical
-  rw [Function.Injective] at hrow
-  push_neg at hrow
-  rcases hrow with ⟨a, b, heq, hne⟩
-  exact R.toPolynomial_eq_zero_of_row_eq hne heq
-
-lemma toPolynomial_eq_zero_of_not_injective_col {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
-    (hcol : ¬ Function.Injective R.col) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
-  classical
-  rw [Function.Injective] at hcol
-  push_neg at hcol
-  rcases hcol with ⟨a, b, heq, hne⟩
-  exact R.toPolynomial_eq_zero_of_col_eq hne heq
-
-/-- Promote a raw minor whose row and column maps are already strictly
-increasing to an honest `MinorIndex`.  This is the no-sign bridge; a later
-sorting bridge can reduce arbitrary injective raw minors to this case. -/
-def toMinorIndexOfStrictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    MinorIndex m n t where
-  row := OrderEmbedding.ofStrictMono R.row hrow
-  col := OrderEmbedding.ofStrictMono R.col hcol
-
-@[simp] lemma toMinorIndexOfStrictMono_row {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col)
-    (i : Fin t) :
-    (R.toMinorIndexOfStrictMono hrow hcol).row i = R.row i := rfl
-
-@[simp] lemma toMinorIndexOfStrictMono_col {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col)
-    (i : Fin t) :
-    (R.toMinorIndexOfStrictMono hrow hcol).col i = R.col i := rfl
-
-@[simp] lemma of_toMinorIndexOfStrictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    RawMinorIndex.ofMinorIndex (R.toMinorIndexOfStrictMono hrow hcol) = R := by
-  cases R
-  rfl
-
-lemma toPolynomial_toMinorIndexOfStrictMono {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    genericMinor (k := k) (R.toMinorIndexOfStrictMono hrow hcol) =
-      RawMinorIndex.toPolynomial (k := k) R := by
-  rfl
-
-@[simp] lemma rowContent_toMinorIndexOfStrictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    MinorIndex.rowContent (R.toMinorIndexOfStrictMono hrow hcol) =
-      RawMinorIndex.rowContent R := by
-  rfl
-
-@[simp] lemma colContent_toMinorIndexOfStrictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t)
-    (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    MinorIndex.colContent (R.toMinorIndexOfStrictMono hrow hcol) =
-      RawMinorIndex.colContent R := by
-  rfl
-
-def permute {m n t : ℕ} (R : RawMinorIndex m n t)
-    (ρ κ : Equiv.Perm (Fin t)) : RawMinorIndex m n t where
-  row := R.row ∘ ρ
-  col := R.col ∘ κ
-
-@[simp] lemma permute_row {m n t : ℕ} (R : RawMinorIndex m n t)
-    (ρ κ : Equiv.Perm (Fin t)) (i : Fin t) :
-    (R.permute ρ κ).row i = R.row (ρ i) := rfl
-
-@[simp] lemma permute_col {m n t : ℕ} (R : RawMinorIndex m n t)
-    (ρ κ : Equiv.Perm (Fin t)) (i : Fin t) :
-    (R.permute ρ κ).col i = R.col (κ i) := rfl
-
-lemma toPolynomial_permute {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
-    (ρ κ : Equiv.Perm (Fin t)) :
-    RawMinorIndex.toPolynomial (k := k) (R.permute ρ κ) =
-      (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
-        (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-        RawMinorIndex.toPolynomial (k := k) R := by
-  classical
-  unfold RawMinorIndex.toPolynomial RawMinorIndex.permute
-  change Matrix.det
-      ((Matrix.submatrix (genericMatrix m n k) R.row R.col).submatrix ρ κ) =
-    (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
-      (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-      Matrix.det (Matrix.submatrix (genericMatrix m n k) R.row R.col)
-  let M : Matrix (Fin t) (Fin t) (MvPolynomial (Fin m × Fin n) k) :=
-    Matrix.submatrix (genericMatrix m n k) R.row R.col
-  have hsub :
-      M.submatrix ρ κ = (M.submatrix ρ id).submatrix id κ := by
-    ext i j
-    rfl
-  calc
-    Matrix.det (M.submatrix ρ κ)
-        = Matrix.det ((M.submatrix ρ id).submatrix id κ) := by rw [hsub]
-    _ = (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-          Matrix.det (M.submatrix ρ id) := by
-          rw [Matrix.det_permute']
-    _ = (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-          ((Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
-            Matrix.det M) := by
-          rw [Matrix.det_permute]
-    _ = (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
-          (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-            Matrix.det M := by
-          ring
-
-lemma rowContent_permute {m n t : ℕ}
-    (R : RawMinorIndex m n t) (ρ κ : Equiv.Perm (Fin t)) :
-    RawMinorIndex.rowContent (R.permute ρ κ) =
-      RawMinorIndex.rowContent R := by
-  classical
-  unfold RawMinorIndex.rowContent RawMinorIndex.permute
-  simpa [Function.comp_apply] using
-    (Fintype.sum_equiv ρ
-      (fun i : Fin t => Finsupp.single (R.row (ρ i)) 1)
-      (fun i : Fin t => Finsupp.single (R.row i) 1)
-      (by intro i; rfl))
-
-lemma colContent_permute {m n t : ℕ}
-    (R : RawMinorIndex m n t) (ρ κ : Equiv.Perm (Fin t)) :
-    RawMinorIndex.colContent (R.permute ρ κ) =
-      RawMinorIndex.colContent R := by
-  classical
-  unfold RawMinorIndex.colContent RawMinorIndex.permute
-  simpa [Function.comp_apply] using
-    (Fintype.sum_equiv κ
-      (fun i : Fin t => Finsupp.single (R.col (κ i)) 1)
-      (fun i : Fin t => Finsupp.single (R.col i) 1)
-      (by intro i; rfl))
-
-lemma strictMono_comp_tupleSort_of_injective {t u : ℕ}
-    (f : Fin t → Fin u) (hf : Function.Injective f) :
-    StrictMono (f ∘ Tuple.sort f) := by
-  have hmono : Monotone (f ∘ Tuple.sort f) := Tuple.monotone_sort f
-  exact hmono.strictMono_iff_injective.mpr
-    (hf.comp (Equiv.injective (Tuple.sort f)))
-
-noncomputable def sorted {m n t : ℕ}
-    (R : RawMinorIndex m n t) : RawMinorIndex m n t :=
-  R.permute (Tuple.sort R.row) (Tuple.sort R.col)
-
-lemma sorted_row_strictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t) (hrow : Function.Injective R.row) :
-    StrictMono R.sorted.row := by
-  simpa [sorted, permute] using
-    strictMono_comp_tupleSort_of_injective R.row hrow
-
-lemma sorted_col_strictMono {m n t : ℕ}
-    (R : RawMinorIndex m n t) (hcol : Function.Injective R.col) :
-    StrictMono R.sorted.col := by
-  simpa [sorted, permute] using
-    strictMono_comp_tupleSort_of_injective R.col hcol
-
-lemma sorted_row_eq_orderEmbOfFin_image {m n t : ℕ}
-    (R : RawMinorIndex m n t) (hrow : Function.Injective R.row) :
-    R.sorted.row =
-      (Finset.univ.image R.row).orderEmbOfFin (by
-        rw [Finset.card_image_of_injective _ hrow]
-        simp) := by
-  apply Finset.orderEmbOfFin_unique
-  · intro i
-    simp [sorted, permute]
-  · exact R.sorted_row_strictMono hrow
-
-lemma sorted_col_eq_orderEmbOfFin_image {m n t : ℕ}
-    (R : RawMinorIndex m n t) (hcol : Function.Injective R.col) :
-    R.sorted.col =
-      (Finset.univ.image R.col).orderEmbOfFin (by
-        rw [Finset.card_image_of_injective _ hcol]
-        simp) := by
-  apply Finset.orderEmbOfFin_unique
-  · intro i
-    simp [sorted, permute]
-  · exact R.sorted_col_strictMono hcol
-
-lemma sorted_row_le_of_image_subset {m n r s : ℕ}
-    (R : RawMinorIndex m n r) (S : RawMinorIndex m n s)
-    (hR : Function.Injective R.row) (hS : Function.Injective S.row)
-    (hsub : Finset.univ.image R.row ⊆ Finset.univ.image S.row)
-    (i : Fin r) :
-    S.sorted.row
-        ⟨i, lt_of_lt_of_le i.isLt (by
-          simpa [Finset.card_image_of_injective _ hR,
-            Finset.card_image_of_injective _ hS] using
-              Finset.card_le_card hsub)⟩ ≤
-      R.sorted.row i := by
-  have hcardR : (Finset.univ.image R.row).card = r := by
-    rw [Finset.card_image_of_injective _ hR]
-    simp
-  rw [R.sorted_row_eq_orderEmbOfFin_image hR,
-    S.sorted_row_eq_orderEmbOfFin_image hS]
-  simpa using Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset hsub
-    (Fin.cast hcardR.symm i)
-
-lemma sorted_col_le_of_image_subset {m n r s : ℕ}
-    (R : RawMinorIndex m n r) (S : RawMinorIndex m n s)
-    (hR : Function.Injective R.col) (hS : Function.Injective S.col)
-    (hsub : Finset.univ.image R.col ⊆ Finset.univ.image S.col)
-    (i : Fin r) :
-    S.sorted.col
-        ⟨i, lt_of_lt_of_le i.isLt (by
-          simpa [Finset.card_image_of_injective _ hR,
-            Finset.card_image_of_injective _ hS] using
-              Finset.card_le_card hsub)⟩ ≤
-      R.sorted.col i := by
-  have hcardR : (Finset.univ.image R.col).card = r := by
-    rw [Finset.card_image_of_injective _ hR]
-    simp
-  rw [R.sorted_col_eq_orderEmbOfFin_image hR,
-    S.sorted_col_eq_orderEmbOfFin_image hS]
-  simpa using Finset.orderEmbOfFin_le_orderEmbOfFin_of_subset hsub
-    (Fin.cast hcardR.symm i)
-
-lemma sorted_row_le_of_card_filter_le {m n t : ℕ}
-    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin m)
-    (hcount :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.row a ≤ x).card) :
-    R.sorted.row i ≤ x := by
-  classical
-  have hcard :
-      (Finset.univ.filter fun a : Fin t => R.sorted.row a ≤ x).card =
-        (Finset.univ.filter fun a : Fin t => R.row a ≤ x).card := by
-    refine Finset.card_bijective (Tuple.sort R.row) (Tuple.sort R.row).bijective ?_
-    intro a
-    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
-  have hcount' :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.row a ≤ x).card := by
-    simpa [hcard] using hcount
-  have hmono : Monotone R.sorted.row := by
-    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
-      Tuple.monotone_sort R.row
-  exact (Tuple.lt_card_le_iff_apply_le_of_monotone (f := R.sorted.row) hmono).mp hcount'
-
-lemma sorted_col_le_of_card_filter_le {m n t : ℕ}
-    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin n)
-    (hcount :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.col a ≤ x).card) :
-    R.sorted.col i ≤ x := by
-  classical
-  have hcard :
-      (Finset.univ.filter fun a : Fin t => R.sorted.col a ≤ x).card =
-        (Finset.univ.filter fun a : Fin t => R.col a ≤ x).card := by
-    refine Finset.card_bijective (Tuple.sort R.col) (Tuple.sort R.col).bijective ?_
-    intro a
-    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
-  have hcount' :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.col a ≤ x).card := by
-    simpa [hcard] using hcount
-  have hmono : Monotone R.sorted.col := by
-    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
-      Tuple.monotone_sort R.col
-  exact (Tuple.lt_card_le_iff_apply_le_of_monotone (f := R.sorted.col) hmono).mp hcount'
-
-lemma sorted_row_lt_of_card_filter_lt {m n t : ℕ}
-    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin m)
-    (hcount :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.row a < x).card) :
-    R.sorted.row i < x := by
-  classical
-  have hcard :
-      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card =
-        (Finset.univ.filter fun a : Fin t => R.row a < x).card := by
-    refine Finset.card_bijective (Tuple.sort R.row) (Tuple.sort R.row).bijective ?_
-    intro a
-    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
-  have hcount' :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card := by
-    simpa [hcard] using hcount
-  have hmono : Monotone R.sorted.row := by
-    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
-      Tuple.monotone_sort R.row
-  by_contra hnot
-  have hxi : x ≤ R.sorted.row i := le_of_not_gt hnot
-  have hsub :
-      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x) ⊆
-        Finset.Iio i := by
-    intro a ha
-    rw [Finset.mem_filter] at ha
-    rw [Finset.mem_Iio]
-    by_contra hai
-    have hia : i ≤ a := le_of_not_gt hai
-    exact not_lt_of_ge (le_trans hxi (hmono hia)) ha.2
-  have hcard_le :
-      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card ≤ i.val := by
-    calc
-      (Finset.univ.filter fun a : Fin t => R.sorted.row a < x).card
-          ≤ (Finset.Iio i).card := Finset.card_le_card hsub
-      _ = i.val := by simp
-  omega
-
-lemma sorted_col_lt_of_card_filter_lt {m n t : ℕ}
-    (R : RawMinorIndex m n t) (i : Fin t) (x : Fin n)
-    (hcount :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.col a < x).card) :
-    R.sorted.col i < x := by
-  classical
-  have hcard :
-      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card =
-        (Finset.univ.filter fun a : Fin t => R.col a < x).card := by
-    refine Finset.card_bijective (Tuple.sort R.col) (Tuple.sort R.col).bijective ?_
-    intro a
-    simp [RawMinorIndex.sorted, RawMinorIndex.permute]
-  have hcount' :
-      (i : ℕ) < (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card := by
-    simpa [hcard] using hcount
-  have hmono : Monotone R.sorted.col := by
-    simpa [RawMinorIndex.sorted, RawMinorIndex.permute, Function.comp_def] using
-      Tuple.monotone_sort R.col
-  by_contra hnot
-  have hxi : x ≤ R.sorted.col i := le_of_not_gt hnot
-  have hsub :
-      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x) ⊆
-        Finset.Iio i := by
-    intro a ha
-    rw [Finset.mem_filter] at ha
-    rw [Finset.mem_Iio]
-    by_contra hai
-    have hia : i ≤ a := le_of_not_gt hai
-    exact not_lt_of_ge (le_trans hxi (hmono hia)) ha.2
-  have hcard_le :
-      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card ≤ i.val := by
-    calc
-      (Finset.univ.filter fun a : Fin t => R.sorted.col a < x).card
-          ≤ (Finset.Iio i).card := Finset.card_le_card hsub
-      _ = i.val := by simp
-  omega
-
-lemma toPolynomial_sorted {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) :
-    RawMinorIndex.toPolynomial (k := k) R.sorted =
-      (Equiv.Perm.sign (Tuple.sort R.row) : MvPolynomial (Fin m × Fin n) k) *
-        (Equiv.Perm.sign (Tuple.sort R.col) : MvPolynomial (Fin m × Fin n) k) *
-          RawMinorIndex.toPolynomial (k := k) R := by
-  exact R.toPolynomial_permute (Tuple.sort R.row) (Tuple.sort R.col)
-
-lemma rowContent_sorted {m n t : ℕ}
-    (R : RawMinorIndex m n t) :
-    RawMinorIndex.rowContent R.sorted = RawMinorIndex.rowContent R := by
-  exact R.rowContent_permute (Tuple.sort R.row) (Tuple.sort R.col)
-
-lemma colContent_sorted {m n t : ℕ}
-    (R : RawMinorIndex m n t) :
-    RawMinorIndex.colContent R.sorted = RawMinorIndex.colContent R := by
-  exact R.colContent_permute (Tuple.sort R.row) (Tuple.sort R.col)
-
-end RawMinorIndex
-
-/-- A two-factor raw minor product.  This is the local object produced by
-Laplace exchange before zero terms have been discarded and before injective
-row/column maps have been promoted to `MinorIndex`. -/
-structure RawMinorPair (m n : ℕ) where
-  p : ℕ
-  q : ℕ
-  left : RawMinorIndex m n p
-  right : RawMinorIndex m n q
-
 namespace RawMinorPair
-
-noncomputable def toPolynomial {m n : ℕ}
-    {k : Type*} [CommRing k]
-    (P : RawMinorPair m n) : MvPolynomial (Fin m × Fin n) k :=
-  RawMinorIndex.toPolynomial (k := k) P.left *
-    RawMinorIndex.toPolynomial (k := k) P.right
-
-noncomputable def rowContent {m n : ℕ}
-    (P : RawMinorPair m n) : Fin m →₀ ℕ :=
-  RawMinorIndex.rowContent P.left + RawMinorIndex.rowContent P.right
-
-noncomputable def colContent {m n : ℕ}
-    (P : RawMinorPair m n) : Fin n →₀ ℕ :=
-  RawMinorIndex.colContent P.left + RawMinorIndex.colContent P.right
-
-def rowIndexSum {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
-  (∑ i : Fin P.p, (P.left.row i).val) +
-    ∑ j : Fin P.q, (P.right.row j).val
-
-def colIndexSum {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
-  (∑ i : Fin P.p, (P.left.col i).val) +
-    ∑ j : Fin P.q, (P.right.col j).val
-
-def laplaceSignExponent {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
-  P.rowIndexSum + P.colIndexSum
-
-noncomputable def laplaceCoeff {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
-  (-1 : k) ^ P.laplaceSignExponent
-
-noncomputable def laplacePolynomial {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    MvPolynomial (Fin m × Fin n) k :=
-  MvPolynomial.C (P.laplaceCoeff (k := k)) *
-    RawMinorPair.toPolynomial (k := k) P
-
-noncomputable def sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair m n where
-  p := P.p
-  q := P.q
-  left := P.left.sorted
-  right := P.right.sorted
-
-noncomputable def sortSign {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    MvPolynomial (Fin m × Fin n) k :=
-  (Equiv.Perm.sign (Tuple.sort P.left.row) : MvPolynomial (Fin m × Fin n) k) *
-    (Equiv.Perm.sign (Tuple.sort P.left.col) : MvPolynomial (Fin m × Fin n) k) *
-    (Equiv.Perm.sign (Tuple.sort P.right.row) : MvPolynomial (Fin m × Fin n) k) *
-    (Equiv.Perm.sign (Tuple.sort P.right.col) : MvPolynomial (Fin m × Fin n) k)
-
-noncomputable def sortSignCoeff {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
-  (Equiv.Perm.sign (Tuple.sort P.left.row) : k) *
-    (Equiv.Perm.sign (Tuple.sort P.left.col) : k) *
-    (Equiv.Perm.sign (Tuple.sort P.right.row) : k) *
-    (Equiv.Perm.sign (Tuple.sort P.right.col) : k)
-
-lemma sortSign_eq_C {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    P.sortSign (k := k) = MvPolynomial.C (P.sortSignCoeff (k := k)) := by
-  simp [RawMinorPair.sortSign, RawMinorPair.sortSignCoeff, MvPolynomial.C_mul]
-
-lemma sortSign_mul_self {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    P.sortSign (k := k) * P.sortSign (k := k) = 1 := by
-  let sρL : MvPolynomial (Fin m × Fin n) k :=
-    (Equiv.Perm.sign (Tuple.sort P.left.row) :
-      MvPolynomial (Fin m × Fin n) k)
-  let sκL : MvPolynomial (Fin m × Fin n) k :=
-    (Equiv.Perm.sign (Tuple.sort P.left.col) :
-      MvPolynomial (Fin m × Fin n) k)
-  let sρR : MvPolynomial (Fin m × Fin n) k :=
-    (Equiv.Perm.sign (Tuple.sort P.right.row) :
-      MvPolynomial (Fin m × Fin n) k)
-  let sκR : MvPolynomial (Fin m × Fin n) k :=
-    (Equiv.Perm.sign (Tuple.sort P.right.col) :
-      MvPolynomial (Fin m × Fin n) k)
-  have hρL : sρL * sρL = 1 := by
-    simp [sρL, ← Int.cast_mul]
-  have hκL : sκL * sκL = 1 := by
-    simp [sκL, ← Int.cast_mul]
-  have hρR : sρR * sρR = 1 := by
-    simp [sρR, ← Int.cast_mul]
-  have hκR : sκR * sκR = 1 := by
-    simp [sκR, ← Int.cast_mul]
-  change (sρL * sκL * sρR * sκR) *
-      (sρL * sκL * sρR * sκR) = 1
-  calc
-    (sρL * sκL * sρR * sκR) * (sρL * sκL * sρR * sκR)
-        = (sρL * sρL) * (sκL * sκL) * (sρR * sρR) * (sκR * sκR) := by
-          ring
-    _ = 1 := by
-          rw [hρL, hκL, hρR, hκR]
-          ring
-
-def permute {m n : ℕ} (P : RawMinorPair m n)
-    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
-    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
-    RawMinorPair m n where
-  p := P.p
-  q := P.q
-  left := P.left.permute ρL κL
-  right := P.right.permute ρR κR
-
-lemma toPolynomial_permute {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n)
-    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
-    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
-    RawMinorPair.toPolynomial (k := k) (P.permute ρL κL ρR κR) =
-      (Equiv.Perm.sign ρL : MvPolynomial (Fin m × Fin n) k) *
-        (Equiv.Perm.sign κL : MvPolynomial (Fin m × Fin n) k) *
-        (Equiv.Perm.sign ρR : MvPolynomial (Fin m × Fin n) k) *
-        (Equiv.Perm.sign κR : MvPolynomial (Fin m × Fin n) k) *
-        RawMinorPair.toPolynomial (k := k) P := by
-  classical
-  rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
-    RawMinorPair.permute, RawMinorIndex.toPolynomial_permute,
-    RawMinorIndex.toPolynomial_permute]
-  ring
-
-lemma rowContent_permute {m n : ℕ} (P : RawMinorPair m n)
-    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
-    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
-    RawMinorPair.rowContent (P.permute ρL κL ρR κR) =
-      RawMinorPair.rowContent P := by
-  simp [RawMinorPair.rowContent, RawMinorPair.permute,
-    RawMinorIndex.rowContent_permute]
-
-lemma colContent_permute {m n : ℕ} (P : RawMinorPair m n)
-    (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
-    (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
-    RawMinorPair.colContent (P.permute ρL κL ρR κR) =
-      RawMinorPair.colContent P := by
-  simp [RawMinorPair.colContent, RawMinorPair.permute,
-    RawMinorIndex.colContent_permute]
-
-lemma sorted_left_row_strictMono {m n : ℕ} (P : RawMinorPair m n)
-    (hrow : Function.Injective P.left.row) :
-    StrictMono P.sorted.left.row := by
-  simpa [RawMinorPair.sorted] using
-    RawMinorIndex.sorted_row_strictMono P.left hrow
-
-lemma sorted_left_col_strictMono {m n : ℕ} (P : RawMinorPair m n)
-    (hcol : Function.Injective P.left.col) :
-    StrictMono P.sorted.left.col := by
-  simpa [RawMinorPair.sorted] using
-    RawMinorIndex.sorted_col_strictMono P.left hcol
-
-lemma sorted_right_row_strictMono {m n : ℕ} (P : RawMinorPair m n)
-    (hrow : Function.Injective P.right.row) :
-    StrictMono P.sorted.right.row := by
-  simpa [RawMinorPair.sorted] using
-    RawMinorIndex.sorted_row_strictMono P.right hrow
-
-lemma sorted_right_col_strictMono {m n : ℕ} (P : RawMinorPair m n)
-    (hcol : Function.Injective P.right.col) :
-    StrictMono P.sorted.right.col := by
-  simpa [RawMinorPair.sorted] using
-    RawMinorIndex.sorted_col_strictMono P.right hcol
-
-lemma toPolynomial_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.toPolynomial (k := k) P.sorted =
-      P.sortSign (k := k) * RawMinorPair.toPolynomial (k := k) P := by
-  classical
-  rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
-    RawMinorPair.sorted, RawMinorIndex.toPolynomial_sorted,
-    RawMinorIndex.toPolynomial_sorted]
-  simp [RawMinorPair.sortSign]
-  ring
-
-lemma rowContent_sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.rowContent P.sorted = RawMinorPair.rowContent P := by
-  simp [RawMinorPair.rowContent, RawMinorPair.sorted,
-    RawMinorIndex.rowContent_sorted]
-
-lemma colContent_sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.colContent P.sorted = RawMinorPair.colContent P := by
-  simp [RawMinorPair.colContent, RawMinorPair.sorted,
-    RawMinorIndex.colContent_sorted]
-
-lemma rowIndexSum_sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.rowIndexSum P.sorted = RawMinorPair.rowIndexSum P := by
-  classical
-  have hleft :
-      (∑ i : Fin P.p,
-          (P.left.row ((Tuple.sort P.left.row) i)).val) =
-        ∑ i : Fin P.p, (P.left.row i).val := by
-    simpa using
-      (Fintype.sum_equiv (Tuple.sort P.left.row)
-        (fun i : Fin P.p => (P.left.row ((Tuple.sort P.left.row) i)).val)
-        (fun i : Fin P.p => (P.left.row i).val)
-        (by intro i; rfl))
-  have hright :
-      (∑ i : Fin P.q,
-          (P.right.row ((Tuple.sort P.right.row) i)).val) =
-        ∑ i : Fin P.q, (P.right.row i).val := by
-    simpa using
-      (Fintype.sum_equiv (Tuple.sort P.right.row)
-        (fun i : Fin P.q => (P.right.row ((Tuple.sort P.right.row) i)).val)
-        (fun i : Fin P.q => (P.right.row i).val)
-        (by intro i; rfl))
-  simp [RawMinorPair.rowIndexSum, RawMinorPair.sorted,
-    RawMinorIndex.sorted, RawMinorIndex.permute, hleft, hright]
-
-lemma colIndexSum_sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.colIndexSum P.sorted = RawMinorPair.colIndexSum P := by
-  classical
-  have hleft :
-      (∑ i : Fin P.p,
-          (P.left.col ((Tuple.sort P.left.col) i)).val) =
-        ∑ i : Fin P.p, (P.left.col i).val := by
-    simpa using
-      (Fintype.sum_equiv (Tuple.sort P.left.col)
-        (fun i : Fin P.p => (P.left.col ((Tuple.sort P.left.col) i)).val)
-        (fun i : Fin P.p => (P.left.col i).val)
-        (by intro i; rfl))
-  have hright :
-      (∑ i : Fin P.q,
-          (P.right.col ((Tuple.sort P.right.col) i)).val) =
-        ∑ i : Fin P.q, (P.right.col i).val := by
-    simpa using
-      (Fintype.sum_equiv (Tuple.sort P.right.col)
-        (fun i : Fin P.q => (P.right.col ((Tuple.sort P.right.col) i)).val)
-        (fun i : Fin P.q => (P.right.col i).val)
-        (by intro i; rfl))
-  simp [RawMinorPair.colIndexSum, RawMinorPair.sorted,
-    RawMinorIndex.sorted, RawMinorIndex.permute, hleft, hright]
-
-lemma laplaceSignExponent_sorted {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.laplaceSignExponent P.sorted =
-      RawMinorPair.laplaceSignExponent P := by
-  simp [RawMinorPair.laplaceSignExponent, RawMinorPair.rowIndexSum_sorted,
-    RawMinorPair.colIndexSum_sorted]
-
-lemma laplaceCoeff_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplaceCoeff (k := k) P.sorted =
-      RawMinorPair.laplaceCoeff (k := k) P := by
-  simp [RawMinorPair.laplaceCoeff, RawMinorPair.laplaceSignExponent_sorted]
-
-lemma laplacePolynomial_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplacePolynomial (k := k) P.sorted =
-      P.sortSign (k := k) * RawMinorPair.laplacePolynomial (k := k) P := by
-  rw [RawMinorPair.laplacePolynomial, RawMinorPair.laplacePolynomial,
-    RawMinorPair.laplaceCoeff_sorted, RawMinorPair.toPolynomial_sorted]
-  ring
-
-lemma laplacePolynomial_eq_sortSign_mul_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplacePolynomial (k := k) P =
-      P.sortSign (k := k) *
-        RawMinorPair.laplacePolynomial (k := k) P.sorted := by
-  rw [RawMinorPair.laplacePolynomial_sorted]
-  have hsign := RawMinorPair.sortSign_mul_self (k := k) P
-  calc
-    RawMinorPair.laplacePolynomial (k := k) P
-        = (P.sortSign (k := k) * P.sortSign (k := k)) *
-            RawMinorPair.laplacePolynomial (k := k) P := by
-          rw [hsign]
-          simp
-    _ = P.sortSign (k := k) *
-          (P.sortSign (k := k) *
-            RawMinorPair.laplacePolynomial (k := k) P) := by
-          ring
-
-def slotRow {m n : ℕ} (P : RawMinorPair m n) :
-    Sum (Fin P.p) (Fin P.q) → Fin m
-  | Sum.inl i => P.left.row i
-  | Sum.inr j => P.right.row j
-
-def slotCol {m n : ℕ} (P : RawMinorPair m n) :
-    Sum (Fin P.p) (Fin P.q) → Fin n
-  | Sum.inl i => P.left.col i
-  | Sum.inr j => P.right.col j
-
-lemma rowContent_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.rowContent P =
-      ∑ s : Sum (Fin P.p) (Fin P.q),
-        Finsupp.single (P.slotRow s) 1 := by
-  classical
-  cases P with
-  | mk p q left right =>
-      simp [RawMinorPair.rowContent, RawMinorPair.slotRow,
-        RawMinorIndex.rowContent, Fintype.sum_sum_type]
-
-lemma colContent_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
-    RawMinorPair.colContent P =
-      ∑ s : Sum (Fin P.p) (Fin P.q),
-        Finsupp.single (P.slotCol s) 1 := by
-  classical
-  cases P with
-  | mk p q left right =>
-      simp [RawMinorPair.colContent, RawMinorPair.slotCol,
-        RawMinorIndex.colContent, Fintype.sum_sum_type]
-
-lemma rowIndexSum_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
-    P.rowIndexSum =
-      ∑ s : Sum (Fin P.p) (Fin P.q), (P.slotRow s).val := by
-  classical
-  cases P with
-  | mk p q left right =>
-      simp [RawMinorPair.rowIndexSum, RawMinorPair.slotRow,
-        Fintype.sum_sum_type]
-
-lemma colIndexSum_eq_sum_slots {m n : ℕ} (P : RawMinorPair m n) :
-    P.colIndexSum =
-      ∑ s : Sum (Fin P.p) (Fin P.q), (P.slotCol s).val := by
-  classical
-  cases P with
-  | mk p q left right =>
-      simp [RawMinorPair.colIndexSum, RawMinorPair.slotCol,
-        Fintype.sum_sum_type]
 
 /-- A redistribution of all row/column slots of a raw two-minor product into
 new left/right factors.  The new left factor has size `r`; the new right factor
@@ -19368,78 +19387,6 @@ theorem standardBitableau_linearIndependent_of_degreewise
   have hS := DFunLike.congr_fun hcd_zero ⟨S, rfl⟩
   simpa [cd, P, d] using hS
 
-/-- A coefficient-triangularity criterion for polynomial linear independence.
-
-For each vector `v i`, choose a monomial `key i` and an ordered rank `rank i`.  If the
-chosen coefficient of `v i` is nonzero, and no `v j` can contribute to the coefficient
-at `key i` unless `rank i ≤ rank j`, then a maximal-rank term in any finite relation
-cannot cancel. -/
-theorem mvPolynomial_linearIndependent_of_coeff_triangular
-    {σ ι κ : Type*}
-    {k : Type*} [Field k]
-    [LinearOrder κ]
-    (v : ι → MvPolynomial σ k)
-    (key : ι → σ →₀ ℕ)
-    (rank : ι → κ)
-    (hrank : Function.Injective rank)
-    (hdiag : ∀ i, MvPolynomial.coeff (key i) (v i) ≠ 0)
-    (htri :
-      ∀ i j,
-        MvPolynomial.coeff (key i) (v j) ≠ 0 →
-          rank i ≤ rank j) :
-    LinearIndependent k v := by
-  classical
-  rw [linearIndependent_iff]
-  intro c hc
-  by_contra hc_ne
-  have hsupp : c.support.Nonempty := by
-    by_contra hsupp
-    have hsupport_empty : c.support = ∅ := by
-      exact Finset.not_nonempty_iff_eq_empty.mp hsupp
-    exact hc_ne (Finsupp.support_eq_empty.mp hsupport_empty)
-  rcases Finset.exists_max_image c.support rank hsupp with
-    ⟨i₀, hi₀mem, hi₀max⟩
-  have hci₀_ne : c i₀ ≠ 0 := by
-    simpa [Finsupp.mem_support_iff] using hi₀mem
-  have hcoeff_zero :
-      MvPolynomial.coeff (key i₀)
-        (Finsupp.linearCombination k v c) = 0 := by
-    rw [hc]
-    simp
-  have hcoeff_sum :
-      MvPolynomial.coeff (key i₀)
-        (Finsupp.linearCombination k v c)
-        =
-      c.sum fun j a => a * MvPolynomial.coeff (key i₀) (v j) := by
-    rw [Finsupp.linearCombination_apply, Finsupp.sum, MvPolynomial.coeff_sum]
-    apply Finset.sum_congr rfl
-    intro j hj
-    simp
-  have hsum_eq :
-      c.sum (fun j a => a * MvPolynomial.coeff (key i₀) (v j)) =
-        c i₀ * MvPolynomial.coeff (key i₀) (v i₀) := by
-    rw [Finsupp.sum]
-    apply Finset.sum_eq_single i₀
-    · intro j hj hji
-      have hcoeff_j_zero :
-          MvPolynomial.coeff (key i₀) (v j) = 0 := by
-        by_contra hcoeff_j
-        have hle_forward : rank i₀ ≤ rank j := htri i₀ j hcoeff_j
-        have hle_back : rank j ≤ rank i₀ := hi₀max j hj
-        have hrank_eq : rank i₀ = rank j := le_antisymm hle_forward hle_back
-        have hij : i₀ = j := hrank hrank_eq
-        exact hji hij.symm
-      simp [hcoeff_j_zero]
-    · intro hi₀not
-      exact False.elim (hi₀not hi₀mem)
-  have hsum_zero :
-      c.sum (fun j a => a * MvPolynomial.coeff (key i₀) (v j)) = 0 := by
-    simpa [hcoeff_sum] using hcoeff_zero
-  have hdiag_nonzero :
-      c i₀ * MvPolynomial.coeff (key i₀) (v i₀) ≠ 0 :=
-    mul_ne_zero hci₀_ne (hdiag i₀)
-  exact hdiag_nonzero (by simpa [hsum_eq] using hsum_zero)
-
 namespace KRS
 
 /-- The inverse side of the KRS equivalence is injective on standard bitableaux. -/
@@ -19464,23 +19411,6 @@ theorem inverse_degree {m n : ℕ}
   exact h.symm
 
 end KRS
-
-/-- A nonzero coefficient of a homogeneous multivariate polynomial has the
-homogeneous degree. -/
-lemma mvPolynomial_coeff_ne_zero_degree_of_isHomogeneous
-    {σ : Type*} {k : Type*} [Field k]
-    {p : MvPolynomial σ k} {d : ℕ} {E : σ →₀ ℕ}
-    (hp : p.IsHomogeneous d)
-    (hcoeff : MvPolynomial.coeff E p ≠ 0) :
-    Finsupp.degree E = d := by
-  have hp_mem :
-      p ∈ MvPolynomial.homogeneousSubmodule σ k d := by
-    rw [MvPolynomial.mem_homogeneousSubmodule]
-    exact hp
-  rw [MvPolynomial.homogeneousSubmodule_eq_finsupp_supported,
-    Finsupp.mem_supported] at hp_mem
-  exact hp_mem (by
-    simpa [MvPolynomial.mem_support_iff] using hcoeff)
 
 /-- Every nonzero coefficient of a generic minor comes from one Leibniz
 permutation term. -/
@@ -23269,22 +23199,6 @@ lemma swan_corollary2_8_size_containingSplit_total_laplace_sum_of_iccSplit
   exact exists_coeff_total_containingSplit_laplace_sum_of_iccSplit
     (k := k) T.toRawPair coeffIcc hpivot_coeff hsum
 
-lemma neg_one_pow_mul_self {R : Type*} [CommRing R] (r : ℕ) :
-    ((-1 : R) ^ r) * ((-1 : R) ^ r) = 1 := by
-  induction r with
-  | zero =>
-      simp
-  | succ r ih =>
-      simp only [pow_succ]
-      calc
-        ((-1 : R) ^ r * -1) * ((-1 : R) ^ r * -1)
-            =
-          ((-1 : R) ^ r * ((-1 : R) ^ r)) * ((-1 : R) * (-1 : R)) := by
-            ring
-    _ = 1 := by
-            rw [ih]
-            ring
-
 noncomputable def swan_component_col_hodgeSplitFactor
     {m n : ℕ}
     {k : Type*} [Field k]
@@ -25944,102 +25858,6 @@ lemma minorWord_finsupp_sum_mul_tail
           c).sum fun W a =>
         MvPolynomial.C a * MinorWord.toPolynomial (k := k) W :=
           minorWord_finsupp_sum_append_right (k := k) c rest
-
-noncomputable def finsuppScalarBind
-    {α β : Type*} {k : Type*} [Field k]
-    (c : α →₀ k) (d : α → β →₀ k) : β →₀ k :=
-  c.sum fun a ca => ca • d a
-
-lemma finsuppScalarBind_apply
-    {α β : Type*} {k : Type*} [Field k]
-    (c : α →₀ k) (d : α → β →₀ k) (b : β) :
-    finsuppScalarBind c d b = c.sum fun a ca => ca * d a b := by
-  classical
-  rw [finsuppScalarBind, Finsupp.sum]
-  conv_rhs => rw [Finsupp.sum]
-  simp
-
-lemma finsuppScalarBind_apply_ne_zero_exists
-    {α β : Type*} {k : Type*} [Field k]
-    (c : α →₀ k) (d : α → β →₀ k) {b : β}
-    (hb : finsuppScalarBind c d b ≠ 0) :
-    ∃ a : α, c a ≠ 0 ∧ d a b ≠ 0 := by
-  classical
-  by_contra h
-  push_neg at h
-  apply hb
-  rw [finsuppScalarBind_apply]
-  rw [Finsupp.sum]
-  refine Finset.sum_eq_zero ?_
-  intro a _ha
-  by_cases hca : c a = 0
-  · simp [hca]
-  · have hda : d a b = 0 := h a hca
-    simp [hda]
-
-lemma finsuppScalarBind_support_property
-    {α β : Type*} {k : Type*} [Field k]
-    (c : α →₀ k) (d : α → β →₀ k) (P : β → Prop)
-    (h : ∀ a b, c a ≠ 0 → d a b ≠ 0 → P b) :
-    ∀ b, finsuppScalarBind c d b ≠ 0 → P b := by
-  intro b hb
-  rcases finsuppScalarBind_apply_ne_zero_exists c d hb with
-    ⟨a, hca, hdb⟩
-  exact h a b hca hdb
-
-lemma finsupp_mapDomain_support_property
-    {α β : Type*} {k : Type*} [AddCommMonoid k]
-    (f : α → β) (c : α →₀ k) (P : β → Prop)
-    (h : ∀ a, c a ≠ 0 → P (f a)) :
-    ∀ b, Finsupp.mapDomain f c b ≠ 0 → P b := by
-  classical
-  intro b hb
-  have hbmem : b ∈ (Finsupp.mapDomain f c).support := by
-    simpa [Finsupp.mem_support_iff] using hb
-  have himage : b ∈ Finset.image f c.support :=
-    Finsupp.mapDomain_support hbmem
-  rcases Finset.mem_image.mp himage with ⟨a, hamem, rfl⟩
-  exact h a (by simpa [Finsupp.mem_support_iff] using hamem)
-
-lemma finsuppScalarBind_polynomial_sum
-    {α β σ : Type*} {k : Type*} [Field k]
-    (c : α →₀ k) (d : α → β →₀ k)
-    (v : β → MvPolynomial σ k) :
-    (finsuppScalarBind c d).sum
-        (fun b a => MvPolynomial.C a * v b) =
-      c.sum fun a ca =>
-        MvPolynomial.C ca *
-          (d a).sum (fun b db => MvPolynomial.C db * v b) := by
-  classical
-  unfold finsuppScalarBind
-  change
-    ((∑ a ∈ c.support, c a • d a).sum
-        (fun b a => MvPolynomial.C a * v b)) =
-      ∑ a ∈ c.support,
-        MvPolynomial.C (c a) *
-          (d a).sum (fun b db => MvPolynomial.C db * v b)
-  rw [←Finsupp.sum_finset_sum_index]
-  · apply Finset.sum_congr rfl
-    intro a _ha
-    rw [Finsupp.sum_smul_index]
-    · calc
-        (d a).sum (fun b db => MvPolynomial.C (c a * db) * v b)
-            =
-          (d a).sum (fun b db =>
-            MvPolynomial.C (c a) * (MvPolynomial.C db * v b)) := by
-            apply Finsupp.sum_congr
-            intro b db
-            simp [MvPolynomial.C_mul, mul_assoc]
-        _ =
-          MvPolynomial.C (c a) *
-            (d a).sum (fun b db => MvPolynomial.C db * v b) := by
-            rw [← Finsupp.mul_sum]
-    · intro b
-      simp
-  · intro a
-    simp
-  · intro a x y
-    rw [MvPolynomial.C_add, add_mul]
 
 lemma minorWord_head_insert_after_tail_straightening
     {m n : ℕ} {k : Type*} [Field k]
