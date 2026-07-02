@@ -1,3 +1,4 @@
+import MyProject.Determinantalideals.DeterminantalIdeal
 import MyProject.Determinantalideals.Basic
 import MyProject.Determinantalideals.Finite
 import MyProject.Determinantalideals.Eval

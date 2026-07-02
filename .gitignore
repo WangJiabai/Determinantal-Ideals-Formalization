@@ -19,3 +19,5 @@ bin/
 # Misc
 *.log
 .env
+论文.tex
+论文.pdf

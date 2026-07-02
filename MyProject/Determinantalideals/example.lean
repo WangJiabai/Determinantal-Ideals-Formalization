@@ -31,7 +31,7 @@ generic matrix is `X₁₃ X₂₂ X₃₁`, i.e. in zero-indexed Lean notation,
 `X (0,2) * X (1,1) * X (2,0)`.
 -/
 example {𝕜 : Type*} [CommSemiring 𝕜] :
-    antidiagMonomial (k := 𝕜) principal3MinorIn4x3 =
+    antidiagMonomial 𝕜 principal3MinorIn4x3 =
       MvPolynomial.X (r0, c2) *
         MvPolynomial.X (r1, c1) *
           MvPolynomial.X (r2, c0) := by
@@ -45,7 +45,7 @@ generic matrix is `X₁₁ X₂₂ X₃₃`, i.e in zero-indexed Lean notation,
 `X (0,0) * X (1,1) * X (2,2)`.
 -/
 example {𝕜 : Type*} [CommSemiring 𝕜] :
-    diagMonomial (k := 𝕜) principal3MinorIn4x3 =
+    diagMonomial 𝕜 principal3MinorIn4x3 =
       MvPolynomial.X (r0, c0) *
         MvPolynomial.X (r1, c1) *
           MvPolynomial.X (r2, c2) := by
@@ -83,7 +83,7 @@ noncomputable def principal3MinorIn4x3_2 : MinorIndex 4 3 3 where
   col := emb3to3
 
 example {𝕜 : Type*} [CommSemiring 𝕜] :
-    diagMonomial (k := 𝕜) principal3MinorIn4x3_2 =
+    diagMonomial 𝕜 principal3MinorIn4x3_2 =
       MvPolynomial.X (r0, c0) *
         MvPolynomial.X (r1, c1) *
           MvPolynomial.X (r2, c2) := by
@@ -106,7 +106,7 @@ def emb5to11 : Fin 5 ↪o Fin 11 :=
       intro a b hab
       fin_cases a <;> fin_cases b <;> simp at hab ⊢)
 
-example [CommRing k]:genericMinor (k := k) principal3MinorIn4x3_2=
+example [CommRing k]:genericMinor k principal3MinorIn4x3_2=
           MvPolynomial.X
             ((⟨0, by decide⟩ : Fin 4), (⟨0, by decide⟩ : Fin 3)) *
           MvPolynomial.X
@@ -144,12 +144,13 @@ example [CommRing k]:genericMinor (k := k) principal3MinorIn4x3_2=
           MvPolynomial.X
             ((⟨2, by decide⟩ : Fin 4), (⟨0, by decide⟩ : Fin 3)) := by
   classical
-  simp [genericMinor, genericMatrix, principal3MinorIn4x3_2,
-    emb3to4, emb3to3, Matrix.det_fin_three]
+  simp [genericMinor, Matrix.MinorIndex.mvPolynomialMinor, Matrix.MinorIndex.detSubmatrix,
+    Matrix.mvPolynomialX,
+    principal3MinorIn4x3_2, emb3to4, emb3to3, Matrix.det_fin_three]
 
 example {k} [Nontrivial k] [CommRing k] (ord : MonomialOrder (Fin 4 × Fin 3))
   (hdiag : IsDiagonalTermOrder ord) :
-  MvPolynomial.monomial (ord.degree (genericMinor (k := k) principal3MinorIn4x3_2)) 1=
+  MvPolynomial.monomial (ord.degree (genericMinor k principal3MinorIn4x3_2)) 1=
           MvPolynomial.X
             ((⟨0, by decide⟩ : Fin 4), (⟨0, by decide⟩ : Fin 3))  *
           MvPolynomial.X
@@ -157,7 +158,7 @@ example {k} [Nontrivial k] [CommRing k] (ord : MonomialOrder (Fin 4 × Fin 3))
           MvPolynomial.X
             ((⟨2, by decide⟩ : Fin 4), (⟨2, by decide⟩ : Fin 3)):=by
   classical
-  rw [degree_minor_eq_diagExp ord hdiag principal3MinorIn4x3_2]
+  rw [degree_minor_eq_diagExp k ord hdiag principal3MinorIn4x3_2]
   unfold diagExp
   rw [MvPolynomial.monomial_sum_one]
   rw [Fin.prod_univ_three]
@@ -179,7 +180,7 @@ example {k} [CommRing k] :
     principal3MinorIn4x3_2, emb3to4, emb3to3]
 
 example [CommRing k] (I : MinorIndex m n t) :
- diagTerm (k:=k) I = diagMonomial I:=by
+ diagTerm k I = diagMonomial k I:=by
   classical
   unfold diagTerm diagMonomial
   change

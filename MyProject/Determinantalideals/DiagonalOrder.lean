@@ -454,7 +454,7 @@ theorem antiDiagonalLex_isAntidiagonal :
         · exact lt_irrefl _ (by exact Option.some_lt_some.mp hd)
       have hkfix : σ k = k.rev := hfix_before k hk_lt
       have hperm : permExp I σ (I.row k, I.col k.rev) = 1 :=
-        permExp_apply_antidiag_of_rev (m := m) (n := n) I σ hkfix
+        permExp_apply_antidiag_of_rev m n I σ hkfix
       have hanti_at : antidiagExp I (I.row k, I.col k.rev) = 1 :=
         antidiagExp_apply_antidiag m n I k
       simp [hperm, hanti_at]
@@ -521,7 +521,7 @@ theorem antiDiagonalLex_isAntidiagonal :
   · have hanti_at : antidiagExp I (I.row i0, I.col i0.rev) = 1 := by
       exact antidiagExp_apply_antidiag m n I i0
     have hperm_at : permExp I σ (I.row i0, I.col i0.rev) = 0 := by
-      exact permExp_apply_antidiag_eq_zero (m := m) (n := n) I σ hi0_move
+      exact permExp_apply_antidiag_eq_zero m n I σ hi0_move
     simp [hperm_at, hanti_at]
 
 end ConcreteLex
@@ -548,13 +548,14 @@ theorem permExp_ne_antidiagExp_of_ne_rev
     permExp I σ ≠ antidiagExp I := by
   intro hEq
   have hlt : permExp I σ ≺[antiDiagonalLex m n] antidiagExp I :=
-    antiDiagonalLex_isAntidiagonal (m := m) (n := n) I σ hσ
+    antiDiagonalLex_isAntidiagonal m n I σ hσ
   simp [hEq] at hlt
 
 /-- Every determinant permutation coefficient is a unit-valued sign, hence nonzero over a
 nontrivial coefficient ring. -/
-theorem permCoeff_ne_zero [Nontrivial k] (σ : Equiv.Perm (Fin t)) :
-    permCoeff (k := k) σ ≠ 0 := by
+theorem permCoeff_ne_zero (k : Type*) [CommRing k] [Nontrivial k] {t : ℕ}
+    (σ : Equiv.Perm (Fin t)) :
+    permCoeff k σ ≠ 0 := by
   rw [permCoeff]
   rcases Int.units_eq_one_or (Equiv.Perm.sign σ) with h | h
   · simp [h]
@@ -569,21 +570,22 @@ variable {m n t : ℕ}
 
 /-- Under a diagonal term order, the degree of a minor is its diagonal exponent vector. -/
 theorem degree_minor_eq_diagExp
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hdiag : IsDiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.degree (genericMinor (k := k) I) = diagExp I := by
+    ord.degree (genericMinor k I) = diagExp I := by
   classical
   apply ord.toSyn.injective
   apply le_antisymm
   · rw [ord.degree_le_iff]
     intro c hc
-    have hcoeff : MvPolynomial.coeff c (genericMinor (k := k) I) ≠ 0 := by
+    have hcoeff : MvPolynomial.coeff c (genericMinor k I) ≠ 0 := by
       simpa [MvPolynomial.mem_support_iff] using hc
     rw [minor_eq_sum_permTerm I, MvPolynomial.coeff_sum] at hcoeff
     have hex :
         ∃ σ : Equiv.Perm (Fin t),
-          MvPolynomial.coeff c (permTerm (k := k) I σ) ≠ 0 := by
+          MvPolynomial.coeff c (permTerm k I σ) ≠ 0 := by
       by_contra h
       push_neg at h
       exact hcoeff <| by
@@ -593,7 +595,7 @@ theorem degree_minor_eq_diagExp
     rcases hex with ⟨σ, hσcoeff⟩
     have hc_eq : c = permExp I σ := by
       by_contra hne
-      have : MvPolynomial.coeff c (permTerm (k := k) I σ) = 0 := by
+      have : MvPolynomial.coeff c (permTerm k I σ) = 0 := by
         simp only [permTerm, permExp, MvPolynomial.coeff_monomial, ite_eq_right_iff]
         exact fun a => False.elim (hne a.symm)
       exact hσcoeff this
@@ -602,7 +604,7 @@ theorem degree_minor_eq_diagExp
       simp [hc_eq, permExp_one]
     · exact le_of_lt <| by
         simpa [hc_eq] using hdiag I σ hσ1
-  · have hsupp : diagExp I ∈ (genericMinor (k := k) I).support := by
+  · have hsupp : diagExp I ∈ (genericMinor k I).support := by
       rw [MvPolynomial.mem_support_iff,
         minor_eq_sum_permTerm I, MvPolynomial.coeff_sum]
       rw [Finset.sum_eq_single (1 : Equiv.Perm (Fin t))]
@@ -616,12 +618,13 @@ theorem degree_minor_eq_diagExp
 
 /-- Under a diagonal term order, the leading coefficient of a minor is `1`. -/
 theorem leadingCoeff_minor_eq_one
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hdiag : IsDiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.leadingCoeff (genericMinor (k := k) I) = 1 := by
+    ord.leadingCoeff (genericMinor k I) = 1 := by
   rw [MonomialOrder.leadingCoeff]
-  rw [degree_minor_eq_diagExp ord hdiag I]
+  rw [degree_minor_eq_diagExp k ord hdiag I]
   rw [minor_eq_sum_permTerm I, MvPolynomial.coeff_sum]
   rw [Finset.sum_eq_single (1 : Equiv.Perm (Fin t))]
   · simp [permTerm, permCoeff, permExp_one, MvPolynomial.coeff_monomial]
@@ -633,39 +636,42 @@ theorem leadingCoeff_minor_eq_one
 
 /-- Under a diagonal term order, every minor is monic. -/
 theorem monic_minor_of_isDiagonal
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hdiag : IsDiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.Monic (genericMinor (k := k) I) := by
-  simp [MonomialOrder.Monic, leadingCoeff_minor_eq_one ord hdiag I]
+    ord.Monic (genericMinor k I) := by
+  simp [MonomialOrder.Monic, leadingCoeff_minor_eq_one k ord hdiag I]
 
 /-- Under a diagonal term order, the leading term of a minor is the diagonal monomial. -/
 theorem leadingTerm_minor_eq_diagMonomial
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hdiag : IsDiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.leadingTerm (genericMinor (k := k) I) = diagMonomial I := by
-  simp [MonomialOrder.leadingTerm, diagMonomial, degree_minor_eq_diagExp ord hdiag I,
-    leadingCoeff_minor_eq_one ord hdiag I]
+    ord.leadingTerm (genericMinor k I) = diagMonomial k I := by
+  simp [MonomialOrder.leadingTerm, diagMonomial, degree_minor_eq_diagExp k ord hdiag I,
+    leadingCoeff_minor_eq_one k ord hdiag I]
 
 /-- Under an anti-diagonal term order, the degree of a minor is its anti-diagonal exponent
 vector. -/
 theorem degree_minor_eq_antidiagExp
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hanti : IsAntidiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.degree (genericMinor (k := k) I) = antidiagExp I := by
+    ord.degree (genericMinor k I) = antidiagExp I := by
   classical
   apply ord.toSyn.injective
   apply le_antisymm
   · rw [ord.degree_le_iff]
     intro c hc
-    have hcoeff : MvPolynomial.coeff c (genericMinor (k := k) I) ≠ 0 := by
+    have hcoeff : MvPolynomial.coeff c (genericMinor k I) ≠ 0 := by
       simpa [MvPolynomial.mem_support_iff] using hc
     rw [minor_eq_sum_permTerm I, MvPolynomial.coeff_sum] at hcoeff
     have hex :
         ∃ σ : Equiv.Perm (Fin t),
-          MvPolynomial.coeff c (permTerm (k := k) I σ) ≠ 0 := by
+          MvPolynomial.coeff c (permTerm k I σ) ≠ 0 := by
       by_contra h
       push_neg at h
       exact hcoeff <| by
@@ -675,7 +681,7 @@ theorem degree_minor_eq_antidiagExp
     rcases hex with ⟨σ, hσcoeff⟩
     have hc_eq : c = permExp I σ := by
       by_contra hne
-      have : MvPolynomial.coeff c (permTerm (k := k) I σ) = 0 := by
+      have : MvPolynomial.coeff c (permTerm k I σ) = 0 := by
         simp only [permTerm, permExp, MvPolynomial.coeff_monomial, ite_eq_right_iff]
         exact fun a => False.elim (hne a.symm)
       exact hσcoeff this
@@ -684,13 +690,13 @@ theorem degree_minor_eq_antidiagExp
       simp [hc_eq, antidiagExp, permExp, Fin.revPerm]
     · exact le_of_lt <| by
         simpa [hc_eq] using hanti I σ hσrev
-  · have hsupp : antidiagExp I ∈ (genericMinor (k := k) I).support := by
+  · have hsupp : antidiagExp I ∈ (genericMinor k I).support := by
       rw [MvPolynomial.mem_support_iff,
         minor_eq_sum_permTerm I, MvPolynomial.coeff_sum]
       rw [Finset.sum_eq_single (Fin.revPerm : Equiv.Perm (Fin t))]
       · simpa [permTerm, antidiagExp, permExp, Fin.revPerm,
           MvPolynomial.coeff_monomial] using
-          (permCoeff_ne_zero (k := k) (Fin.revPerm : Equiv.Perm (Fin t)))
+          (permCoeff_ne_zero k (Fin.revPerm : Equiv.Perm (Fin t)))
       · intro σ hσ hσne
         simp [permTerm, MvPolynomial.coeff_monomial,
           permExp_ne_antidiagExp_of_ne_rev I hσne]
@@ -701,13 +707,14 @@ theorem degree_minor_eq_antidiagExp
 /-- Under an anti-diagonal term order, the leading coefficient of a minor is the sign of the
 reverse permutation. -/
 theorem leadingCoeff_minor_eq_revPermCoeff
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hanti : IsAntidiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.leadingCoeff (genericMinor (k := k) I) =
-      permCoeff (k := k) (Fin.revPerm : Equiv.Perm (Fin t)) := by
+    ord.leadingCoeff (genericMinor k I) =
+      permCoeff k (Fin.revPerm : Equiv.Perm (Fin t)) := by
   rw [MonomialOrder.leadingCoeff]
-  rw [degree_minor_eq_antidiagExp ord hanti I]
+  rw [degree_minor_eq_antidiagExp k ord hanti I]
   rw [minor_eq_sum_permTerm I, MvPolynomial.coeff_sum]
   rw [Finset.sum_eq_single (Fin.revPerm : Equiv.Perm (Fin t))]
   · simp [permTerm, antidiagExp, permExp, Fin.revPerm, MvPolynomial.coeff_monomial]
@@ -720,39 +727,44 @@ theorem leadingCoeff_minor_eq_revPermCoeff
 /-- Under an anti-diagonal term order, the leading term of a minor is its anti-diagonal
 monomial with the reverse-permutation sign coefficient. -/
 theorem leadingTerm_minor_eq_antidiagMonomial_coeff
+    (k : Type*) [CommRing k] [Nontrivial k]
     (ord : MonomialOrder (Fin m × Fin n))
     (hanti : IsAntidiagonalTermOrder ord)
     (I : MinorIndex m n t) :
-    ord.leadingTerm (genericMinor (k := k) I) =
+    ord.leadingTerm (genericMinor k I) =
       MvPolynomial.monomial (antidiagExp I)
-        (permCoeff (k := k) (Fin.revPerm : Equiv.Perm (Fin t))) := by
-  simp [MonomialOrder.leadingTerm, degree_minor_eq_antidiagExp ord hanti I,
-    leadingCoeff_minor_eq_revPermCoeff ord hanti I]
+        (permCoeff k (Fin.revPerm : Equiv.Perm (Fin t))) := by
+  simp [MonomialOrder.leadingTerm, degree_minor_eq_antidiagExp k ord hanti I,
+    leadingCoeff_minor_eq_revPermCoeff k ord hanti I]
 
 /-- Specialization of `degree_minor_eq_diagExp` to the row-major lexicographic order. -/
-theorem degree_minor_rowMajorLex (I : MinorIndex m n t) :
-    (rowMajorLex m n).degree (genericMinor (k := k) I) = diagExp I :=
-  degree_minor_eq_diagExp (rowMajorLex m n) (rowMajorLex_isDiagonal m n) I
+theorem degree_minor_rowMajorLex
+    (k : Type*) [CommRing k] [Nontrivial k] (I : MinorIndex m n t) :
+    (rowMajorLex m n).degree (genericMinor k I) = diagExp I :=
+  degree_minor_eq_diagExp k (rowMajorLex m n) (rowMajorLex_isDiagonal m n) I
 
 /-- Specialization of `degree_minor_eq_antidiagExp` to the anti-diagonal lexicographic order. -/
-theorem degree_minor_antiDiagonalLex (I : MinorIndex m n t) :
-    (antiDiagonalLex m n).degree (genericMinor (k := k) I) = antidiagExp I :=
-  degree_minor_eq_antidiagExp (antiDiagonalLex m n) (antiDiagonalLex_isAntidiagonal m n) I
+theorem degree_minor_antiDiagonalLex
+    (k : Type*) [CommRing k] [Nontrivial k] (I : MinorIndex m n t) :
+    (antiDiagonalLex m n).degree (genericMinor k I) = antidiagExp I :=
+  degree_minor_eq_antidiagExp k (antiDiagonalLex m n) (antiDiagonalLex_isAntidiagonal m n) I
 
 /-- Specialization of `leadingTerm_minor_eq_diagMonomial` to the row-major lexicographic order. -/
-theorem leadingTerm_minor_rowMajorLex (I : MinorIndex m n t) :
-    (rowMajorLex m n).leadingTerm (genericMinor (k := k) I) =
-      diagMonomial I :=
-  leadingTerm_minor_eq_diagMonomial (rowMajorLex m n) (rowMajorLex_isDiagonal m n) I
+theorem leadingTerm_minor_rowMajorLex
+    (k : Type*) [CommRing k] [Nontrivial k] (I : MinorIndex m n t) :
+    (rowMajorLex m n).leadingTerm (genericMinor k I) =
+      diagMonomial k I :=
+  leadingTerm_minor_eq_diagMonomial k (rowMajorLex m n) (rowMajorLex_isDiagonal m n) I
 
 /-- Specialization of `leadingTerm_minor_eq_antidiagMonomial_coeff` to the anti-diagonal
 lexicographic order. -/
-theorem leadingTerm_minor_antiDiagonalLex (I : MinorIndex m n t) :
-    (antiDiagonalLex m n).leadingTerm (genericMinor (k := k) I) =
+theorem leadingTerm_minor_antiDiagonalLex
+    (k : Type*) [CommRing k] [Nontrivial k] (I : MinorIndex m n t) :
+    (antiDiagonalLex m n).leadingTerm (genericMinor k I) =
       MvPolynomial.monomial (antidiagExp I)
-        (permCoeff (k := k) (Fin.revPerm : Equiv.Perm (Fin t))) :=
+        (permCoeff k (Fin.revPerm : Equiv.Perm (Fin t))) :=
   leadingTerm_minor_eq_antidiagMonomial_coeff
-    (antiDiagonalLex m n) (antiDiagonalLex_isAntidiagonal m n) I
+    k (antiDiagonalLex m n) (antiDiagonalLex_isAntidiagonal m n) I
 
 omit [Nontrivial k] in
 lemma rowMajorLex_toSyn_lt_of_gap

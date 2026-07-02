@@ -8,7 +8,7 @@ import MyProject.Determinantalideals.Eval
 /-!
 # Concrete matrix lemmas
 
-This file records basic compatibility lemmas for concrete minors of actual matrices.
+Compatibility layer for concrete minors through the Mathlib-candidate `Matrix` API.
 -/
 
 namespace Determinantal
@@ -22,12 +22,9 @@ variable {m n t : ℕ}
 applying `f` to a minor of `A` gives the corresponding minor of `A.map f`. -/
 lemma matrixMinor_map
     (f : S →+* T) (A : Matrix (Fin m) (Fin n) S) (I : MinorIndex m n t) :
-    f (matrixMinor (m := m) (n := n) (t := t) A I) =
-      matrixMinor (m := m) (n := n) (t := t) (A.map f) I := by
-  classical
-  unfold matrixMinor
-  simpa [Matrix.submatrix_map] using
-    (RingHom.map_det f (Matrix.submatrix A I.row I.col))
+    f (matrixMinor A I) =
+      matrixMinor (A.map f) I :=
+  Matrix.MinorIndex.detSubmatrix_map f I A
 
 end ConcreteMatrix
 

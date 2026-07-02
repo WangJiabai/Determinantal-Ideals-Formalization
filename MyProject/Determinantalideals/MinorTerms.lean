@@ -63,33 +63,37 @@ variable {k : Type*} [CommSemiring k]
 variable {m n t : ℕ}
 
 /-- The diagonal monomial attached to a minor. -/
-noncomputable def diagMonomial (I : MinorIndex m n t) :
+noncomputable def diagMonomial (k : Type*) [CommSemiring k] {m n t : ℕ}
+    (I : MinorIndex m n t) :
     MvPolynomial (Fin m × Fin n) k :=
   MvPolynomial.monomial (diagExp I) 1
 
-noncomputable def diagTerm (I : MinorIndex m n t) :
+noncomputable def diagTerm (k : Type*) [CommSemiring k] {m n t : ℕ}
+    (I : MinorIndex m n t) :
   MvPolynomial (Fin m × Fin n) k :=
   ∏ i : Fin t, (Matrix.diag (Matrix.submatrix (genericMatrix m n k) I.row I.col)) i
 
 @[simp] theorem diagMonomial_def (I : MinorIndex m n t) :
-  diagMonomial I = MvPolynomial.monomial (diagExp I) (1 : k) :=
+  diagMonomial k I = MvPolynomial.monomial (diagExp I) (1 : k) :=
   rfl
 
 @[simp] theorem diagTerm_def (I : MinorIndex m n t) :
-  diagTerm I = ∏ i : Fin t, (Matrix.diag (Matrix.submatrix (genericMatrix m n k) I.row I.col)) i :=
+  diagTerm k I =
+    ∏ i : Fin t, (Matrix.diag (Matrix.submatrix (genericMatrix m n k) I.row I.col)) i :=
   rfl
 
 /-- The anti-diagonal monomial attached to a minor. -/
-noncomputable def antidiagMonomial (I : MinorIndex m n t) :
+noncomputable def antidiagMonomial (k : Type*) [CommSemiring k] {m n t : ℕ}
+    (I : MinorIndex m n t) :
   MvPolynomial (Fin m × Fin n) k :=
   MvPolynomial.monomial (antidiagExp I) 1
 
 @[simp] theorem antidiagMonomial_def (I : MinorIndex m n t) :
-  antidiagMonomial I = MvPolynomial.monomial (antidiagExp I) 1 :=
+  antidiagMonomial k I = MvPolynomial.monomial (antidiagExp I) 1 :=
   rfl
 
 lemma diagTerm_eq_diagMonomial (I : MinorIndex m n t) :
-  diagTerm (k := k) I = diagMonomial I:=by
+  diagTerm k I = diagMonomial k I:=by
   classical
   unfold diagTerm diagMonomial
   change
@@ -108,28 +112,30 @@ variable {k : Type*} [CommRing k]
 variable {m n t : ℕ}
 
 /-- The coefficient `sign σ`, viewed in the coefficient ring. -/
-noncomputable def permCoeff (σ : Equiv.Perm (Fin t)) : k :=
+noncomputable def permCoeff (k : Type*) [CommRing k] {t : ℕ}
+    (σ : Equiv.Perm (Fin t)) : k :=
   (((Equiv.Perm.sign σ : ℤˣ) : ℤ) : k)
 
 /-- The signed permutation term occurring in the determinant expansion of a minor. -/
 noncomputable def permTerm
+    (k : Type*) [CommRing k] {m n t : ℕ}
     (I : MinorIndex m n t) (σ : Equiv.Perm (Fin t)) :
     MvPolynomial (Fin m × Fin n) k :=
-  MvPolynomial.monomial (permExp I σ) (permCoeff (k := k) σ)
+  MvPolynomial.monomial (permExp I σ) (permCoeff k σ)
 
 @[simp] theorem permCoeff_one :
-    permCoeff (k := k) (1 : Equiv.Perm (Fin t)) = 1 := by
+    permCoeff k (1 : Equiv.Perm (Fin t)) = 1 := by
   simp [permCoeff]
 
 @[simp] theorem permTerm_one_eq_diagMonomial (I : MinorIndex m n t) :
-    permTerm I (1 : Equiv.Perm (Fin t)) = diagMonomial (k := k) I := by
+    permTerm k I (1 : Equiv.Perm (Fin t)) = diagMonomial k I := by
   simp [permTerm, diagMonomial, permCoeff, permExp_one]
 
 @[simp] lemma coeff_permTerm
     (I : MinorIndex m n t) (σ : Equiv.Perm (Fin t))
     (c : (Fin m × Fin n) →₀ ℕ) :
-    MvPolynomial.coeff c (permTerm I σ) =
-      if c = permExp I σ then permCoeff (k := k) σ else 0 := by
+    MvPolynomial.coeff c (permTerm k I σ) =
+      if c = permExp I σ then permCoeff k σ else 0 := by
   simp [permTerm,eq_comm]
 
 
@@ -394,13 +400,13 @@ variable {m n t : ℕ}
 /-- Determinant expansion of a minor as a sum of signed permutation monomials. -/
 theorem minor_eq_sum_permTerm
     (I : MinorIndex m n t) :
-    genericMinor (k := k) I =
-      ∑ σ : Equiv.Perm (Fin t), permTerm I σ := by
+    genericMinor k I =
+      ∑ σ : Equiv.Perm (Fin t), permTerm k I σ := by
   classical
   let M : Matrix (Fin t) (Fin t) (MvPolynomial (Fin m × Fin n) k) :=
     Matrix.submatrix (genericMatrix m n k) I.row I.col
   calc
-    genericMinor I = M.det := by
+    genericMinor k I = M.det := by
       rfl
     _ = M.transpose.det := by
       simp [Matrix.det_transpose]
@@ -408,31 +414,31 @@ theorem minor_eq_sum_permTerm
           ((((Equiv.Perm.sign σ : ℤˣ) : ℤ) : MvPolynomial (Fin m × Fin n) k)) *
             ∏ i : Fin t, M.transpose (σ i) i := by
       rw [Matrix.det_apply']
-    _ = ∑ σ : Equiv.Perm (Fin t), permTerm I σ := by
+    _ = ∑ σ : Equiv.Perm (Fin t), permTerm k I σ := by
       refine Finset.sum_congr rfl ?_
       intro σ hσ
       change ((((Equiv.Perm.sign σ : ℤˣ) : ℤ) : MvPolynomial (Fin m × Fin n) k)) *
           ∏ i : Fin t,
             (MvPolynomial.X (I.row i, I.col (σ i)) : MvPolynomial (Fin m × Fin n) k) =
-          permTerm I σ
+          permTerm k I σ
       rw [permTerm]
-      change MvPolynomial.C (permCoeff σ) *
+      change MvPolynomial.C (permCoeff k σ) *
           ∏ i : Fin t,
             (MvPolynomial.monomial
               (Finsupp.single (I.row i, I.col (σ i)) 1) 1 :
                 MvPolynomial (Fin m × Fin n) k) =
-        MvPolynomial.monomial (permExp I σ) (permCoeff σ)
+        MvPolynomial.monomial (permExp I σ) (permCoeff k σ)
       symm
       simpa [permExp, permCoeff, MvPolynomial.X] using
         (MvPolynomial.monomial_sum_index
           (s := Finset.univ)
           (f := fun i : Fin t => Finsupp.single (I.row i, I.col (σ i)) 1)
-          (a := permCoeff σ))
+          (a := permCoeff k σ))
 
 /-- The coefficient of `minor I` at the exponent vector `permExp I σ` is `permCoeff σ`. -/
 lemma coeff_minor_permExp
     (I : MinorIndex m n t) (σ : Equiv.Perm (Fin t)) :
-    MvPolynomial.coeff (permExp I σ) (genericMinor (k := k) I) = permCoeff σ := by
+    MvPolynomial.coeff (permExp I σ) (genericMinor k I) = permCoeff k σ := by
   classical
   rw [minor_eq_sum_permTerm]
   rw [MvPolynomial.coeff_sum]
@@ -454,8 +460,8 @@ structure RawMinorIndex (m n t : ℕ) where
 namespace RawMinorIndex
 
 noncomputable def toPolynomial {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) : MvPolynomial (Fin m × Fin n) k :=
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t) :
+    MvPolynomial (Fin m × Fin n) k :=
   Matrix.det <| Matrix.submatrix (genericMatrix m n k) R.row R.col
 
 def ofMinorIndex {m n t : ℕ} (I : MinorIndex m n t) :
@@ -464,10 +470,9 @@ def ofMinorIndex {m n t : ℕ} (I : MinorIndex m n t) :
   col := I.col
 
 @[simp] lemma toPolynomial_ofMinorIndex {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (I : MinorIndex m n t) :
-    RawMinorIndex.toPolynomial (k := k) (RawMinorIndex.ofMinorIndex I) =
-      genericMinor (k := k) I := by
+    (k : Type*) [CommRing k] (I : MinorIndex m n t) :
+    RawMinorIndex.toPolynomial k (RawMinorIndex.ofMinorIndex I) =
+      genericMinor k I := by
   rfl
 
 noncomputable def rowContent {m n t : ℕ}
@@ -521,10 +526,9 @@ lemma colContent_total {m n t : ℕ} (R : RawMinorIndex m n t) :
   simp
 
 lemma toPolynomial_eq_zero_of_row_eq {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) {a b : Fin t}
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t) {a b : Fin t}
     (hab : a ≠ b) (hrow : R.row a = R.row b) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+    RawMinorIndex.toPolynomial k R = 0 := by
   classical
   unfold RawMinorIndex.toPolynomial
   exact Matrix.det_zero_of_row_eq hab (by
@@ -532,10 +536,9 @@ lemma toPolynomial_eq_zero_of_row_eq {m n t : ℕ}
     simp [Matrix.submatrix_apply, hrow])
 
 lemma toPolynomial_eq_zero_of_col_eq {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) {a b : Fin t}
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t) {a b : Fin t}
     (hab : a ≠ b) (hcol : R.col a = R.col b) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+    RawMinorIndex.toPolynomial k R = 0 := by
   classical
   unfold RawMinorIndex.toPolynomial
   exact Matrix.det_zero_of_column_eq hab (by
@@ -543,26 +546,24 @@ lemma toPolynomial_eq_zero_of_col_eq {m n t : ℕ}
     simp [Matrix.submatrix_apply, hcol])
 
 lemma toPolynomial_eq_zero_of_not_injective_row {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t)
     (hrow : ¬ Function.Injective R.row) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+    RawMinorIndex.toPolynomial k R = 0 := by
   classical
   rw [Function.Injective] at hrow
   push_neg at hrow
   rcases hrow with ⟨a, b, heq, hne⟩
-  exact R.toPolynomial_eq_zero_of_row_eq hne heq
+  exact RawMinorIndex.toPolynomial_eq_zero_of_row_eq k R hne heq
 
 lemma toPolynomial_eq_zero_of_not_injective_col {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t)
     (hcol : ¬ Function.Injective R.col) :
-    RawMinorIndex.toPolynomial (k := k) R = 0 := by
+    RawMinorIndex.toPolynomial k R = 0 := by
   classical
   rw [Function.Injective] at hcol
   push_neg at hcol
   rcases hcol with ⟨a, b, heq, hne⟩
-  exact R.toPolynomial_eq_zero_of_col_eq hne heq
+  exact RawMinorIndex.toPolynomial_eq_zero_of_col_eq k R hne heq
 
 /-- Promote a raw minor whose row and column maps are already strictly
 increasing to an honest `MinorIndex`.  This is the no-sign bridge; a later
@@ -594,11 +595,10 @@ def toMinorIndexOfStrictMono {m n t : ℕ}
   rfl
 
 lemma toPolynomial_toMinorIndexOfStrictMono {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t)
     (hrow : StrictMono R.row) (hcol : StrictMono R.col) :
-    genericMinor (k := k) (R.toMinorIndexOfStrictMono hrow hcol) =
-      RawMinorIndex.toPolynomial (k := k) R := by
+    genericMinor k (R.toMinorIndexOfStrictMono hrow hcol) =
+      RawMinorIndex.toPolynomial k R := by
   rfl
 
 @[simp] lemma rowContent_toMinorIndexOfStrictMono {m n t : ℕ}
@@ -629,13 +629,12 @@ def permute {m n t : ℕ} (R : RawMinorIndex m n t)
     (R.permute ρ κ).col i = R.col (κ i) := rfl
 
 lemma toPolynomial_permute {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t)
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t)
     (ρ κ : Equiv.Perm (Fin t)) :
-    RawMinorIndex.toPolynomial (k := k) (R.permute ρ κ) =
+    RawMinorIndex.toPolynomial k (R.permute ρ κ) =
       (Equiv.Perm.sign ρ : MvPolynomial (Fin m × Fin n) k) *
         (Equiv.Perm.sign κ : MvPolynomial (Fin m × Fin n) k) *
-        RawMinorIndex.toPolynomial (k := k) R := by
+        RawMinorIndex.toPolynomial k R := by
   classical
   unfold RawMinorIndex.toPolynomial RawMinorIndex.permute
   change Matrix.det
@@ -879,13 +878,12 @@ lemma sorted_col_lt_of_card_filter_lt {m n t : ℕ}
   omega
 
 lemma toPolynomial_sorted {m n t : ℕ}
-    {k : Type*} [CommRing k]
-    (R : RawMinorIndex m n t) :
-    RawMinorIndex.toPolynomial (k := k) R.sorted =
+    (k : Type*) [CommRing k] (R : RawMinorIndex m n t) :
+    RawMinorIndex.toPolynomial k R.sorted =
       (Equiv.Perm.sign (Tuple.sort R.row) : MvPolynomial (Fin m × Fin n) k) *
         (Equiv.Perm.sign (Tuple.sort R.col) : MvPolynomial (Fin m × Fin n) k) *
-          RawMinorIndex.toPolynomial (k := k) R := by
-  exact R.toPolynomial_permute (Tuple.sort R.row) (Tuple.sort R.col)
+          RawMinorIndex.toPolynomial k R := by
+  exact RawMinorIndex.toPolynomial_permute k R (Tuple.sort R.row) (Tuple.sort R.col)
 
 lemma rowContent_sorted {m n t : ℕ}
     (R : RawMinorIndex m n t) :
@@ -912,10 +910,10 @@ structure RawMinorPair (m n : ℕ) where
 namespace RawMinorPair
 
 noncomputable def toPolynomial {m n : ℕ}
-    {k : Type*} [CommRing k]
-    (P : RawMinorPair m n) : MvPolynomial (Fin m × Fin n) k :=
-  RawMinorIndex.toPolynomial (k := k) P.left *
-    RawMinorIndex.toPolynomial (k := k) P.right
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    MvPolynomial (Fin m × Fin n) k :=
+  RawMinorIndex.toPolynomial k P.left *
+    RawMinorIndex.toPolynomial k P.right
 
 noncomputable def rowContent {m n : ℕ}
     (P : RawMinorPair m n) : Fin m →₀ ℕ :=
@@ -937,14 +935,14 @@ def laplaceSignExponent {m n : ℕ} (P : RawMinorPair m n) : ℕ :=
   P.rowIndexSum + P.colIndexSum
 
 noncomputable def laplaceCoeff {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) : k :=
   (-1 : k) ^ P.laplaceSignExponent
 
 noncomputable def laplacePolynomial {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
     MvPolynomial (Fin m × Fin n) k :=
-  MvPolynomial.C (P.laplaceCoeff (k := k)) *
-    RawMinorPair.toPolynomial (k := k) P
+  MvPolynomial.C (RawMinorPair.laplaceCoeff k P) *
+    RawMinorPair.toPolynomial k P
 
 noncomputable def sorted {m n : ℕ} (P : RawMinorPair m n) :
     RawMinorPair m n where
@@ -954,7 +952,7 @@ noncomputable def sorted {m n : ℕ} (P : RawMinorPair m n) :
   right := P.right.sorted
 
 noncomputable def sortSign {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
     MvPolynomial (Fin m × Fin n) k :=
   (Equiv.Perm.sign (Tuple.sort P.left.row) : MvPolynomial (Fin m × Fin n) k) *
     (Equiv.Perm.sign (Tuple.sort P.left.col) : MvPolynomial (Fin m × Fin n) k) *
@@ -962,20 +960,20 @@ noncomputable def sortSign {m n : ℕ}
     (Equiv.Perm.sign (Tuple.sort P.right.col) : MvPolynomial (Fin m × Fin n) k)
 
 noncomputable def sortSignCoeff {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) : k :=
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) : k :=
   (Equiv.Perm.sign (Tuple.sort P.left.row) : k) *
     (Equiv.Perm.sign (Tuple.sort P.left.col) : k) *
     (Equiv.Perm.sign (Tuple.sort P.right.row) : k) *
     (Equiv.Perm.sign (Tuple.sort P.right.col) : k)
 
 lemma sortSign_eq_C {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    P.sortSign (k := k) = MvPolynomial.C (P.sortSignCoeff (k := k)) := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.sortSign k P = MvPolynomial.C (RawMinorPair.sortSignCoeff k P) := by
   simp [RawMinorPair.sortSign, RawMinorPair.sortSignCoeff, MvPolynomial.C_mul]
 
 lemma sortSign_mul_self {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    P.sortSign (k := k) * P.sortSign (k := k) = 1 := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.sortSign k P * RawMinorPair.sortSign k P = 1 := by
   let sρL : MvPolynomial (Fin m × Fin n) k :=
     (Equiv.Perm.sign (Tuple.sort P.left.row) :
       MvPolynomial (Fin m × Fin n) k)
@@ -1016,15 +1014,15 @@ def permute {m n : ℕ} (P : RawMinorPair m n)
   right := P.right.permute ρR κR
 
 lemma toPolynomial_permute {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n)
+    (k : Type*) [CommRing k] (P : RawMinorPair m n)
     (ρL : Equiv.Perm (Fin P.p)) (κL : Equiv.Perm (Fin P.p))
     (ρR : Equiv.Perm (Fin P.q)) (κR : Equiv.Perm (Fin P.q)) :
-    RawMinorPair.toPolynomial (k := k) (P.permute ρL κL ρR κR) =
+    RawMinorPair.toPolynomial k (P.permute ρL κL ρR κR) =
       (Equiv.Perm.sign ρL : MvPolynomial (Fin m × Fin n) k) *
         (Equiv.Perm.sign κL : MvPolynomial (Fin m × Fin n) k) *
         (Equiv.Perm.sign ρR : MvPolynomial (Fin m × Fin n) k) *
         (Equiv.Perm.sign κR : MvPolynomial (Fin m × Fin n) k) *
-        RawMinorPair.toPolynomial (k := k) P := by
+        RawMinorPair.toPolynomial k P := by
   classical
   rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
     RawMinorPair.permute, RawMinorIndex.toPolynomial_permute,
@@ -1072,9 +1070,9 @@ lemma sorted_right_col_strictMono {m n : ℕ} (P : RawMinorPair m n)
     RawMinorIndex.sorted_col_strictMono P.right hcol
 
 lemma toPolynomial_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.toPolynomial (k := k) P.sorted =
-      P.sortSign (k := k) * RawMinorPair.toPolynomial (k := k) P := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.toPolynomial k P.sorted =
+      RawMinorPair.sortSign k P * RawMinorPair.toPolynomial k P := by
   classical
   rw [RawMinorPair.toPolynomial, RawMinorPair.toPolynomial,
     RawMinorPair.sorted, RawMinorIndex.toPolynomial_sorted,
@@ -1147,35 +1145,35 @@ lemma laplaceSignExponent_sorted {m n : ℕ} (P : RawMinorPair m n) :
     RawMinorPair.colIndexSum_sorted]
 
 lemma laplaceCoeff_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplaceCoeff (k := k) P.sorted =
-      RawMinorPair.laplaceCoeff (k := k) P := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplaceCoeff k P.sorted =
+      RawMinorPair.laplaceCoeff k P := by
   simp [RawMinorPair.laplaceCoeff, RawMinorPair.laplaceSignExponent_sorted]
 
 lemma laplacePolynomial_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplacePolynomial (k := k) P.sorted =
-      P.sortSign (k := k) * RawMinorPair.laplacePolynomial (k := k) P := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplacePolynomial k P.sorted =
+      RawMinorPair.sortSign k P * RawMinorPair.laplacePolynomial k P := by
   rw [RawMinorPair.laplacePolynomial, RawMinorPair.laplacePolynomial,
     RawMinorPair.laplaceCoeff_sorted, RawMinorPair.toPolynomial_sorted]
   ring
 
 lemma laplacePolynomial_eq_sortSign_mul_sorted {m n : ℕ}
-    {k : Type*} [CommRing k] (P : RawMinorPair m n) :
-    RawMinorPair.laplacePolynomial (k := k) P =
-      P.sortSign (k := k) *
-        RawMinorPair.laplacePolynomial (k := k) P.sorted := by
+    (k : Type*) [CommRing k] (P : RawMinorPair m n) :
+    RawMinorPair.laplacePolynomial k P =
+      RawMinorPair.sortSign k P *
+        RawMinorPair.laplacePolynomial k P.sorted := by
   rw [RawMinorPair.laplacePolynomial_sorted]
-  have hsign := RawMinorPair.sortSign_mul_self (k := k) P
+  have hsign := RawMinorPair.sortSign_mul_self k P
   calc
-    RawMinorPair.laplacePolynomial (k := k) P
-        = (P.sortSign (k := k) * P.sortSign (k := k)) *
-            RawMinorPair.laplacePolynomial (k := k) P := by
+    RawMinorPair.laplacePolynomial k P
+        = (RawMinorPair.sortSign k P * RawMinorPair.sortSign k P) *
+            RawMinorPair.laplacePolynomial k P := by
           rw [hsign]
           simp
-    _ = P.sortSign (k := k) *
-          (P.sortSign (k := k) *
-            RawMinorPair.laplacePolynomial (k := k) P) := by
+    _ = RawMinorPair.sortSign k P *
+          (RawMinorPair.sortSign k P *
+            RawMinorPair.laplacePolynomial k P) := by
           ring
 
 def slotRow {m n : ℕ} (P : RawMinorPair m n) :

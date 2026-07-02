@@ -198,7 +198,7 @@ end Finset
 ring in finitely many variables is finite. -/
 lemma homogeneousSubmodule_finite
     {m n : ℕ}
-    {k : Type*} [Field k]
+    (k : Type*) [Field k]
     (d : ℕ) :
     Module.Finite k (MvPolynomial.homogeneousSubmodule (Fin m × Fin n) k d) := by
   let S : Set ((Fin m × Fin n) →₀ ℕ) := {E | Finsupp.degree E = d}
