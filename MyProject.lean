@@ -9,4 +9,7 @@ import MyProject.Determinantalideals.DiagonalOrder
 import MyProject.Determinantalideals.BaseChange
 import MyProject.Determinantalideals.ConcreteMatrix
 import MyProject.Determinantalideals.Sturmfels_lemma
-import MyProject.Determinantalideals.Sturmfels
+import MyProject.Determinantalideals.Bitableaux
+import MyProject.Determinantalideals.KRScorrespondence
+import MyProject.Determinantalideals.StraighteningLaw
+import MyProject.Determinantalideals.Groebner
