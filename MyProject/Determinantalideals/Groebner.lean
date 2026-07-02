@@ -1189,9 +1189,10 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
     (antiDiagonalLex_isAntidiagonal m n)
 
 /--
-Theorem 1, Gröbner-basis statement for an arbitrary anti-diagonal term order.
+Sturmfels' Theorem 1 for any anti-diagonal term order.
 
-Descriptive API name for `theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder`.
+The set `G_{r+1}` of all `(r + 1) × (r + 1)` generic minors is a Gröbner basis of
+`J_r` whenever the term order makes the anti-diagonal term leading in every minor.
 -/
 theorem GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
     {m n r : ℕ}
@@ -1202,9 +1203,10 @@ theorem GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
   theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder k ord hanti
 
 /--
-Theorem 1 specialized to the concrete anti-diagonal lexicographic order.
+Sturmfels' Theorem 1 for the concrete anti-diagonal lexicographic order.
 
-Descriptive API name for `theorem1_GrPlusOne_isGroebnerBasis`.
+The set `G_{r+1}` of all `(r + 1) × (r + 1)` generic minors is a Gröbner basis of
+`J_r` for `antiDiagonalLex`.
 -/
 theorem GrPlusOne_isGroebnerBasis_antiDiagonalLex
     {m n r : ℕ}

@@ -30,7 +30,10 @@ abbrev MinorIndex (m n t : ℕ) := Matrix.MinorIndex m n t
 
 section CommRing
 
-/-- Compatibility alias for `Matrix.MinorIndex.mvPolynomialMinor`. -/
+/-- The determinant of the submatrix of the generic `m x n` matrix selected by `I`.
+
+This is the original project name for `Matrix.MinorIndex.mvPolynomialMinor`; it is a polynomial
+in `MvPolynomial (Fin m × Fin n) k`. -/
 noncomputable abbrev genericMinor (k : Type*) [CommRing k] {m n t : ℕ}
     (I : MinorIndex m n t) :
     MvPolynomial (Fin m × Fin n) k :=

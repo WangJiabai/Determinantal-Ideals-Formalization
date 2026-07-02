@@ -1315,7 +1315,7 @@ def resultLabels {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
   | .done A => labels.replace A.result.newCell.1 A.result.newCell.2 tag
   | .bump _ _ _ _ taggedTail => taggedTail.resultLabels
 
-/-- Every ordinary insertion trace admits the canonical parallel source-label trace. -/
+/-- Every ordinary insertion trace has a canonical parallel source-label trace. -/
 noncomputable def ofTrace {N : ℕ} {μ : YoungDiagram} {T : BoundedSSYT μ N}
     (labels : OriginLabels) {row : ℕ} {x : Fin N} (tag : ℕ)
     (tr : RowInsertionTrace N T row x)
@@ -6527,7 +6527,7 @@ noncomputable def krsForwardStep {m n : ℕ}
 
 The `snoc` constructor records exactly the proof obligation needed to append the
 recording tableau entry.  This avoids the false interface asserting that every
-arbitrary `KRSForwardState` admits every next recording letter. -/
+arbitrary `KRSForwardState` accepts every next recording letter. -/
 inductive KRSForwardRun {m n : ℕ} :
     List (Fin m × Fin n) → KRSForwardState m n → Prop where
   | nil :
@@ -10474,7 +10474,10 @@ theorem krs_right_inverse {m n : ℕ} :
   rw [expandedBiword_biwordToMonomialExp, hkrs]
   exact tableauPairToYoungBitableau_youngBitableauToTableauPair B
 
-/-- The KRS equivalence packaged as a Lean `Equiv`. -/
+/-- The Knuth-Robinson-Schensted correspondence as a Lean equivalence.
+
+It sends monomial exponent vectors in the variables of the generic `m × n` matrix to standard
+Young bitableaux, with inverse given by reverse KRS. -/
 noncomputable def krsEquiv (m n : ℕ) :
     ((Fin m × Fin n) →₀ ℕ) ≃ StandardYoungBitableau m n :=
   { toFun := fun E => forward E
