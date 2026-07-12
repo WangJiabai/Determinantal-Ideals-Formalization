@@ -1,4 +1,19 @@
+/-
+Copyright (c) 2026 Jiabai Wang. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Jiabai Wang
+-/
 import Mathlib
+
+/-!
+# Project-local auxiliary lemmas
+
+This module collects general lemmas used by the determinantal development:
+ordered finite sets, finite sums, homogeneous components, finrank,
+basis/subtype spans, polynomial coefficient triangularity, and composition of
+finitely supported coefficients. These are project-local supporting results,
+not a verbatim formalization of a particular lemma in Sturmfels’s paper.
+-/
 
 namespace Determinantal
 

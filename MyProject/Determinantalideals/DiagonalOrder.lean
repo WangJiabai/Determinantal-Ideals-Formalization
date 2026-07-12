@@ -12,15 +12,14 @@ import MyProject.Determinantalideals.Basic
 import MyProject.Determinantalideals.MinorTerms
 
 /-!
-# Diagonal term orders for generic minors
+# Diagonal and anti-diagonal term orders for generic minors
 
-This file introduces the notion of a diagonal term order for minors of a generic matrix,
-constructs a concrete row-major lexicographic order on the variables `Fin m × Fin n`,
-and proves that this order is diagonal.
-
-It also derives the standard consequences for minors under a diagonal term order:
-their degree is the diagonal exponent vector, their leading coefficient is `1`,
-and their leading term is the diagonal monomial.
+This file defines `IsDiagonalTermOrder` and `IsAntidiagonalTermOrder`, constructs
+the concrete orders `rowMajorLex` and `antiDiagonalLex`, and proves the
+corresponding leading-exponent, leading-coefficient, and leading-term results
+for generic minors. The anti-diagonal construction orders rows increasingly
+and columns decreasingly within each row; `antiDiagonalLex_isAntidiagonal` is
+the formal guarantee consumed by the final theorem.
 -/
 
 open scoped MonomialOrder
@@ -66,7 +65,8 @@ noncomputable def rowMajorWF :
 noncomputable def rowMajorLex : MonomialOrder (Fin m × Fin n) :=
   @MonomialOrder.lex (Fin m × Fin n) (rowMajorVarOrder m n) (rowMajorWF m n)
 
-/-- The variable order obtained by scanning rows top-to-bottom and columns right-to-left. -/
+/-- The variable order with increasing row indices and, within each row,
+decreasing column indices. -/
 noncomputable def antiDiagonalVarOrder : LinearOrder (Fin m × Fin n) :=
   LinearOrder.lift'
     (fun x : Fin m × Fin n => finProdFinEquiv (x.1, x.2.rev))
@@ -87,7 +87,9 @@ noncomputable def antiDiagonalWF :
     (inferInstance : Finite (Fin m × Fin n))
     (antiDiagonalVarOrder m n).toPreorder
 
-/-- A concrete lexicographic order for which the anti-diagonal term of every minor is leading. -/
+/-- The lexicographic monomial order induced by increasing rows and decreasing
+columns within each row. The theorem `antiDiagonalLex_isAntidiagonal` proves
+that it satisfies `IsAntidiagonalTermOrder`. -/
 noncomputable def antiDiagonalLex : MonomialOrder (Fin m × Fin n) :=
   @MonomialOrder.lex (Fin m × Fin n) (antiDiagonalVarOrder m n) (antiDiagonalWF m n)
 

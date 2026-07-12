@@ -8,7 +8,8 @@ import MyProject.Determinantalideals.Eval
 /-!
 # Concrete matrix lemmas
 
-Compatibility layer for concrete minors through the Mathlib-candidate `Matrix` API.
+Compatibility layer for concrete minors through the project-local `Matrix`
+API following Mathlib conventions.
 -/
 
 namespace Determinantal

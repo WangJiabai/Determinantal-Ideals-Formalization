@@ -10,8 +10,9 @@ import Mathlib.RingTheory.MvPolynomial.Homogeneous
 /-!
 # Compatibility layer for determinantal ideals
 
-This file keeps the original `Determinantal` API available while the first-PR Mathlib candidate
-keeps only the basic generic-minor and determinantal-ideal API.
+This file keeps the original `Determinantal` compatibility names over a
+project-local foundational API that follows Mathlib namespace and naming
+conventions.
 -/
 
 namespace Determinantal
@@ -30,7 +31,7 @@ abbrev MinorIndex (m n t : ℕ) := Matrix.MinorIndex m n t
 
 section CommRing
 
-/-- The determinant of the submatrix of the generic `m x n` matrix selected by `I`.
+/-- The determinant of the submatrix of the generic `m × n` matrix selected by `I`.
 
 This is the original project name for `Matrix.MinorIndex.mvPolynomialMinor`; it is a polynomial
 in `MvPolynomial (Fin m × Fin n) k`. -/

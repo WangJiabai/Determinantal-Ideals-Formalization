@@ -323,3 +323,41 @@ API breakage.
 
 Isolate namespace migrations from factual documentation corrections so each
 change has a reviewable compatibility boundary.
+
+## Design case: Paper-facing artifact synchronization
+
+### Mathematical requirement
+
+The manuscript’s declarations, signatures, commit, dependency versions, and
+source links must agree with the frozen artifact revision.
+
+### Direct alternative
+
+Theorem names, SHA values, line numbers, and dependency hashes could be copied
+manually into the manuscript.
+
+### Formalization cost or failure mode
+
+Manual data drifts after source or documentation changes: a theorem block can
+retain an old type, or a link can silently point to a mutable or obsolete
+revision.
+
+### Chosen representation or API
+
+`PaperAudit.lean` compiles manuscript-facing names and types; `Audit.lean` and
+`scripts/check_axioms.py` report and allowlist logical dependencies;
+`scripts/artifact_metadata.py` reads revision/package metadata; and
+`scripts/paper_links.py` locates declarations at the current commit. CI runs
+the non-publishing checks.
+
+### Downstream payoff
+
+The theorem map, artifact metadata, and fixed permalinks can be generated or
+checked mechanically from the same revision.
+
+### Reusable lesson
+
+Treat the manuscript-facing interface as an audited API rather than a manually
+maintained theorem list. These tools verify names, types, dependencies, and
+version synchronization; they do not validate the manuscript’s mathematical
+prose by themselves.

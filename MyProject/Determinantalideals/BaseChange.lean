@@ -8,7 +8,8 @@ import MyProject.Determinantalideals.Ideal
 /-!
 # Base change for determinantal ideals
 
-Compatibility layer for coefficient-wise base change through the Mathlib-candidate `Matrix` API.
+Compatibility layer for coefficient-wise base change through the project-local
+`Matrix`/`MvPolynomial` API following Mathlib conventions.
 -/
 
 namespace Determinantal

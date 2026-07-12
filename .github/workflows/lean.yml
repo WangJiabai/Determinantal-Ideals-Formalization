@@ -1,5 +1,8 @@
 name: Lean
 
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
@@ -7,20 +10,18 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1
-      - name: Audit Lean project sources
-        shell: bash
-        run: |
-          if rg -n --pcre2 '\b(sorry|admit)\b' MyProject --glob '*.lean'; then
-            echo "Found sorry or admit in project Lean sources."
-            exit 1
-          fi
-          if rg -n --pcre2 '^\s*(axiom|unsafe)\b' MyProject --glob '*.lean'; then
-            echo "Found a project axiom or unsafe declaration."
-            exit 1
-          fi
-      - name: Report axioms of core declarations
-        run: lake env lean Audit.lean
+      - name: Audit tracked Lean sources
+        run: bash scripts/check_sources.sh
+      - name: Compile paper-facing interfaces
+        run: lake env lean PaperAudit.lean
+      - name: Enforce axiom allowlist
+        run: python3 scripts/check_axioms.py
+      - name: Check fixed-link declaration locations
+        run: python3 scripts/paper_links.py --check-only
+      - name: Generate artifact metadata preview
+        run: python3 scripts/artifact_metadata.py --format markdown

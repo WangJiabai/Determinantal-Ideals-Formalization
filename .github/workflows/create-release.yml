@@ -1,4 +1,4 @@
-name: Create Release
+name: Create Lean Toolchain Release
 
 on:
   push:

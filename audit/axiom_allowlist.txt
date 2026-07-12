@@ -1,0 +1,4 @@
+# Foundational axioms expected from Lean/Mathlib for the audited declarations.
+propext
+Classical.choice
+Quot.sound

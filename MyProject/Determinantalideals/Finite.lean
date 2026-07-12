@@ -8,7 +8,8 @@ import MyProject.Determinantalideals.Basic
 /-!
 # Finiteness results for minors
 
-Compatibility layer for finiteness results now provided by the Mathlib-candidate `Matrix` API.
+Compatibility layer for finiteness results over the project-local `Matrix` API
+following Mathlib conventions.
 -/
 
 namespace Determinantal

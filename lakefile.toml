@@ -1,6 +1,13 @@
 name = "MyProject"
 version = "0.1.0"
-keywords = ["math"]
+keywords = [
+  "lean",
+  "formalized-mathematics",
+  "commutative-algebra",
+  "groebner-bases",
+  "determinantal-ideals",
+  "algebraic-combinatorics",
+]
 defaultTargets = ["MyProject"]
 
 [leanOptions]

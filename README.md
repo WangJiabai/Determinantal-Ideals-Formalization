@@ -1,5 +1,7 @@
 # Determinantal Ideals in Lean 4
 
+[![Lean](https://github.com/WangJiabai/Determinantal-Ideals-Formalization/actions/workflows/lean.yml/badge.svg)](https://github.com/WangJiabai/Determinantal-Ideals-Formalization/actions/workflows/lean.yml)
+
 This repository formalizes in Lean 4 the Gröbner-basis part of
 Sturmfels’s theorem for determinantal ideals. For a generic `m × n` matrix
 over an arbitrary field, it proves that all `(r + 1) × (r + 1)` generic
@@ -26,12 +28,13 @@ term orders.
 
 ## Version Information
 
-Requested revisions come from [`lakefile.toml`](lakefile.toml); resolved
-revisions come from [`lake-manifest.json`](lake-manifest.json).
+The Lean version is pinned by [`lean-toolchain`](lean-toolchain). Requested
+dependency revisions come from [`lakefile.toml`](lakefile.toml), while resolved
+dependency commits come from [`lake-manifest.json`](lake-manifest.json).
 
 | Component | Requested revision | Resolved revision |
 | --- | --- | --- |
-| Lean toolchain | `leanprover/lean4:v4.28.0` in [`lean-toolchain`](lean-toolchain) | Managed by the selected toolchain |
+| Lean toolchain | `leanprover/lean4:v4.28.0` in [`lean-toolchain`](lean-toolchain) | Pinned directly by `lean-toolchain` |
 | Mathlib | `v4.28.0` | `8f9d9cff6bd728b17a24e163c9402775d9e6a365` |
 | `Groebner` dependency | `v4.28.0` | `32e5c0d4244f100ac9161642e9b0368277741fbd` |
 
@@ -51,7 +54,7 @@ The following files are on the transitive import path starting at
 | [`Sturmfels_lemma.lean`](MyProject/Determinantalideals/Sturmfels_lemma.lean) | General Mathlib lemmas used in the combinatorial and Hilbert-function proofs. |
 | [`Bitableaux.lean`](MyProject/Determinantalideals/Bitableaux.lean) | Young bitableaux, generalized permutations, width, and `Jr`/`GrPlusOne`. |
 | [`KRScorrespondence.lean`](MyProject/Determinantalideals/KRScorrespondence.lean) | Forward/reverse KRS, its equivalence, and degree/width compatibility. |
-| [`StraighteningLaw.lean`](MyProject/Determinantalideals/StraighteningLaw.lean) | Straightening based on Swan’s proof, polynomial independence, and quotient bases. |
+| [`StraighteningLaw.lean`](MyProject/Determinantalideals/StraighteningLaw.lean) | The Doubilet–Rota–Stein straightening development via Swan’s Laplace-product proof, polynomial independence, and quotient bases. |
 | [`Groebner.lean`](MyProject/Determinantalideals/Groebner.lean) | Hilbert-function comparison and the final abstract and concrete Gröbner-basis theorems. |
 
 These reusable generic-matrix modules are imported by the top-level aggregate
@@ -103,26 +106,38 @@ import MyProject.Determinantalideals.Groebner
 
 ## Artifact audit
 
-Run the reproducible declaration audit with:
+Run the individual artifact checks with:
 
 ```bash
-lake env lean Audit.lean
+bash scripts/check_sources.sh
+lake env lean PaperAudit.lean
+python3 scripts/check_axioms.py
+bash scripts/check_artifact.sh
 ```
 
 [`Audit.lean`](Audit.lean) uses `#print axioms` to display the transitive axioms
 of selected core results. Foundational constants such as `Classical.choice`,
 `propext`, or quotient soundness principles do not mean that the project
-declares a project-specific axiom. Complementary source-level checks are:
+declares a project-specific axiom. [`check_axioms.py`](scripts/check_axioms.py)
+executes this report and enforces the explicit allowlist in
+[`audit/axiom_allowlist.txt`](audit/axiom_allowlist.txt).
+
+[`PaperAudit.lean`](PaperAudit.lean) compiles manuscript-facing declaration
+names and theorem signatures. [`check_sources.sh`](scripts/check_sources.sh)
+scans all tracked Lean sources, including root audit files. The CI workflow
+enforces these source-level checks on every pushed revision. Source scanning,
+interface compilation, kernel checking, and axiom allowlisting test different
+properties.
+
+Generate manuscript metadata or fixed source links with:
 
 ```bash
-rg -n --pcre2 '\b(sorry|admit)\b' MyProject --glob '*.lean'
-rg -n --pcre2 '^\s*axiom\b' MyProject --glob '*.lean'
-rg -n --pcre2 '^\s*unsafe\b' MyProject --glob '*.lean'
+python3 scripts/artifact_metadata.py --format markdown
+python3 scripts/paper_links.py --format markdown
 ```
 
-At this revision these scans find no proof placeholders, project-specific
-axiom declarations, or unsafe declarations. Source scanning and
-`#print axioms` test different properties.
+Publishable permalinks should be generated only from a clean, committed,
+frozen revision; the link generator refuses a dirty working tree.
 
 ## Documentation
 
@@ -133,6 +148,16 @@ axiom declarations, or unsafe declarations. Source scanning and
   weakenings, totalizations, and unformalized statements.
 - [`docs/design_choices.md`](docs/design_choices.md) records reusable design
   cases and their formalization tradeoffs.
+- [`ARTIFACT.md`](ARTIFACT.md) is the reviewer-facing reproduction guide.
+- [`docs/release_checklist.md`](docs/release_checklist.md) lists the manual
+  freezing and archival steps.
+
+## Citation and release status
+
+Machine-readable software citation metadata is in
+[`CITATION.cff`](CITATION.cff). No immutable manuscript artifact has been
+archived yet. The final paper version should cite a release tag and an archival
+DOI or equivalent persistent identifier rather than the mutable `main` branch.
 
 ## License
 

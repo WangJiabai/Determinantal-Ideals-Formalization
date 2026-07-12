@@ -8,7 +8,8 @@ import MyProject.Determinantalideals.Basic
 /-!
 # Evaluation of generic minors
 
-Compatibility layer for evaluating generic minors through the Mathlib-candidate `Matrix` API.
+Compatibility layer for evaluating generic minors through the project-local
+`Matrix` API following Mathlib conventions.
 -/
 
 namespace Determinantal

@@ -10,7 +10,8 @@ import Mathlib.RingTheory.Ideal.BigOperators
 /-!
 # Determinantal ideals
 
-Compatibility layer for determinantal ideals now provided by the Mathlib-candidate `Matrix` API.
+Compatibility layer for determinantal ideals over the project-local
+`Matrix`/`MvPolynomial` API following Mathlib conventions.
 -/
 
 namespace Determinantal
