@@ -9,7 +9,13 @@ namespace Determinantal
 
 attribute [local instance] MvPolynomial.gradedAlgebra
 
-/-! ## Swan straightening infrastructure -/
+/-!
+## Doubilet–Rota–Stein straightening via Swan’s proof
+
+This module develops the straightening law using Swan’s Laplace-product
+argument, then proves polynomial linear independence and the quotient-basis
+statements needed by the Gröbner-basis theorem.
+-/
 
 /-- One summand in Swan's local two-minor straightening relation.
 
@@ -7259,8 +7265,9 @@ decreasing_by
         subst factors
         simp
 
-/-- Swan filtered existence input: every bitableau straightens to standard
-bitableaux of the same degree and no smaller length. -/
+/-- Filtered straightening existence based on Swan’s proof: every bitableau
+straightens to standard bitableaux of the same degree and no smaller length.
+Equivalently, every nonzero output term has length at least the input length. -/
 theorem straightening_law_exists_filtered
     {m n : ℕ}
     (k : Type*) [Field k]
@@ -7730,10 +7737,9 @@ theorem straightening_law
 /--
 Straightening-basis package for the determinantal ring.
 
-If the straightening theory proves that the images of the standard bitableaux
-of length at most `r` are linearly independent and span `K[X] / J_r`, then they
-assemble into the basis used below.  This isolates the exact algebraic content
-still missing from the paper's statement after Proposition 3.
+If the images of the standard bitableaux of length at most `r` are linearly
+independent and span `K[X] / J_r`, this theorem assembles them into the basis
+used by the Hilbert-function argument.
 -/
 theorem exists_standardBitableau_basis_determinantalRing_of_straightening_basis
     {m n : ℕ}
@@ -8756,8 +8762,7 @@ theorem exists_standardBitableau_basis_determinantalRing
           Ideal.Quotient.mk (Jr m n r k)
             (YoungBitableau.toPolynomial k B.1.1) := by
   classical
-  -- Larger minors vanish in the quotient by `J_r`.  This is the
-  -- determinantal-ideal nesting input still to be supplied.
+  -- Larger minors vanish modulo `J_r` by determinantal-ideal nesting.
   have hlarge :
       ∀ ⦃t : ℕ⦄ (I : MinorIndex m n t),
         r < t → genericMinor k I ∈ Jr m n r k := by

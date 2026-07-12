@@ -10,12 +10,11 @@ namespace Determinantal
 attribute [local instance] MvPolynomial.gradedAlgebra
 
 /-!
-## KRS proof skeleton
+## Formalization of the KRS correspondence
 
-The following namespace records the dependency structure from `KRS.pdf`.  It is intentionally
-split into paper-level statements: row insertion, reverse insertion, the KRS bijection, the
-Schensted width theorem, and the conversion between semistandard tableau pairs and the Lean
-`YoungBitableau` representation by columns.
+This namespace implements row insertion, reverse insertion, the KRS bijection,
+the Schensted width theorem, and the conversion between semistandard tableau
+pairs and the Lean `YoungBitableau` representation by columns.
 -/
 
 namespace KRS

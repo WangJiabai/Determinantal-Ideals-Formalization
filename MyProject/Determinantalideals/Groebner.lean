@@ -496,15 +496,15 @@ theorem lemma6_monomial_mem_initGrPlusOne_iff_width
   monomial_mem_initGrPlusOne_iff_width k E
 
 /--
-Theorem 1, Gröbner-basis statement.
+Theorem 1, generalized to an arbitrary anti-diagonal term order.
 
-The set `G_{r+1}` of all `(r + 1) × (r + 1)` minors is a Gröbner basis of the
-determinantal ideal `J_r` with respect to the anti-diagonal lexicographic order from
-the paper.
+The set `G_{r+1}` of all `(r + 1) × (r + 1)` minors is a Gröbner basis
+of `J_r` with respect to every monomial order satisfying
+`IsAntidiagonalTermOrder`.
 
-The paper also says "reduced"; with Lean's `leadingTerm`, the anti-diagonal term of
-a determinant carries the coefficient `sign(Fin.revPerm)`, so the reduced-basis
-refinement should be stated separately using the coefficient-normalized minors.
+The concrete anti-diagonal lexicographic order is obtained as a separate
+specialization. The reducedness refinement is not part of this theorem because
+`leadingTerm` retains the leading coefficient.
 -/
 theorem theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
     {m n r : ℕ}
@@ -1189,7 +1189,7 @@ theorem theorem1_GrPlusOne_isGroebnerBasis
     (antiDiagonalLex_isAntidiagonal m n)
 
 /--
-Sturmfels' Theorem 1 for any anti-diagonal term order.
+Sturmfels’s Theorem 1 for any anti-diagonal term order.
 
 The set `G_{r+1}` of all `(r + 1) × (r + 1)` generic minors is a Gröbner basis of
 `J_r` whenever the term order makes the anti-diagonal term leading in every minor.
@@ -1203,7 +1203,7 @@ theorem GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
   theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder k ord hanti
 
 /--
-Sturmfels' Theorem 1 for the concrete anti-diagonal lexicographic order.
+Sturmfels’s Theorem 1 for the concrete anti-diagonal lexicographic order.
 
 The set `G_{r+1}` of all `(r + 1) × (r + 1)` generic minors is a Gröbner basis of
 `J_r` for `antiDiagonalLex`.
