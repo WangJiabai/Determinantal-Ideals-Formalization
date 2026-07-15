@@ -57,16 +57,6 @@ The following files are on the transitive import path starting at
 | [`StraighteningLaw.lean`](MyProject/Determinantalideals/StraighteningLaw.lean) | The Doubilet–Rota–Stein straightening development via Swan’s Laplace-product proof, polynomial independence, and quotient bases. |
 | [`Groebner.lean`](MyProject/Determinantalideals/Groebner.lean) | Hilbert-function comparison and the final abstract and concrete Gröbner-basis theorems. |
 
-These reusable generic-matrix modules are imported by the top-level aggregate
-but are not on the final theorem dependency path:
-
-| Auxiliary generic-matrix API | Role |
-| --- | --- |
-| [`Eval.lean`](MyProject/Determinantalideals/Eval.lean) | Evaluation of generic minors at concrete matrices. |
-| [`ConcreteMatrix.lean`](MyProject/Determinantalideals/ConcreteMatrix.lean) | Concrete-matrix minor compatibility under coefficient maps. |
-| [`BaseChange.lean`](MyProject/Determinantalideals/BaseChange.lean) | Base-change compatibility for generic minors and generated ideals. |
-| [`Sign.lean`](MyProject/Determinantalideals/Sign.lean) | Auxiliary determinant-sign and minor-matrix bridge lemmas; currently not on the main theorem dependency path. |
-
 The external `Groebner` package supplies the general Gröbner-basis API used
 at the final theorem layer.
 

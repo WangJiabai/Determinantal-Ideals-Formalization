@@ -1,13 +1,9 @@
 import MyProject.Determinantalideals.DeterminantalIdeal
 import MyProject.Determinantalideals.Basic
 import MyProject.Determinantalideals.Finite
-import MyProject.Determinantalideals.Eval
 import MyProject.Determinantalideals.Ideal
-import MyProject.Determinantalideals.Sign
 import MyProject.Determinantalideals.MinorTerms
 import MyProject.Determinantalideals.DiagonalOrder
-import MyProject.Determinantalideals.BaseChange
-import MyProject.Determinantalideals.ConcreteMatrix
 import MyProject.Determinantalideals.Sturmfels_lemma
 import MyProject.Determinantalideals.Bitableaux
 import MyProject.Determinantalideals.KRScorrespondence

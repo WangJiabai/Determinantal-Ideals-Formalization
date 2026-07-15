@@ -270,27 +270,25 @@ as “core”.
 
 ### Formalization cost or failure mode
 
-Aggregation hides the real dependency graph and falsely suggests that
-evaluation, base change, concrete matrices, or auxiliary sign bridges are used
-by the final theorem.
+Aggregation hides the real dependency graph and can make unrelated reusable
+APIs appear necessary for the final theorem.
 
 ### Chosen representation or API
 
 The core path is the generic-minor/determinantal-ideal foundation, followed by
 `Bitableaux.lean`, `KRScorrespondence.lean`, `StraighteningLaw.lean`, and
-`Groebner.lean`. The external `Groebner` package enters at the final layer.
-`Eval.lean`, `ConcreteMatrix.lean`, `BaseChange.lean`, and `Sign.lean` are
-auxiliary modules outside the transitive import path from `Groebner.lean`.
+`Groebner.lean`. The submitted Lean sources are restricted to this transitive
+dependency closure. The external `Groebner` package enters at the final layer.
 
 ### Downstream payoff
 
 Reviewers can separate algebraic API, KRS/straightening combinatorics, and the
-final Hilbert-function theorem, and auxiliary APIs remain reusable.
+final Hilbert-function theorem without reviewing unrelated auxiliary modules.
 
 ### Reusable lesson
 
-Describe dependency roles from the target module’s transitive imports, not
-from an aggregate module’s imports.
+Scope the submitted artifact to the target module’s transitive imports together
+with its reviewer-facing documentation, audits, and build infrastructure.
 
 ## Design case: Current package name
 
