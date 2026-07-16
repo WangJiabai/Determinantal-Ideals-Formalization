@@ -2684,6 +2684,50 @@ lemma isSortedPromotable_of_componentRowLaplaceSupport {m n p q : ℕ}
 
 end BiReshuffleSupport
 
+private lemma exists_coeff_pushforward_polynomial_sum_of_zero_off_support
+    {Source Target σ k : Type*}
+    [Fintype Source] [Fintype Target] [Field k]
+    (support : Source → Prop)
+    [Finite { S : Source // support S }]
+    (toTarget : { S : Source // support S } → Target)
+    (coeff : Source → k)
+    (sourceTerm : Source → MvPolynomial σ k)
+    (targetTerm : Target → MvPolynomial σ k)
+    (hzero : ∀ S, ¬ support S →
+      MvPolynomial.C (coeff S) * sourceTerm S = 0)
+    (hterm : ∀ S, sourceTerm S.1 = targetTerm (toTarget S)) :
+    ∃ coeff' : Target → k,
+      (∑ S : Source, MvPolynomial.C (coeff S) * sourceTerm S) =
+        ∑ E : Target, MvPolynomial.C (coeff' E) * targetTerm E := by
+  classical
+  letI : Fintype { S : Source // support S } := Fintype.ofFinite _
+  let SupportedSource := { S : Source // support S }
+  have hrestrict :
+      (∑ S : Source, MvPolynomial.C (coeff S) * sourceTerm S) =
+        ∑ S : SupportedSource,
+          MvPolynomial.C (coeff S.1) * sourceTerm S.1 := by
+    exact fintype_sum_eq_sum_of_injective_support
+      (fun S : SupportedSource => S.1) Subtype.val_injective
+      (fun S : Source => MvPolynomial.C (coeff S) * sourceTerm S)
+      (by
+        intro S hS
+        apply hzero S
+        intro hsupport
+        exact hS ⟨⟨S, hsupport⟩, rfl⟩)
+  have hterms :
+      (∑ S : SupportedSource,
+          MvPolynomial.C (coeff S.1) * sourceTerm S.1) =
+        ∑ S : SupportedSource,
+          MvPolynomial.C (coeff S.1) * targetTerm (toTarget S) := by
+    apply Finset.sum_congr rfl
+    intro S _hS
+    rw [hterm S]
+  rcases exists_fintype_coeff_pushforward_polynomial_sum
+      toTarget (fun S : SupportedSource => coeff S.1) targetTerm with
+    ⟨coeff', hpush⟩
+  refine ⟨coeff', ?_⟩
+  exact hrestrict.trans (hterms.trans hpush)
+
 lemma exists_coeff_componentColLaplaceSupport_of_hodgeColSplit_identity
     {m n p q : ℕ}
     (k : Type*) [Field k]
@@ -2720,7 +2764,8 @@ lemma exists_coeff_componentColLaplaceSupport_of_hodgeColSplit_identity
     fun S => RawMinorPair.laplacePolynomial k S.1.toBiReshuffle.toPair
   have hzero :
       ∀ S : Source,
-        S ∉ Set.range (fun U : SupportedSource => U.1) →
+        ¬ BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp
+          S.1.toBiReshuffle →
           MvPolynomial.C (coeff S) * term S = 0 := by
     intro S hS
     by_cases hE : S.1.toBiReshuffle.AllInjective
@@ -2728,29 +2773,27 @@ lemma exists_coeff_componentColLaplaceSupport_of_hodgeColSplit_identity
           BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp
             S.1.toBiReshuffle := by
         exact ⟨S.1, S.2, rfl, hE⟩
-      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+      exact False.elim (hS hsupp)
     · simp [term,
         RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
           k S.1.toBiReshuffle hE]
-  have hrestrict :
-      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
-        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
-    exact fintype_sum_eq_sum_of_injective_support
-      (fun U : SupportedSource => U.1) Subtype.val_injective
-      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
   let toSupport :
       SupportedSource →
         { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } :=
     fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
-  rcases exists_fintype_coeff_pushforward_polynomial_sum
-      toSupport (fun S : SupportedSource => coeff S.1)
+  rcases exists_coeff_pushforward_polynomial_sum_of_zero_off_support
+      (fun S : Source =>
+        BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp
+          S.1.toBiReshuffle)
+      toSupport coeff term
       (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsComponentColLaplaceSupport T ν hνp E } =>
-        RawMinorPair.laplacePolynomial k E.1.toPair) with
+        RawMinorPair.laplacePolynomial k E.1.toPair)
+      hzero (by intro S; rfl) with
     ⟨coeff', hpush⟩
   refine ⟨coeff', ?_⟩
-  rw [← hpush, ← hrestrict]
+  rw [← hpush]
   simpa [Source, term] using hsum
 
 lemma exists_coeff_componentRowLaplaceSupport_of_hodgeRowSplit_identity
@@ -2789,7 +2832,8 @@ lemma exists_coeff_componentRowLaplaceSupport_of_hodgeRowSplit_identity
     fun S => RawMinorPair.laplacePolynomial k S.1.toBiReshuffle.toPair
   have hzero :
       ∀ S : Source,
-        S ∉ Set.range (fun U : SupportedSource => U.1) →
+        ¬ BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp
+          S.1.toBiReshuffle →
           MvPolynomial.C (coeff S) * term S = 0 := by
     intro S hS
     by_cases hE : S.1.toBiReshuffle.AllInjective
@@ -2797,29 +2841,27 @@ lemma exists_coeff_componentRowLaplaceSupport_of_hodgeRowSplit_identity
           BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp
             S.1.toBiReshuffle := by
         exact ⟨S.1, S.2, rfl, hE⟩
-      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+      exact False.elim (hS hsupp)
     · simp [term,
         RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
           k S.1.toBiReshuffle hE]
-  have hrestrict :
-      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
-        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
-    exact fintype_sum_eq_sum_of_injective_support
-      (fun U : SupportedSource => U.1) Subtype.val_injective
-      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
   let toSupport :
       SupportedSource →
         { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } :=
     fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
-  rcases exists_fintype_coeff_pushforward_polynomial_sum
-      toSupport (fun S : SupportedSource => coeff S.1)
+  rcases exists_coeff_pushforward_polynomial_sum_of_zero_off_support
+      (fun S : Source =>
+        BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp
+          S.1.toBiReshuffle)
+      toSupport coeff term
       (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsComponentRowLaplaceSupport T ν hνp E } =>
-        RawMinorPair.laplacePolynomial k E.1.toPair) with
+        RawMinorPair.laplacePolynomial k E.1.toPair)
+      hzero (by intro S; rfl) with
     ⟨coeff', hpush⟩
   refine ⟨coeff', ?_⟩
-  rw [← hpush, ← hrestrict]
+  rw [← hpush]
   simpa [Source, term] using hsum
 
 lemma exists_coeff_ne_pivot_of_total_sum_eq_zero
@@ -3167,7 +3209,8 @@ lemma exists_coeff_sizeBranchLaplaceSupport_of_containingSplit_identity
     fun S => RawMinorPair.laplacePolynomial k S.1.toBiReshuffle.toPair
   have hzero :
       ∀ S : Source,
-        S ∉ Set.range (fun U : SupportedSource => U.1) →
+        ¬ BiReshuffleSupport.IsSizeBranchLaplaceSupport T
+          S.1.toBiReshuffle →
           MvPolynomial.C (coeff S) * term S = 0 := by
     intro S hS
     by_cases hE : S.1.toBiReshuffle.AllInjective
@@ -3182,29 +3225,26 @@ lemma exists_coeff_sizeBranchLaplaceSupport_of_containingSplit_identity
           BiReshuffleSupport.IsSizeBranchLaplaceSupport T S.1.toBiReshuffle :=
         BiReshuffleSupport.isSizeBranchLaplaceSupport_toBiReshuffle_of_containingSplit
           T S.1 hE hne
-      exact False.elim (hS ⟨⟨S, hsupp⟩, rfl⟩)
+      exact False.elim (hS hsupp)
     · simp [term,
         RawMinorPair.BiReshuffle.toPair_laplacePolynomial_eq_zero_of_not_allInjective
           k S.1.toBiReshuffle hE]
-  have hrestrict :
-      (∑ S : Source, MvPolynomial.C (coeff S) * term S) =
-        ∑ S : SupportedSource, MvPolynomial.C (coeff S.1) * term S.1 := by
-    exact fintype_sum_eq_sum_of_injective_support
-      (fun U : SupportedSource => U.1) Subtype.val_injective
-      (fun S : Source => MvPolynomial.C (coeff S) * term S) hzero
   let toSupport :
       SupportedSource →
         { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } :=
     fun S => ⟨S.1.1.toBiReshuffle, S.2⟩
-  rcases exists_fintype_coeff_pushforward_polynomial_sum
-      toSupport (fun S : SupportedSource => coeff S.1)
+  rcases exists_coeff_pushforward_polynomial_sum_of_zero_off_support
+      (fun S : Source =>
+        BiReshuffleSupport.IsSizeBranchLaplaceSupport T S.1.toBiReshuffle)
+      toSupport coeff term
       (fun E : { E : RawMinorPair.BiReshuffle T.toRawPair //
           BiReshuffleSupport.IsSizeBranchLaplaceSupport T E } =>
-        RawMinorPair.laplacePolynomial k E.1.toPair) with
+        RawMinorPair.laplacePolynomial k E.1.toPair)
+      hzero (by intro S; rfl) with
     ⟨coeff', hpush⟩
   refine ⟨coeff', ?_⟩
-  rw [← hpush, ← hrestrict]
+  rw [← hpush]
   simpa [Source, term] using hsum
 
 lemma exists_coeff_ne_pivot_containingSplit_of_total_sum_eq_zero
@@ -3950,6 +3990,93 @@ lemma swan_component_row_hodge_leibnizTerm_eq_common
       (MvPolynomial.C (a * d * eπ) * M) * MvPolynomial.C c := by
           simp only [MvPolynomial.C_mul]
 
+private lemma common_mul_C_neg_one_pow_card_powerset_sum_eq_zero
+    {ι σ : Type*} [Fintype ι] [DecidableEq ι]
+    (k : Type*) [Field k]
+    (base : Finset ι) (hbase : base.Nonempty)
+    (condition : Prop) [Decidable condition]
+    (common : MvPolynomial σ k) :
+    (∑ W : { W : Finset ι // condition ∧ W ∈ base.powerset },
+      common * MvPolynomial.C ((-1 : k) ^ W.1.card)) = 0 := by
+  classical
+  let Source :=
+    { W : Finset ι // condition ∧ W ∈ base.powerset }
+  let Target := { W : Finset ι // W ∈ base.powerset }
+  change
+    (∑ W : Source, common *
+      MvPolynomial.C (R := k) (σ := σ) ((-1 : k) ^ W.1.card)) = 0
+  by_cases hcondition : condition
+  · have hscalar :
+        (∑ W ∈ base.powerset, (-1 : k) ^ W.card) = 0 := by
+      exact Finset.sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
+        base hbase
+    have hpoly :
+        (∑ W ∈ base.powerset,
+          MvPolynomial.C (R := k) (σ := σ) ((-1 : k) ^ W.card)) = 0 := by
+      have hmap :
+          MvPolynomial.C (R := k) (σ := σ)
+              (∑ W ∈ base.powerset, (-1 : k) ^ W.card) =
+            ∑ W ∈ base.powerset,
+              MvPolynomial.C (R := k) (σ := σ) ((-1 : k) ^ W.card) := by
+        exact map_sum (MvPolynomial.C (R := k) (σ := σ))
+          (fun W => (-1 : k) ^ W.card) base.powerset
+      rw [← hmap, hscalar]
+      simp
+    let e : Source ≃ Target := {
+      toFun W := ⟨W.1, W.2.2⟩
+      invFun W := ⟨W.1, hcondition, W.2⟩
+      left_inv := by
+        intro W
+        ext
+        rfl
+      right_inv := by
+        intro W
+        ext
+        rfl }
+    have htarget :
+        (∑ W : Target,
+          MvPolynomial.C (R := k) (σ := σ)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      letI : Fintype Target := Finset.Subtype.fintype base.powerset
+      have huniv :
+          (Finset.univ : Finset Target) = base.powerset.attach := by
+        ext W
+        constructor
+        · intro _
+          exact Finset.mem_attach base.powerset W
+        · intro _
+          exact Finset.mem_univ W
+      change
+        (∑ W ∈ (Finset.univ : Finset Target),
+          MvPolynomial.C (R := k) (σ := σ)
+            ((-1 : k) ^ W.1.card)) = 0
+      rw [huniv]
+      exact
+        (base.powerset.sum_attach
+          (fun W =>
+            MvPolynomial.C (R := k) (σ := σ)
+              ((-1 : k) ^ W.card))).trans hpoly
+    have hsource :
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := σ)
+            ((-1 : k) ^ W.1.card)) = 0 := by
+      calc
+        (∑ W : Source,
+          MvPolynomial.C (R := k) (σ := σ)
+            ((-1 : k) ^ W.1.card)) =
+            ∑ W : Target,
+              MvPolynomial.C (R := k) (σ := σ)
+                ((-1 : k) ^ W.1.card) := by
+          refine Fintype.sum_equiv e _ _ ?_
+          intro W
+          rfl
+        _ = 0 := htarget
+    rw [← Finset.mul_sum, hsource]
+    simp
+  · apply Finset.sum_eq_zero
+    intro W _hW
+    exact False.elim (hcondition W.2.1)
+
 lemma swan_component_col_inner_powerset_sum_eq_zero
     {m n p q : ℕ}
     (k : Type*) [Field k]
@@ -3970,97 +4097,21 @@ lemma swan_component_col_inner_powerset_sum_eq_zero
   let base : Finset (Fin (P.p + P.q)) :=
     RawMinorPair.BiReshuffle.Hodge.hodgeC P ν hνp \
       RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π
+  let condition : Prop :=
+    RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π ⊆
+      RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
   let common := swan_component_col_commonLeibnizTerm k T ν hνp π
-  let Source : Type :=
-    { W : Finset (Fin (P.p + P.q)) //
-      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π ⊆
-        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν ∧
-      W ∈ base.powerset }
-  let Target : Type := { W : Finset (Fin (P.p + P.q)) // W ∈ base.powerset }
   change
-    (∑ W : Source, common *
+    (∑ W : { W : Finset (Fin (P.p + P.q)) //
+        condition ∧ W ∈ base.powerset }, common *
       MvPolynomial.C (R := k) (σ := Fin m × Fin n)
         ((-1 : k) ^ W.1.card)) = 0
-  by_cases hpreD :
-      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π ⊆
-        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
-  · have hbase_nonempty : base.Nonempty := by
-      simpa [P, base] using
-        RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
-          P ν hνp π
-    have hscalar :
-        (∑ W ∈ base.powerset, (-1 : k) ^ W.card) = 0 := by
-      exact Finset.sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
-        base hbase_nonempty
-    have hpoly :
-        (∑ W ∈ base.powerset,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.card)) = 0 := by
-      have hmap :
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              (∑ W ∈ base.powerset, (-1 : k) ^ W.card) =
-            ∑ W ∈ base.powerset,
-              MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-                ((-1 : k) ^ W.card) := by
-        exact map_sum (MvPolynomial.C (R := k) (σ := Fin m × Fin n))
-          (fun W => (-1 : k) ^ W.card) base.powerset
-      rw [← hmap, hscalar]
-      simp
-    let e : Source ≃ Target := {
-      toFun W := ⟨W.1, W.2.2⟩
-      invFun W := ⟨W.1, hpreD, W.2⟩
-      left_inv := by
-        intro W
-        ext
-        rfl
-      right_inv := by
-        intro W
-        ext
-        rfl }
-    have htarget :
-        (∑ W : Target,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0 := by
-      letI : Fintype Target := Finset.Subtype.fintype base.powerset
-      have huniv :
-          (Finset.univ : Finset Target) = base.powerset.attach := by
-        ext W
-        constructor
-        · intro _
-          exact Finset.mem_attach base.powerset W
-        · intro _
-          exact Finset.mem_univ W
-      change
-        (∑ W ∈ (Finset.univ : Finset Target),
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0
-      rw [huniv]
-      exact
-        (base.powerset.sum_attach
-          (fun W =>
-            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              ((-1 : k) ^ W.card))).trans hpoly
-    have hsource :
-        (∑ W : Source,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0 := by
-      calc
-        (∑ W : Source,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card))
-            =
-          ∑ W : Target,
-            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              ((-1 : k) ^ W.1.card) := by
-            refine Fintype.sum_equiv e _ _ ?_
-            intro W
-            rfl
-        _ = 0 := htarget
-    rw [← Finset.mul_sum, hsource]
-    simp
-  · apply Finset.sum_eq_zero
-    intro W _hW
-    exact False.elim (hpreD W.2.1)
+  have hbase : base.Nonempty := by
+    simpa [P, base] using
+      RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
+        P ν hνp π
+  exact common_mul_C_neg_one_pow_card_powerset_sum_eq_zero
+    k base hbase condition common
 
 lemma swan_component_col_hodgeSplit_total_laplace_sum
     {m n p q : ℕ}
@@ -4120,97 +4171,21 @@ lemma swan_component_row_inner_powerset_sum_eq_zero
   let base : Finset (Fin (P.p + P.q)) :=
     RawMinorPair.BiReshuffle.Hodge.hodgeC P ν hνp \
       RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm
+  let condition : Prop :=
+    RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm ⊆
+      RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
   let common := swan_component_row_commonLeibnizTerm k T ν hνp π
-  let Source : Type :=
-    { W : Finset (Fin (P.p + P.q)) //
-      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm ⊆
-        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν ∧
-      W ∈ base.powerset }
-  let Target : Type := { W : Finset (Fin (P.p + P.q)) // W ∈ base.powerset }
   change
-    (∑ W : Source, common *
+    (∑ W : { W : Finset (Fin (P.p + P.q)) //
+        condition ∧ W ∈ base.powerset }, common *
       MvPolynomial.C (R := k) (σ := Fin m × Fin n)
         ((-1 : k) ^ W.1.card)) = 0
-  by_cases hpreD :
-      RawMinorPair.BiReshuffle.permPreimageLeftSlotFinset P π.symm ⊆
-        RawMinorPair.BiReshuffle.Hodge.hodgeD P ν
-  · have hbase_nonempty : base.Nonempty := by
-      simpa [P, base] using
-        RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
-          P ν hνp π.symm
-    have hscalar :
-        (∑ W ∈ base.powerset, (-1 : k) ^ W.card) = 0 := by
-      exact Finset.sum_powerset_neg_one_pow_card_eq_zero_of_nonempty
-        base hbase_nonempty
-    have hpoly :
-        (∑ W ∈ base.powerset,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.card)) = 0 := by
-      have hmap :
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              (∑ W ∈ base.powerset, (-1 : k) ^ W.card) =
-            ∑ W ∈ base.powerset,
-              MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-                ((-1 : k) ^ W.card) := by
-        exact map_sum (MvPolynomial.C (R := k) (σ := Fin m × Fin n))
-          (fun W => (-1 : k) ^ W.card) base.powerset
-      rw [← hmap, hscalar]
-      simp
-    let e : Source ≃ Target := {
-      toFun W := ⟨W.1, W.2.2⟩
-      invFun W := ⟨W.1, hpreD, W.2⟩
-      left_inv := by
-        intro W
-        ext
-        rfl
-      right_inv := by
-        intro W
-        ext
-        rfl }
-    have htarget :
-        (∑ W : Target,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0 := by
-      letI : Fintype Target := Finset.Subtype.fintype base.powerset
-      have huniv :
-          (Finset.univ : Finset Target) = base.powerset.attach := by
-        ext W
-        constructor
-        · intro _
-          exact Finset.mem_attach base.powerset W
-        · intro _
-          exact Finset.mem_univ W
-      change
-        (∑ W ∈ (Finset.univ : Finset Target),
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0
-      rw [huniv]
-      exact
-        (base.powerset.sum_attach
-          (fun W =>
-            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              ((-1 : k) ^ W.card))).trans hpoly
-    have hsource :
-        (∑ W : Source,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card)) = 0 := by
-      calc
-        (∑ W : Source,
-          MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-            ((-1 : k) ^ W.1.card))
-            =
-          ∑ W : Target,
-            MvPolynomial.C (R := k) (σ := Fin m × Fin n)
-              ((-1 : k) ^ W.1.card) := by
-            refine Fintype.sum_equiv e _ _ ?_
-            intro W
-            rfl
-        _ = 0 := htarget
-    rw [← Finset.mul_sum, hsource]
-    simp
-  · apply Finset.sum_eq_zero
-    intro W _hW
-    exact False.elim (hpreD W.2.1)
+  have hbase : base.Nonempty := by
+    simpa [P, base] using
+      RawMinorPair.BiReshuffle.Hodge.hodgeC_sdiff_permPreimageLeftSlotFinset_nonempty
+        P ν hνp π.symm
+  exact common_mul_C_neg_one_pow_card_powerset_sum_eq_zero
+    k base hbase condition common
 
 lemma swan_component_row_hodgeSplit_total_laplace_sum
     {m n p q : ℕ}
@@ -6017,6 +5992,31 @@ lemma minorWord_finsupp_sum_mul_tail
         MvPolynomial.C a * MinorWord.toPolynomial k W :=
           minorWord_finsupp_sum_append_right k c rest
 
+private lemma finsuppScalarBind_polynomial_sum_of_local_expansions
+    {α β σ : Type*} {k : Type*} [Field k]
+    (c : α →₀ k) (d : α → β →₀ k)
+    (u : α → MvPolynomial σ k) (v : β → MvPolynomial σ k)
+    (hlocal : ∀ a, c a ≠ 0 →
+      u a = (d a).sum fun b db => MvPolynomial.C db * v b) :
+    c.sum (fun a ca => MvPolynomial.C ca * u a) =
+      (finsuppScalarBind c d).sum
+        (fun b db => MvPolynomial.C db * v b) := by
+  classical
+  calc
+    c.sum (fun a ca => MvPolynomial.C ca * u a) =
+        c.sum fun a ca =>
+          MvPolynomial.C ca *
+            (d a).sum (fun b db => MvPolynomial.C db * v b) := by
+      apply Finsupp.sum_congr
+      intro a ca
+      by_cases ha : c a = 0
+      · simp [ha]
+      · rw [hlocal a ha]
+    _ =
+        (finsuppScalarBind c d).sum
+          (fun b db => MvPolynomial.C db * v b) := by
+      rw [finsuppScalarBind_polynomial_sum]
+
 lemma minorWord_head_insert_after_tail_straightening
     {m n : ℕ} (k : Type*) [Field k]
     (F : MinorFactor m n) (tail : MinorWord m n)
@@ -6075,24 +6075,11 @@ lemma minorWord_head_insert_after_tail_straightening
             intro S a
             simp [mul_assoc, mul_comm]
     rw [hhead_tail]
-    have hdist :
-        (cTail.sum fun S a =>
-            MvPolynomial.C a *
-              MinorWord.toPolynomial k ⟨F :: S.1.factors⟩) =
-          cTail.sum fun S a =>
-            MvPolynomial.C a *
-              (insertCoeff S).sum (fun U b =>
-                MvPolynomial.C b * MinorWord.toPolynomial k U.1) := by
-      apply Finsupp.sum_congr
-      intro S a
-      by_cases hS : cTail S = 0
-      · simp [hS]
-      · rw [hinsert_poly S hS]
-    rw [hdist]
-    rw [← finsuppScalarBind_polynomial_sum
-      (c := cTail) (d := insertCoeff)
-      (v := fun U : StandardMinorWord m n =>
-        MinorWord.toPolynomial k U.1)]
+    exact finsuppScalarBind_polynomial_sum_of_local_expansions
+      cTail insertCoeff
+      (fun S => MinorWord.toPolynomial k ⟨F :: S.1.factors⟩)
+      (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+      hinsert_poly
   · intro U hU
     rcases finsuppScalarBind_apply_ne_zero_exists
         cTail insertCoeff hU with ⟨S, hS, hSU⟩
@@ -6165,24 +6152,11 @@ lemma minorWord_head_insert_after_tail_straightening_filtered
             intro S a
             simp [mul_assoc, mul_comm]
     rw [hhead_tail]
-    have hdist :
-        (cTail.sum fun S a =>
-            MvPolynomial.C a *
-              MinorWord.toPolynomial k ⟨F :: S.1.factors⟩) =
-          cTail.sum fun S a =>
-            MvPolynomial.C a *
-              (insertCoeff S).sum (fun U b =>
-                MvPolynomial.C b * MinorWord.toPolynomial k U.1) := by
-      apply Finsupp.sum_congr
-      intro S a
-      by_cases hS : cTail S = 0
-      · simp [hS]
-      · rw [hinsert_poly S hS]
-    rw [hdist]
-    rw [← finsuppScalarBind_polynomial_sum
-      (c := cTail) (d := insertCoeff)
-      (v := fun U : StandardMinorWord m n =>
-        MinorWord.toPolynomial k U.1)]
+    exact finsuppScalarBind_polynomial_sum_of_local_expansions
+      cTail insertCoeff
+      (fun S => MinorWord.toPolynomial k ⟨F :: S.1.factors⟩)
+      (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+      hinsert_poly
   · intro U hU
     rcases finsuppScalarBind_apply_ne_zero_exists
         cTail insertCoeff hU with ⟨S, hS, hSU⟩
@@ -6223,23 +6197,11 @@ lemma minorWord_finsupp_bind_after_local_expansion
   let c : StandardMinorWord m n →₀ k :=
     finsuppScalarBind cLocal straighten
   refine ⟨c, ?_, ?_⟩
-  · have hdist :
-        cLocal.sum (fun W a =>
-            MvPolynomial.C a * MinorWord.toPolynomial k W) =
-          cLocal.sum (fun W a =>
-            MvPolynomial.C a *
-              (straighten W).sum (fun U b =>
-                MvPolynomial.C b * MinorWord.toPolynomial k U.1)) := by
-      apply Finsupp.sum_congr
-      intro W a
-      by_cases hW : cLocal W = 0
-      · simp [hW]
-      · rw [hstraighten_poly W hW]
-    rw [hdist]
-    rw [← finsuppScalarBind_polynomial_sum
-      (c := cLocal) (d := straighten)
-      (v := fun U : StandardMinorWord m n =>
-        MinorWord.toPolynomial k U.1)]
+  · exact finsuppScalarBind_polynomial_sum_of_local_expansions
+      cLocal straighten
+      (fun W => MinorWord.toPolynomial k W)
+      (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+      hstraighten_poly
   · intro U hU
     rcases finsuppScalarBind_apply_ne_zero_exists
         cLocal straighten hU with ⟨W, hW, hWU⟩
@@ -6320,24 +6282,11 @@ lemma minorWord_head_insert_after_tail_straightening_factorCount
             intro S a
             simp [mul_assoc, mul_comm]
     rw [hhead_tail]
-    have hdist :
-        (cTail.sum fun S a =>
-            MvPolynomial.C a *
-              MinorWord.toPolynomial k ⟨F :: S.1.factors⟩) =
-          cTail.sum fun S a =>
-            MvPolynomial.C a *
-              (insertCoeff S).sum (fun U b =>
-                MvPolynomial.C b * MinorWord.toPolynomial k U.1) := by
-      apply Finsupp.sum_congr
-      intro S a
-      by_cases hS : cTail S = 0
-      · simp [hS]
-      · rw [hinsert_poly S hS]
-    rw [hdist]
-    rw [← finsuppScalarBind_polynomial_sum
-      (c := cTail) (d := insertCoeff)
-      (v := fun U : StandardMinorWord m n =>
-        MinorWord.toPolynomial k U.1)]
+    exact finsuppScalarBind_polynomial_sum_of_local_expansions
+      cTail insertCoeff
+      (fun S => MinorWord.toPolynomial k ⟨F :: S.1.factors⟩)
+      (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+      hinsert_poly
   · intro U hU
     rcases finsuppScalarBind_apply_ne_zero_exists
         cTail insertCoeff hU with ⟨S, hS, hSU⟩
@@ -6392,23 +6341,11 @@ lemma minorWord_finsupp_bind_after_local_expansion_factorCount
   let c : StandardMinorWord m n →₀ k :=
     finsuppScalarBind cLocal straighten
   refine ⟨c, ?_, ?_⟩
-  · have hdist :
-        cLocal.sum (fun W a =>
-            MvPolynomial.C a * MinorWord.toPolynomial k W) =
-          cLocal.sum (fun W a =>
-            MvPolynomial.C a *
-              (straighten W).sum (fun U b =>
-                MvPolynomial.C b * MinorWord.toPolynomial k U.1)) := by
-      apply Finsupp.sum_congr
-      intro W a
-      by_cases hW : cLocal W = 0
-      · simp [hW]
-      · rw [hstraighten_poly W hW]
-    rw [hdist]
-    rw [← finsuppScalarBind_polynomial_sum
-      (c := cLocal) (d := straighten)
-      (v := fun U : StandardMinorWord m n =>
-        MinorWord.toPolynomial k U.1)]
+  · exact finsuppScalarBind_polynomial_sum_of_local_expansions
+      cLocal straighten
+      (fun W => MinorWord.toPolynomial k W)
+      (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+      hstraighten_poly
   · intro U hU
     rcases finsuppScalarBind_apply_ne_zero_exists
         cLocal straighten hU with ⟨W, hW, hWU⟩
@@ -7375,24 +7312,11 @@ theorem straightening_law_exists_filtered
               intro S a
               simp [mul_assoc, mul_left_comm, mul_comm]
       rw [hhead_tail]
-      have hdist :
-          (dTail.sum fun S a =>
-              MvPolynomial.C a * MinorWord.toPolynomial k
-                ⟨H :: S.1.factors⟩) =
-            dTail.sum fun S a =>
-              MvPolynomial.C a *
-                (insertCoeff S).sum (fun U b =>
-                  MvPolynomial.C b * MinorWord.toPolynomial k U.1) := by
-        apply Finsupp.sum_congr
-        intro S a
-        by_cases hS : dTail S = 0
-        · simp [hS]
-        · rw [hinsert_poly S hS]
-      rw [hdist]
-      rw [← finsuppScalarBind_polynomial_sum
-        (c := dTail) (d := insertCoeff)
-        (v := fun U : StandardMinorWord m n =>
-          MinorWord.toPolynomial k U.1)]
+      exact finsuppScalarBind_polynomial_sum_of_local_expansions
+        dTail insertCoeff
+        (fun S => MinorWord.toPolynomial k ⟨H :: S.1.factors⟩)
+        (fun U : StandardMinorWord m n => MinorWord.toPolynomial k U.1)
+        hinsert_poly
     have hminor_degree :
         ∀ U : StandardMinorWord m n, cMinor U ≠ 0 →
           MinorWord.degree U.1 = YoungBitableau.degree B := by
@@ -8297,8 +8221,8 @@ theorem standardBitableau_quotient_linearIndependent_of_Jr_coefficients_zero
   simpa [cAll] using hcAll_zero
 
 /--
-Polynomial-level linear independence of standard bitableaux.  This is the
-uniqueness content of the straightening law, isolated for reuse.
+Polynomial-level linear independence of standard bitableaux.  This existing
+interface reuses the canonical degreewise proof above.
 -/
 theorem standardBitableau_toPolynomial_linearIndependent
     {m n : ℕ}
@@ -8306,154 +8230,7 @@ theorem standardBitableau_toPolynomial_linearIndependent
     LinearIndependent k
       (fun B : StandardYoungBitableau m n =>
         YoungBitableau.toPolynomial k B.1) := by
-  classical
-  rw [linearIndependent_iff]
-  intro c hc
-  by_contra hcz
-  have hsupp : c.support.Nonempty := by
-    by_contra h
-    have hs : c.support = ∅ := by
-      ext B
-      constructor
-      · intro hB
-        exact False.elim (h ⟨B, hB⟩)
-      · intro hB
-        simp at hB
-    apply hcz
-    exact Finsupp.support_eq_empty.mp hs
-  rcases Finset.exists_min_image c.support
-      (fun B : StandardYoungBitableau m n => YoungBitableau.length B.1)
-      hsupp with
-    ⟨B₀, hB₀mem, hB₀min⟩
-  have hcB₀_ne : c B₀ ≠ 0 := by
-    simpa [Finsupp.mem_support_iff] using hB₀mem
-  let e : ℕ := YoungBitableau.degree B₀.1
-  let cf : StandardYoungBitableau m n →₀ k :=
-    c.filter fun B => YoungBitableau.degree B.1 = e
-  have hcf_rel :
-      Finsupp.linearCombination k
-        (fun B : StandardYoungBitableau m n =>
-          YoungBitableau.toPolynomial k B.1) cf = 0 := by
-    have hTzero :
-        c.sum (fun B a =>
-          MvPolynomial.C a * YoungBitableau.toPolynomial k B.1) = 0 := by
-      rw [Finsupp.linearCombination_apply] at hc
-      simpa [MvPolynomial.C_mul'] using hc
-    have hcomp_zero :
-        MvPolynomial.homogeneousComponent e
-          (c.sum fun B a =>
-            MvPolynomial.C a * YoungBitableau.toPolynomial k B.1) = 0 := by
-      rw [hTzero]
-      simp
-    have hcomp :=
-      homogeneousComponent_standardBitableau_finsupp_sum k e c
-    rw [hcomp] at hcomp_zero
-    rw [Finsupp.linearCombination_apply]
-    simpa [cf, MvPolynomial.C_mul'] using hcomp_zero
-  have hcfB₀_ne : cf B₀ ≠ 0 := by
-    simp [cf, e, hcB₀_ne]
-  let a : k := cf B₀
-  have ha : a ≠ 0 := hcfB₀_ne
-  let c₀ : StandardYoungBitableau m n →₀ k := Finsupp.single B₀ (1 : k)
-  let c₁ : StandardYoungBitableau m n →₀ k := c₀ - a⁻¹ • cf
-  have hc₀_prop :
-      YoungBitableau.toPolynomial k B₀.1 =
-        c₀.sum (fun S b =>
-          MvPolynomial.C b * YoungBitableau.toPolynomial k S.1)
-      ∧
-      (∀ S : StandardYoungBitableau m n,
-        c₀ S ≠ 0 → YoungBitableau.degree S.1 = YoungBitableau.degree B₀.1)
-      ∧
-      (∀ S : StandardYoungBitableau m n,
-        c₀ S ≠ 0 → YoungBitableau.length B₀.1 ≤ YoungBitableau.length S.1) := by
-    refine ⟨?_, ?_, ?_⟩
-    · simp [c₀]
-    · intro S hS
-      have hSB : S = B₀ := by
-        by_contra hne
-        have : c₀ S = 0 := by simp [c₀, hne]
-        exact hS this
-      simp [hSB]
-    · intro S hS
-      have hSB : S = B₀ := by
-        by_contra hne
-        have : c₀ S = 0 := by simp [c₀, hne]
-        exact hS this
-      simp [hSB]
-  have hc₁_poly :
-      YoungBitableau.toPolynomial k B₀.1 =
-        c₁.sum (fun S b =>
-          MvPolynomial.C b * YoungBitableau.toPolynomial k S.1) := by
-    have hlin_c₁ :
-        Finsupp.linearCombination k
-          (fun S : StandardYoungBitableau m n =>
-            YoungBitableau.toPolynomial k S.1) c₁ =
-          YoungBitableau.toPolynomial k B₀.1 := by
-      dsimp [c₁, c₀]
-      rw [map_sub, map_smul, hcf_rel]
-      simp
-    rw [Finsupp.linearCombination_apply] at hlin_c₁
-    simpa [MvPolynomial.C_mul'] using hlin_c₁.symm
-  have hc₁_deg :
-      ∀ S : StandardYoungBitableau m n,
-        c₁ S ≠ 0 → YoungBitableau.degree S.1 = YoungBitableau.degree B₀.1 := by
-    intro S hS
-    by_cases hSB : S = B₀
-    · simp [hSB]
-    · have hcfS : cf S ≠ 0 := by
-        by_contra hcfS
-        have hc₁S : c₁ S = 0 := by
-          simp [c₁, c₀, hSB, hcfS]
-        exact hS hc₁S
-      have hSdeg : YoungBitableau.degree S.1 = e := by
-        by_contra hne
-        have : cf S = 0 := by simp [cf, hne]
-        exact hcfS this
-      simpa [e] using hSdeg
-  have hc₁_len :
-      ∀ S : StandardYoungBitableau m n,
-        c₁ S ≠ 0 → YoungBitableau.length B₀.1 ≤ YoungBitableau.length S.1 := by
-    intro S hS
-    by_cases hSB : S = B₀
-    · simp [hSB]
-    · have hcfS : cf S ≠ 0 := by
-        by_contra hcfS
-        have hc₁S : c₁ S = 0 := by
-          simp [c₁, c₀, hSB, hcfS]
-        exact hS hc₁S
-      have hcS : c S ≠ 0 := by
-        by_contra hcS
-        have : cf S = 0 := by
-          by_cases hdeg : YoungBitableau.degree S.1 = e
-          · simp [cf, hdeg, hcS]
-          · simp [cf, hdeg]
-        exact hcfS this
-      have hSmem : S ∈ c.support := by
-        simpa [Finsupp.mem_support_iff] using hcS
-      exact hB₀min S hSmem
-  have hc₁_prop :
-      YoungBitableau.toPolynomial k B₀.1 =
-        c₁.sum (fun S b =>
-          MvPolynomial.C b * YoungBitableau.toPolynomial k S.1)
-      ∧
-      (∀ S : StandardYoungBitableau m n,
-        c₁ S ≠ 0 → YoungBitableau.degree S.1 = YoungBitableau.degree B₀.1)
-      ∧
-      (∀ S : StandardYoungBitableau m n,
-        c₁ S ≠ 0 → YoungBitableau.length B₀.1 ≤ YoungBitableau.length S.1) :=
-    ⟨hc₁_poly, hc₁_deg, hc₁_len⟩
-  rcases straightening_law k B₀.1 with ⟨u, hu, huniq⟩
-  have hc₀_eq : c₀ = u := huniq c₀ hc₀_prop
-  have hc₁_eq : c₁ = u := huniq c₁ hc₁_prop
-  have hsame : c₁ = c₀ := hc₁_eq.trans hc₀_eq.symm
-  have hB₀_eval := DFunLike.congr_fun hsame B₀
-  have hc₁_B₀ : c₁ B₀ = 0 := by
-    simp [c₁, c₀, a, ha]
-  have hc₀_B₀ : c₀ B₀ = 1 := by
-    simp [c₀]
-  have hzero_one : (0 : k) = 1 := by
-    simp [hc₁_B₀, hc₀_B₀] at hB₀_eval
-  exact zero_ne_one hzero_one
+  exact straightening_law_standardBitableau_linearIndependent k
 
 lemma youngBitableau_toPolynomial_mem_long_standard_span_of_length_lt
     {m n : ℕ}

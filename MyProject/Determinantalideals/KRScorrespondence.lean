@@ -3535,23 +3535,23 @@ theorem result_value_le_movingAt_of_target_le {N : ℕ} {μ : YoungDiagram}
         simp only [result, htarget_eq, ↓reduceIte, ge_iff_le]
         exact ih htarget_tail
 
-/-- Trace-level comparison for reverse row insertion.
-
-If two traces start in the same row with weakly ordered moving values, and the two
-tableaux agree in all rows weakly above the current row, then the ejected values are
-weakly ordered in the same direction. -/
-theorem result_value_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
+private theorem result_value_le_and_topCol_le_of_moving_le_of_rows_eq
+    {N : ℕ} {μ : YoungDiagram}
     {T S : BoundedSSYT μ N} {row : ℕ} {x y : Fin N}
     (trx : ReverseRowInsertionTrace N T row x)
     (trY : ReverseRowInsertionTrace N S row y)
     (hxy : x ≤ y)
     (hrows : ∀ {i j : ℕ}, i ≤ row → (i, j) ∈ μ → S.T i j = T.T i j) :
-    trx.result.2 ≤ trY.result.2 := by
+    trx.result.2 ≤ trY.result.2 ∧ trx.topCol ≤ trY.topCol := by
   induction trx generalizing S y with
   | done Bx =>
       cases trY with
       | done By =>
-          exact Bx.bumped_le_of_moving_le_of_row_eq By hxy (fun {j} hcell => hrows le_rfl hcell)
+          exact ⟨
+            Bx.bumped_le_of_moving_le_of_row_eq By hxy
+              (fun {j} hcell => hrows le_rfl hcell),
+            Bx.location.col_le_of_moving_le_of_row_eq By.location hxy
+              (fun {j} hcell => hrows le_rfl hcell)⟩
       | bump hrow By tail =>
           exact False.elim (hrow rfl)
   | bump hrowx Bx tailx ih =>
@@ -3560,7 +3560,8 @@ theorem result_value_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
           exact False.elim (hrowx rfl)
       | bump hrowy By taily =>
           have hbumped : Bx.bumped ≤ By.bumped :=
-            Bx.bumped_le_of_moving_le_of_row_eq By hxy (fun {j} hcell => hrows le_rfl hcell)
+            Bx.bumped_le_of_moving_le_of_row_eq By hxy
+              (fun {j} hcell => hrows le_rfl hcell)
           exact ih taily hbumped (by
             intro i j hi hcell
             calc
@@ -3576,6 +3577,20 @@ theorem result_value_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
                   have hirow := congrArg Prod.fst hp
                   omega)
 
+/-- Trace-level comparison for reverse row insertion.
+
+If two traces start in the same row with weakly ordered moving values, and the two
+tableaux agree in all rows weakly above the current row, then the ejected values are
+weakly ordered in the same direction. -/
+theorem result_value_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
+    {T S : BoundedSSYT μ N} {row : ℕ} {x y : Fin N}
+    (trx : ReverseRowInsertionTrace N T row x)
+    (trY : ReverseRowInsertionTrace N S row y)
+    (hxy : x ≤ y)
+    (hrows : ∀ {i j : ℕ}, i ≤ row → (i, j) ∈ μ → S.T i j = T.T i j) :
+    trx.result.2 ≤ trY.result.2 := by
+  exact (result_value_le_and_topCol_le_of_moving_le_of_rows_eq trx trY hxy hrows).1
+
 theorem topCol_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
     {T S : BoundedSSYT μ N} {row : ℕ} {x y : Fin N}
     (trx : ReverseRowInsertionTrace N T row x)
@@ -3583,36 +3598,7 @@ theorem topCol_le_of_moving_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
     (hxy : x ≤ y)
     (hrows : ∀ {i j : ℕ}, i ≤ row → (i, j) ∈ μ → S.T i j = T.T i j) :
     trx.topCol ≤ trY.topCol := by
-  induction trx generalizing S y with
-  | done Bx =>
-      cases trY with
-      | done By =>
-          exact Bx.location.col_le_of_moving_le_of_row_eq By.location hxy
-            (fun {j} hcell => hrows le_rfl hcell)
-      | bump hrow By tail =>
-          exact False.elim (hrow rfl)
-  | bump hrowx Bx tailx ih =>
-      cases trY with
-      | done By =>
-          exact False.elim (hrowx rfl)
-      | bump hrowy By taily =>
-          have hbumped : Bx.bumped ≤ By.bumped :=
-            Bx.bumped_le_of_moving_le_of_row_eq By hxy
-              (fun {j} hcell => hrows le_rfl hcell)
-          simpa [topCol] using ih taily hbumped (by
-            intro i j hi hcell
-            calc
-              By.tableau.T i j = S.T i j := by
-                rw [By.unchanged_of_ne]
-                intro hp
-                have hirow := congrArg Prod.fst hp
-                omega
-              _ = Bx.tableau.T i j := by
-                rw [Bx.unchanged_of_ne]
-                · exact hrows (by omega) hcell
-                · intro hp
-                  have hirow := congrArg Prod.fst hp
-                  omega)
+  exact (result_value_le_and_topCol_le_of_moving_le_of_rows_eq trx trY hxy hrows).2
 
 theorem topCol_lt_of_moving_le_of_rows_eq_of_not_valid_at_right {N : ℕ}
     {μ : YoungDiagram}
@@ -3911,7 +3897,8 @@ theorem topCol_lt_of_strictlyLeftUpTo {N : ℕ} {μ ν : YoungDiagram}
   have hzero : left.bumpColAt 0 < right.bumpColAt 0 := hleft (Nat.zero_le limit)
   simpa [left.bumpColAt_zero_eq_topCol, right.bumpColAt_zero_eq_topCol] using hzero
 
-theorem result_value_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
+private theorem result_value_le_and_topCol_le_of_movingAt_le_of_rows_eq
+    {N : ℕ} {μ : YoungDiagram}
     {T S : BoundedSSYT μ N} {row target : ℕ} {moving y : Fin N}
     (trx : ReverseRowInsertionTrace N T row moving)
     (trY : ReverseRowInsertionTrace N S target y)
@@ -3920,13 +3907,13 @@ theorem result_value_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
     (hrows :
       ∀ {i j : ℕ}, i ≤ target → (i, j) ∈ μ →
         S.T i j = (trx.tableauAt target).T i j) :
-    trx.result.2 ≤ trY.result.2 := by
+    trx.result.2 ≤ trY.result.2 ∧ trx.topCol ≤ trY.topCol := by
   induction trx generalizing S y target
   case done B =>
       have htarget0 : target = 0 := by omega
       subst target
       simpa [movingAt, tableauAt] using
-        result_value_le_of_moving_le_of_rows_eq
+        result_value_le_and_topCol_le_of_moving_le_of_rows_eq
           (ReverseRowInsertionTrace.done B) trY hmov hrows
   case bump T₀ row₀ moving₀ hrow B tail ih =>
       by_cases htarget_eq : target = row₀
@@ -3937,9 +3924,8 @@ theorem result_value_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
             ∀ {i j : ℕ}, i ≤ row₀ → (i, j) ∈ μ → S.T i j = T₀.T i j := by
           intro i j hi hcell
           simpa [tableauAt] using hrows hi hcell
-        simpa [movingAt, tableauAt] using
-          result_value_le_of_moving_le_of_rows_eq
-            (ReverseRowInsertionTrace.bump hrow B tail) trY hmov0 hrows0
+        exact result_value_le_and_topCol_le_of_moving_le_of_rows_eq
+          (ReverseRowInsertionTrace.bump hrow B tail) trY hmov0 hrows0
       · have htarget_tail : target ≤ row₀ - 1 := by omega
         have hmov_tail : tail.movingAt target ≤ y := by
           simpa [movingAt, htarget_eq] using hmov
@@ -3948,8 +3934,21 @@ theorem result_value_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
               S.T i j = (tail.tableauAt target).T i j := by
           intro i j hi hcell
           simpa [tableauAt, htarget_eq] using hrows hi hcell
-        simpa [ReverseRowInsertionTrace.result] using
+        simpa [ReverseRowInsertionTrace.result, topCol] using
           ih trY htarget_tail hmov_tail hrows_tail
+
+theorem result_value_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
+    {T S : BoundedSSYT μ N} {row target : ℕ} {moving y : Fin N}
+    (trx : ReverseRowInsertionTrace N T row moving)
+    (trY : ReverseRowInsertionTrace N S target y)
+    (htarget : target ≤ row)
+    (hmov : trx.movingAt target ≤ y)
+    (hrows :
+      ∀ {i j : ℕ}, i ≤ target → (i, j) ∈ μ →
+        S.T i j = (trx.tableauAt target).T i j) :
+    trx.result.2 ≤ trY.result.2 := by
+  exact (result_value_le_and_topCol_le_of_movingAt_le_of_rows_eq
+    trx trY htarget hmov hrows).1
 
 theorem topCol_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
     {T S : BoundedSSYT μ N} {row target : ℕ} {moving y : Fin N}
@@ -3961,34 +3960,8 @@ theorem topCol_le_of_movingAt_le_of_rows_eq {N : ℕ} {μ : YoungDiagram}
       ∀ {i j : ℕ}, i ≤ target → (i, j) ∈ μ →
         S.T i j = (trx.tableauAt target).T i j) :
     trx.topCol ≤ trY.topCol := by
-  induction trx generalizing S y target
-  case done B =>
-      have htarget0 : target = 0 := by omega
-      subst target
-      simpa [movingAt, tableauAt] using
-        topCol_le_of_moving_le_of_rows_eq
-          (ReverseRowInsertionTrace.done B) trY hmov hrows
-  case bump T₀ row₀ moving₀ hrow B tail ih =>
-      by_cases htarget_eq : target = row₀
-      · subst target
-        have hmov0 : moving₀ ≤ y := by
-          simpa [movingAt] using hmov
-        have hrows0 :
-            ∀ {i j : ℕ}, i ≤ row₀ → (i, j) ∈ μ → S.T i j = T₀.T i j := by
-          intro i j hi hcell
-          simpa [tableauAt] using hrows hi hcell
-        simpa [movingAt, tableauAt] using
-          topCol_le_of_moving_le_of_rows_eq
-            (ReverseRowInsertionTrace.bump hrow B tail) trY hmov0 hrows0
-      · have htarget_tail : target ≤ row₀ - 1 := by omega
-        have hmov_tail : tail.movingAt target ≤ y := by
-          simpa [movingAt, htarget_eq] using hmov
-        have hrows_tail :
-            ∀ {i j : ℕ}, i ≤ target → (i, j) ∈ μ →
-              S.T i j = (tail.tableauAt target).T i j := by
-          intro i j hi hcell
-          simpa [tableauAt, htarget_eq] using hrows hi hcell
-        simpa [topCol] using ih trY htarget_tail hmov_tail hrows_tail
+  exact (result_value_le_and_topCol_le_of_movingAt_le_of_rows_eq
+    trx trY htarget hmov hrows).2
 
 theorem result_value_le_of_top_row_entries_le {N : ℕ} {μ : YoungDiagram}
     {T : BoundedSSYT μ N} {row : ℕ} {moving : Fin N}

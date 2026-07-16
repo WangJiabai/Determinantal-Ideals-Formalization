@@ -3379,6 +3379,124 @@ lemma ContainingSplit.leibnizPerm_pair_injective {m n : ℕ}
                 rw [Finset.card_compl, Fintype.card_fin])).injective (by
                   simpa using h))
 
+private lemma finset_eq_map_of_perm_orderEmbOfFin
+    {N : ℕ} (rowSlots colSlots : Finset (Fin N))
+    (hcard : rowSlots.card = colSlots.card)
+    (τ : Equiv.Perm (Fin rowSlots.card)) (π : Equiv.Perm (Fin N))
+    (hπ : ∀ j, π (colSlots.orderEmbOfFin hcard.symm j) =
+      rowSlots.orderEmbOfFin rfl (τ j)) :
+    rowSlots = colSlots.map π.toEmbedding := by
+  classical
+  apply Finset.eq_of_subset_of_card_le
+  · intro x hx
+    let xr : {x // x ∈ rowSlots} := ⟨x, hx⟩
+    let j : Fin rowSlots.card := (rowSlots.orderIsoOfFin rfl).symm xr
+    have hxj : rowSlots.orderEmbOfFin rfl j = x := by
+      exact congrArg Subtype.val ((rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
+    refine Finset.mem_map.mpr
+      ⟨colSlots.orderEmbOfFin hcard.symm (τ.symm j),
+        Finset.orderEmbOfFin_mem colSlots hcard.symm (τ.symm j), ?_⟩
+    simpa [hxj] using hπ (τ.symm j)
+  · simp [hcard]
+
+private lemma exists_sumCongr_eq_of_finset_map_eq
+    {N : ℕ} (rowSlots colSlots : Finset (Fin N))
+    (hcard : rowSlots.card = colSlots.card) (π : Equiv.Perm (Fin N))
+    (hrow : rowSlots = colSlots.map π.toEmbedding) :
+    ∃ τ : Equiv.Perm (Fin rowSlots.card),
+      ∃ σ : Equiv.Perm (Fin (N - rowSlots.card)),
+        ((finSumEquivOfFinset hcard.symm (by
+            rw [Finset.card_compl, Fintype.card_fin, ← hcard])).symm.trans
+          (Equiv.sumCongr τ σ)).trans
+            (finSumEquivOfFinset rfl (by
+              rw [Finset.card_compl, Fintype.card_fin])) = π := by
+  classical
+  have hmem (x : Fin N) : x ∈ colSlots ↔ π x ∈ rowSlots := by
+    rw [hrow]
+    simp
+  let τTarget : Fin rowSlots.card → {x // x ∈ rowSlots} := fun j =>
+    ⟨π (colSlots.orderEmbOfFin hcard.symm j),
+      (hmem _).mp (Finset.orderEmbOfFin_mem colSlots hcard.symm j)⟩
+  let τFun : Fin rowSlots.card → Fin rowSlots.card := fun j =>
+    (rowSlots.orderIsoOfFin rfl).symm (τTarget j)
+  have hτFun : ∀ j : Fin rowSlots.card,
+      rowSlots.orderEmbOfFin rfl (τFun j) =
+        π (colSlots.orderEmbOfFin hcard.symm j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((rowSlots.orderIsoOfFin rfl).apply_symm_apply (τTarget j))
+  have hτInj : Function.Injective τFun := by
+    intro a b hab
+    have h := congrArg (fun j => rowSlots.orderEmbOfFin rfl j) hab
+    simp only at h
+    rw [hτFun a, hτFun b] at h
+    exact (colSlots.orderEmbOfFin hcard.symm).injective (π.injective h)
+  have hτBij : Function.Bijective τFun :=
+    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
+  let τ : Equiv.Perm (Fin rowSlots.card) := Equiv.ofBijective τFun hτBij
+  have hτ : ∀ j : Fin rowSlots.card,
+      rowSlots.orderEmbOfFin rfl (τ j) =
+        π (colSlots.orderEmbOfFin hcard.symm j) := hτFun
+  let hrowCompl : rowSlotsᶜ.card = N - rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin]
+  let hcolCompl : colSlotsᶜ.card = N - rowSlots.card := by
+    rw [Finset.card_compl, Fintype.card_fin, ← hcard]
+  have hmemCompl (x : Fin N) : x ∈ colSlotsᶜ ↔ π x ∈ rowSlotsᶜ := by
+    rw [Finset.mem_compl, Finset.mem_compl]
+    exact not_congr (hmem x)
+  let σTarget : Fin (N - rowSlots.card) → {x // x ∈ rowSlotsᶜ} := fun j =>
+    ⟨π (colSlotsᶜ.orderEmbOfFin hcolCompl j),
+      (hmemCompl _).mp (Finset.orderEmbOfFin_mem colSlotsᶜ hcolCompl j)⟩
+  let σFun : Fin (N - rowSlots.card) → Fin (N - rowSlots.card) := fun j =>
+    (rowSlotsᶜ.orderIsoOfFin hrowCompl).symm (σTarget j)
+  have hσFun : ∀ j : Fin (N - rowSlots.card),
+      rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
+        π (colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
+    intro j
+    exact congrArg Subtype.val
+      ((rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply (σTarget j))
+  have hσInj : Function.Injective σFun := by
+    intro a b hab
+    have h := congrArg (fun j => rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
+    simp only at h
+    rw [hσFun a, hσFun b] at h
+    exact (colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
+  have hσBij : Function.Bijective σFun :=
+    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
+  let σ : Equiv.Perm (Fin (N - rowSlots.card)) := Equiv.ofBijective σFun hσBij
+  have hσ : ∀ j : Fin (N - rowSlots.card),
+      rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
+        π (colSlotsᶜ.orderEmbOfFin hcolCompl j) := hσFun
+  let rowSplit : Fin rowSlots.card ⊕ Fin (N - rowSlots.card) ≃ Fin N :=
+    finSumEquivOfFinset rfl hrowCompl
+  let colSplit : Fin rowSlots.card ⊕ Fin (N - rowSlots.card) ≃ Fin N :=
+    finSumEquivOfFinset hcard.symm hcolCompl
+  refine ⟨τ, σ, ?_⟩
+  change (colSplit.symm.trans (Equiv.sumCongr τ σ)).trans rowSplit = π
+  ext x
+  by_cases hx : x ∈ colSlots
+  · let x' : {x // x ∈ colSlots} := ⟨x, hx⟩
+    let j : Fin rowSlots.card := (colSlots.orderIsoOfFin hcard.symm).symm x'
+    have hxj : colSlots.orderEmbOfFin hcard.symm j = x := by
+      exact congrArg Subtype.val
+        ((colSlots.orderIsoOfFin hcard.symm).apply_symm_apply x')
+    rw [← hxj]
+    have hleft : colSplit.symm (colSlots.orderEmbOfFin hcard.symm j) = Sum.inl j := by
+      simpa [colSplit] using colSplit.left_inv (Sum.inl j)
+    simpa [Equiv.trans_apply, hleft, rowSplit] using congrArg Fin.val (hτ j)
+  · have hxc : x ∈ colSlotsᶜ := by
+      simpa [Finset.mem_compl] using hx
+    let x' : {x // x ∈ colSlotsᶜ} := ⟨x, hxc⟩
+    let j : Fin (N - rowSlots.card) :=
+      (colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
+    have hxj : colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
+      exact congrArg Subtype.val
+        ((colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
+    rw [← hxj]
+    have hright : colSplit.symm (colSlotsᶜ.orderEmbOfFin hcolCompl j) = Sum.inr j := by
+      simpa [colSplit] using colSplit.left_inv (Sum.inr j)
+    simpa [Equiv.trans_apply, hright, rowSplit] using congrArg Fin.val (hσ j)
+
 lemma ContainingSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
     {m n : ℕ} {P : RawMinorPair m n} (S : ContainingSplit P)
     (τ : Equiv.Perm (Fin S.rowSlots.card))
@@ -3386,37 +3504,9 @@ lemma ContainingSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
     (π : Equiv.Perm (Fin (P.p + P.q)))
     (hπ : S.leibnizPerm τ σ = π) :
     S.rowSlots = S.colSlots.map π.toEmbedding := by
-  classical
   subst π
-  ext x
-  constructor
-  · intro hx
-    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
-    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
-      exact congrArg Subtype.val
-        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
-    refine Finset.mem_map.mpr ?_
-    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
-    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
-    · change S.leibnizPerm τ σ
-          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
-      rw [ContainingSplit.leibnizPerm_colSlots]
-      simp [hxj]
-  · intro hx
-    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
-    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
-    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
-    have hrow :
-        S.leibnizPerm τ σ y ∈ S.rowSlots := by
-      rw [← hyj, ContainingSplit.leibnizPerm_colSlots]
-      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
-    have hyx' : S.leibnizPerm τ σ y = x := by
-      simpa using hyx
-    simpa [hyx'] using hrow
+  exact finset_eq_map_of_perm_orderEmbOfFin S.rowSlots S.colSlots S.card_eq τ
+    (S.leibnizPerm τ σ) (S.leibnizPerm_colSlots τ σ)
 
 lemma ContainingSplit.eq_of_colSlots_eq_of_leibnizPerm_eq
     {m n : ℕ} {P : RawMinorPair m n}
@@ -3574,135 +3664,13 @@ lemma ContainingSplit.exists_leibnizPerm_eq_of_colSlots_mem_Icc
         S.colSlots = s ∧ S.leibnizPerm τ σ = π := by
   classical
   let S : ContainingSplit P := ContainingSplit.ofColSlotsPerm P π s hs
-  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
-    (S.rowSlots.orderIsoOfFin rfl).symm
-      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-        change π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈ s.map π.toEmbedding
-        exact Finset.mem_map.mpr
-          ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, by simp [S], rfl⟩⟩
-  have hτFun :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τFun j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
-        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-          change π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
-            s.map π.toEmbedding
-          exact Finset.mem_map.mpr
-            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, by simp [S], rfl⟩⟩)
-  have hτInj : Function.Injective τFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
-    simp only at h
-    rw [hτFun a, hτFun b] at h
-    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
-  have hτBij : Function.Bijective τFun :=
-    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
-  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
-  have hτ :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τ j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact hτFun j
-  let hrowCompl :
-      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-  let hcolCompl :
-      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-    simp [S.card_eq]
-  let σFun :
-      Fin (P.p + P.q - S.rowSlots.card) →
-        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
-    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
-      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-        have hjc :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-        rw [Finset.mem_compl] at hjc
-        rw [Finset.mem_compl]
-        intro hrow
-        change π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈ s.map π.toEmbedding at hrow
-        rcases Finset.mem_map.mp hrow with
-          ⟨y, hy, hyπ⟩
-        have hxy :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-          π.injective hyπ.symm
-        have hxmem : S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlots := by
-          change S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ s
-          rw [hxy]
-          exact hy
-        exact hjc hxmem⟩
-  have hσFun :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
-        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-          have hjc :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-          rw [Finset.mem_compl] at hjc
-          rw [Finset.mem_compl]
-          intro hrow
-          change π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈ s.map π.toEmbedding at hrow
-          rcases Finset.mem_map.mp hrow with
-            ⟨y, hy, hyπ⟩
-          have hxy :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-            π.injective hyπ.symm
-          have hxmem : S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlots := by
-            change S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ s
-            rw [hxy]
-            exact hy
-          exact hjc hxmem⟩)
-  have hσInj : Function.Injective σFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
-    simp only at h
-    rw [hσFun a, hσFun b] at h
-    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
-  have hσBij : Function.Bijective σFun :=
-    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
-  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
-    Equiv.ofBijective σFun hσBij
-  have hσ :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact hσFun j
-  refine ⟨S, τ, σ, rfl, ?_⟩
-  ext x
-  by_cases hx : x ∈ S.colSlots
-  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
-    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
-    rw [← hxj]
-    rw [ContainingSplit.leibnizPerm_colSlots]
-    simpa using congrArg Fin.val (hτ j)
-  · have hxc : x ∈ S.colSlotsᶜ := by
-      simpa [Finset.mem_compl] using hx
-    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
-    let j : Fin (P.p + P.q - S.rowSlots.card) :=
-      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
-    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
-    rw [← hxj]
-    rw [ContainingSplit.leibnizPerm_colSlots_compl]
-    simpa using congrArg Fin.val (hσ j)
+  have hrow : S.rowSlots = S.colSlots.map π.toEmbedding := by
+    simp [S]
+  rcases exists_sumCongr_eq_of_finset_map_eq
+      S.rowSlots S.colSlots S.card_eq π hrow with ⟨τ', σ', hπ⟩
+  refine ⟨S, τ', σ', rfl, ?_⟩
+  simpa only [ContainingSplit.leibnizPerm, ContainingSplit.colSplit,
+    ContainingSplit.rowSplit] using hπ
 
 theorem ContainingSplit.exists_leibnizPerm_eq_and_colSlots_iff_mem_Icc
     {m n : ℕ} (P : RawMinorPair m n)
@@ -4489,37 +4457,9 @@ lemma HodgeColSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
     (π : Equiv.Perm (Fin (P.p + P.q)))
     (hπ : S.leibnizPerm τ σ = π) :
     S.rowSlots = S.colSlots.map π.toEmbedding := by
-  classical
   subst π
-  ext x
-  constructor
-  · intro hx
-    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
-    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
-      exact congrArg Subtype.val
-        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
-    refine Finset.mem_map.mpr ?_
-    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
-    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
-    · change S.leibnizPerm τ σ
-          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
-      rw [HodgeColSplit.leibnizPerm_colSlots]
-      simp [hxj]
-  · intro hx
-    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
-    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
-    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
-    have hrow :
-        S.leibnizPerm τ σ y ∈ S.rowSlots := by
-      rw [← hyj, HodgeColSplit.leibnizPerm_colSlots]
-      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
-    have hyx' : S.leibnizPerm τ σ y = x := by
-      simpa using hyx
-    simpa [hyx'] using hrow
+  exact finset_eq_map_of_perm_orderEmbOfFin S.rowSlots S.colSlots S.card_eq τ
+    (S.leibnizPerm τ σ) (S.leibnizPerm_colSlots τ σ)
 
 lemma HodgeColSplit.eq_of_W_eq_of_leibnizPerm_eq
     {m n : ℕ} {P : RawMinorPair m n}
@@ -4691,134 +4631,11 @@ lemma HodgeColSplit.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image
     ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
       S.leibnizPerm τ σ = π := by
   classical
-  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
-    (S.rowSlots.orderIsoOfFin rfl).symm
-      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-        have hmem :
-            π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
-              S.colSlots.map π.toEmbedding :=
-          Finset.mem_map.mpr
-            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
-        simpa only [hrow] using hmem⟩
-  have hτFun :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τFun j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
-        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-          have hmem :
-              π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
-                S.colSlots.map π.toEmbedding :=
-            Finset.mem_map.mpr
-              ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
-          simpa only [hrow] using hmem⟩)
-  have hτInj : Function.Injective τFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
-    simp only at h
-    rw [hτFun a, hτFun b] at h
-    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
-  have hτBij : Function.Bijective τFun :=
-    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
-  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
-  have hτ :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τ j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact hτFun j
-  let hrowCompl :
-      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-  let hcolCompl :
-      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-    simp [S.card_eq]
-  let σFun :
-      Fin (P.p + P.q - S.rowSlots.card) →
-        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
-    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
-      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-        have hjc :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-        rw [Finset.mem_compl] at hjc
-        rw [Finset.mem_compl]
-        intro hrowmem
-        have hrowmem' :
-            π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
-              S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
-        rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
-        have hxy :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-          π.injective hyπ.symm
-        exact hjc (by rw [hxy]; exact hy)⟩
-  have hσFun :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
-        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-          have hjc :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-          rw [Finset.mem_compl] at hjc
-          rw [Finset.mem_compl]
-          intro hrowmem
-          have hrowmem' :
-              π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
-                S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
-          rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
-          have hxy :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-            π.injective hyπ.symm
-          exact hjc (by rw [hxy]; exact hy)⟩)
-  have hσInj : Function.Injective σFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
-    simp only at h
-    rw [hσFun a, hσFun b] at h
-    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
-  have hσBij : Function.Bijective σFun :=
-    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
-  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
-    Equiv.ofBijective σFun hσBij
-  have hσ :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact hσFun j
-  refine ⟨τ, σ, ?_⟩
-  ext x
-  by_cases hx : x ∈ S.colSlots
-  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
-    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
-    rw [← hxj]
-    rw [HodgeColSplit.leibnizPerm_colSlots]
-    simpa using congrArg Fin.val (hτ j)
-  · have hxc : x ∈ S.colSlotsᶜ := by
-      simpa [Finset.mem_compl] using hx
-    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
-    let j : Fin (P.p + P.q - S.rowSlots.card) :=
-      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
-    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
-    rw [← hxj]
-    rw [HodgeColSplit.leibnizPerm_colSlots_compl]
-    simpa using congrArg Fin.val (hσ j)
+  rcases exists_sumCongr_eq_of_finset_map_eq
+      S.rowSlots S.colSlots S.card_eq π hrow with ⟨τ', σ', hπ⟩
+  refine ⟨τ', σ', ?_⟩
+  simpa only [HodgeColSplit.leibnizPerm, HodgeColSplit.colSplit,
+    HodgeColSplit.rowSplit] using hπ
 
 lemma HodgeColSplit.exists_leibnizPerm_eq_of_W_mem_powerset
     {m n : ℕ} (P : RawMinorPair m n)
@@ -5327,37 +5144,9 @@ lemma HodgeRowSplit.rowSlots_eq_colSlots_image_of_leibnizPerm_eq
     (π : Equiv.Perm (Fin (P.p + P.q)))
     (hπ : S.leibnizPerm τ σ = π) :
     S.rowSlots = S.colSlots.map π.toEmbedding := by
-  classical
   subst π
-  ext x
-  constructor
-  · intro hx
-    let xr : {x // x ∈ S.rowSlots} := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.rowSlots.orderIsoOfFin rfl).symm xr
-    have hxj : S.rowSlots.orderEmbOfFin rfl j = x := by
-      exact congrArg Subtype.val
-        ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply xr)
-    refine Finset.mem_map.mpr ?_
-    refine ⟨S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j), ?_, ?_⟩
-    · exact Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm (τ.symm j)
-    · change S.leibnizPerm τ σ
-          (S.colSlots.orderEmbOfFin S.card_eq.symm (τ.symm j)) = x
-      rw [HodgeRowSplit.leibnizPerm_colSlots]
-      simp [hxj]
-  · intro hx
-    rcases Finset.mem_map.mp hx with ⟨y, hy, hyx⟩
-    let yc : {y // y ∈ S.colSlots} := ⟨y, hy⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm yc
-    have hyj : S.colSlots.orderEmbOfFin S.card_eq.symm j = y := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply yc)
-    have hrow :
-        S.leibnizPerm τ σ y ∈ S.rowSlots := by
-      rw [← hyj, HodgeRowSplit.leibnizPerm_colSlots]
-      exact Finset.orderEmbOfFin_mem S.rowSlots rfl (τ j)
-    have hyx' : S.leibnizPerm τ σ y = x := by
-      simpa using hyx
-    simpa [hyx'] using hrow
+  exact finset_eq_map_of_perm_orderEmbOfFin S.rowSlots S.colSlots S.card_eq τ
+    (S.leibnizPerm τ σ) (S.leibnizPerm_colSlots τ σ)
 
 lemma HodgeRowSplit.eq_of_W_eq_of_leibnizPerm_eq
     {m n : ℕ} {P : RawMinorPair m n}
@@ -5529,134 +5318,11 @@ lemma HodgeRowSplit.exists_leibnizPerm_eq_of_rowSlots_eq_colSlots_image
     ∃ σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)),
       S.leibnizPerm τ σ = π := by
   classical
-  let τFun : Fin S.rowSlots.card → Fin S.rowSlots.card := fun j =>
-    (S.rowSlots.orderIsoOfFin rfl).symm
-      ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-        have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-          Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-        have hmem :
-            π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
-              S.colSlots.map π.toEmbedding :=
-          Finset.mem_map.mpr
-            ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
-        simpa only [hrow] using hmem⟩
-  have hτFun :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τFun j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlots.orderIsoOfFin rfl).apply_symm_apply
-        ⟨π (S.colSlots.orderEmbOfFin S.card_eq.symm j), by
-          have hj : S.colSlots.orderEmbOfFin S.card_eq.symm j ∈ S.colSlots :=
-            Finset.orderEmbOfFin_mem S.colSlots S.card_eq.symm j
-          have hmem :
-              π (S.colSlots.orderEmbOfFin S.card_eq.symm j) ∈
-                S.colSlots.map π.toEmbedding :=
-            Finset.mem_map.mpr
-              ⟨S.colSlots.orderEmbOfFin S.card_eq.symm j, hj, rfl⟩
-          simpa only [hrow] using hmem⟩)
-  have hτInj : Function.Injective τFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlots.orderEmbOfFin rfl j) hab
-    simp only at h
-    rw [hτFun a, hτFun b] at h
-    exact (S.colSlots.orderEmbOfFin S.card_eq.symm).injective (π.injective h)
-  have hτBij : Function.Bijective τFun :=
-    (Fintype.bijective_iff_injective_and_card τFun).mpr ⟨hτInj, rfl⟩
-  let τ : Equiv.Perm (Fin S.rowSlots.card) := Equiv.ofBijective τFun hτBij
-  have hτ :
-      ∀ j : Fin S.rowSlots.card,
-        S.rowSlots.orderEmbOfFin rfl (τ j) =
-          π (S.colSlots.orderEmbOfFin S.card_eq.symm j) := by
-    intro j
-    exact hτFun j
-  let hrowCompl :
-      S.rowSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-  let hcolCompl :
-      S.colSlotsᶜ.card = P.p + P.q - S.rowSlots.card := by
-    rw [Finset.card_compl, Fintype.card_fin]
-    simp
-  let σFun :
-      Fin (P.p + P.q - S.rowSlots.card) →
-        Fin (P.p + P.q - S.rowSlots.card) := fun j =>
-    (S.rowSlotsᶜ.orderIsoOfFin hrowCompl).symm
-      ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-        have hjc :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-          Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-        rw [Finset.mem_compl] at hjc
-        rw [Finset.mem_compl]
-        intro hrowmem
-        have hrowmem' :
-            π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
-              S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
-        rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
-        have hxy :
-            S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-          π.injective hyπ.symm
-        exact hjc (by rw [hxy]; exact hy)⟩
-  have hσFun :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σFun j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact congrArg Subtype.val
-      ((S.rowSlotsᶜ.orderIsoOfFin hrowCompl).apply_symm_apply
-        ⟨π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j), by
-          have hjc :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j ∈ S.colSlotsᶜ :=
-            Finset.orderEmbOfFin_mem S.colSlotsᶜ hcolCompl j
-          rw [Finset.mem_compl] at hjc
-          rw [Finset.mem_compl]
-          intro hrowmem
-          have hrowmem' :
-              π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) ∈
-                S.colSlots.map π.toEmbedding := hrow ▸ hrowmem
-          rcases Finset.mem_map.mp hrowmem' with ⟨y, hy, hyπ⟩
-          have hxy :
-              S.colSlotsᶜ.orderEmbOfFin hcolCompl j = y :=
-            π.injective hyπ.symm
-          exact hjc (by rw [hxy]; exact hy)⟩)
-  have hσInj : Function.Injective σFun := by
-    intro a b hab
-    have h := congrArg (fun j => S.rowSlotsᶜ.orderEmbOfFin hrowCompl j) hab
-    simp only at h
-    rw [hσFun a, hσFun b] at h
-    exact (S.colSlotsᶜ.orderEmbOfFin hcolCompl).injective (π.injective h)
-  have hσBij : Function.Bijective σFun :=
-    (Fintype.bijective_iff_injective_and_card σFun).mpr ⟨hσInj, rfl⟩
-  let σ : Equiv.Perm (Fin (P.p + P.q - S.rowSlots.card)) :=
-    Equiv.ofBijective σFun hσBij
-  have hσ :
-      ∀ j : Fin (P.p + P.q - S.rowSlots.card),
-        S.rowSlotsᶜ.orderEmbOfFin hrowCompl (σ j) =
-          π (S.colSlotsᶜ.orderEmbOfFin hcolCompl j) := by
-    intro j
-    exact hσFun j
-  refine ⟨τ, σ, ?_⟩
-  ext x
-  by_cases hx : x ∈ S.colSlots
-  · let x' : { x // x ∈ S.colSlots } := ⟨x, hx⟩
-    let j : Fin S.rowSlots.card := (S.colSlots.orderIsoOfFin S.card_eq.symm).symm x'
-    have hxj : S.colSlots.orderEmbOfFin S.card_eq.symm j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlots.orderIsoOfFin S.card_eq.symm).apply_symm_apply x')
-    rw [← hxj]
-    rw [HodgeRowSplit.leibnizPerm_colSlots]
-    simpa using congrArg Fin.val (hτ j)
-  · have hxc : x ∈ S.colSlotsᶜ := by
-      simpa [Finset.mem_compl] using hx
-    let x' : { x // x ∈ S.colSlotsᶜ } := ⟨x, hxc⟩
-    let j : Fin (P.p + P.q - S.rowSlots.card) :=
-      (S.colSlotsᶜ.orderIsoOfFin hcolCompl).symm x'
-    have hxj : S.colSlotsᶜ.orderEmbOfFin hcolCompl j = x := by
-      exact congrArg Subtype.val
-        ((S.colSlotsᶜ.orderIsoOfFin hcolCompl).apply_symm_apply x')
-    rw [← hxj]
-    rw [HodgeRowSplit.leibnizPerm_colSlots_compl]
-    simpa using congrArg Fin.val (hσ j)
+  rcases exists_sumCongr_eq_of_finset_map_eq
+      S.rowSlots S.colSlots S.card_eq π hrow with ⟨τ', σ', hπ⟩
+  refine ⟨τ', σ', ?_⟩
+  simpa only [HodgeRowSplit.leibnizPerm, HodgeRowSplit.colSplit,
+    HodgeRowSplit.rowSplit] using hπ
 
 lemma HodgeRowSplit.exists_leibnizPerm_eq_of_W_mem_powerset
     {m n : ℕ} (P : RawMinorPair m n)
