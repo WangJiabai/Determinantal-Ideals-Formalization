@@ -5,7 +5,7 @@ import MyProject.Determinantalideals.ReducedGroebner
 
 This file checks the names and displayed types used by the AFM manuscript. It
 does not add mathematical API; compilation fails if a referenced declaration
-is renamed or if either checked signature drifts.
+is renamed or if any checked signature drifts.
 -/
 
 #check Determinantal.MinorIndex
@@ -43,6 +43,37 @@ is renamed or if either checked signature drifts.
 #check Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
 #check Determinantal.normalizedGrPlusOne_isReduced_antiDiagonalLex
 #check Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex
+
+example (m n : ℕ) :
+    ∃ κ :
+      ((Fin m × Fin n) →₀ ℕ) ≃
+        Determinantal.StandardYoungBitableau m n,
+      (∀ E : (Fin m × Fin n) →₀ ℕ,
+        Determinantal.YoungBitableau.degree ((κ E).1) =
+          Finsupp.degree E)
+      ∧
+      (∀ E : (Fin m × Fin n) →₀ ℕ,
+        Determinantal.monomialWidth E =
+          Determinantal.YoungBitableau.length ((κ E).1)) := by
+  exact Determinantal.exists_krsEquiv m n
+
+example {m n : ℕ}
+    (k : Type*) [Field k]
+    (B : Determinantal.YoungBitableau m n) :
+    ∃ c : Determinantal.StandardYoungBitableau m n →₀ k,
+      Determinantal.YoungBitableau.toPolynomial k B =
+        c.sum (fun S a =>
+          MvPolynomial.C a *
+            Determinantal.YoungBitableau.toPolynomial k S.1)
+      ∧
+      (∀ S, c S ≠ 0 →
+        Determinantal.YoungBitableau.degree S.1 =
+          Determinantal.YoungBitableau.degree B)
+      ∧
+      (∀ S, c S ≠ 0 →
+        Determinantal.YoungBitableau.length B ≤
+          Determinantal.YoungBitableau.length S.1) := by
+  exact Determinantal.straightening_law_exists_filtered k B
 
 example {m n r : ℕ}
     (k : Type*) [Field k]

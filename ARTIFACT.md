@@ -22,10 +22,31 @@ its vanishing ideal with `Jr`.
 
 ## Clean-checkout reproduction
 
+Reviewers should use the immutable revision cited by the manuscript. Once that
+revision has been frozen, a clean reproduction starts with:
+
+```bash
+git clone https://github.com/WangJiabai/Determinantal-Ideals-Formalization.git
+cd Determinantal-Ideals-Formalization
+git checkout ARTIFACT_COMMIT_OR_TAG
+```
+
+Replace `ARTIFACT_COMMIT_OR_TAG` with the immutable commit or tag cited by the
+manuscript.
+
+Then run:
+
 ```bash
 lake exe cache get
 bash scripts/check_artifact.sh
 ```
+
+A successful run ends with `Artifact checks completed successfully`. It scans
+tracked Lean sources, builds the project, compiles the paper-facing interfaces,
+enforces the declared axiom allowlist, checks declaration locations used for
+fixed links, and prints revision/dependency metadata. The initial cache command
+may access the network; the proofs themselves do not call an external
+computer-algebra system.
 
 ## Paper-facing entry points
 
@@ -56,11 +77,12 @@ bash scripts/check_artifact.sh
 ## Meaning of the audits
 
 `lake build` performs elaboration and kernel checking. `check_sources.sh`
-scans tracked Lean sources for proof placeholders and project declarations of
-axioms or unsafe code. `check_axioms.py` compares `#print axioms` reports with
-an explicit foundational allowlist. `PaperAudit.lean` checks manuscript-facing
-names and types. These checks establish different properties; none replaces
-the others or independently validates the manuscript’s prose.
+scans tracked Lean sources for `sorry`, `admit`, or `sorryAx`, and for axiom or
+unsafe declarations, including declarations marked `private` or `protected`.
+`check_axioms.py` compares `#print axioms` reports with an explicit
+foundational allowlist. `PaperAudit.lean` checks manuscript-facing names and
+types. These checks establish different properties; none replaces the others
+or independently validates the manuscript’s prose.
 
 ## Metadata generation
 
@@ -93,6 +115,11 @@ allows the foundational constants `propext`, `Classical.choice`, and
 The `main` branch is mutable. No immutable manuscript artifact or archival DOI
 is claimed here. The final paper must cite an immutable commit/tag and an
 archival DOI or equivalent persistent identifier, not changing `main`.
+
+Repository-side checks cannot establish manuscript-only AFM requirements. The
+authors must still deposit the manuscript in an accepted open archive, insert
+fixed links for the main results, declare funding and conflicts, and complete
+the archival steps in the [release checklist](docs/release_checklist.md).
 
 ## Further documentation
 

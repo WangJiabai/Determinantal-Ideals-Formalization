@@ -77,27 +77,21 @@ def collect(require_clean: bool = False) -> dict[str, object]:
         "requested_groebner_revision": groebner_req.get("rev"),
         "resolved_groebner_commit": groebner.get("rev"),
         "license": "Apache-2.0",
-        "principal_import": "MyProject.Determinantalideals.Groebner",
-        "main_descriptive_theorem": (
-            "Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
-        "main_paper_number_alias": (
-            "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
-        "principal_groebner_module": "MyProject.Determinantalideals.Groebner",
-        "reduced_refinement_module": (
+        "principal_import": "MyProject.Determinantalideals.ReducedGroebner",
+        "groebner_basis_proof_module": "MyProject.Determinantalideals.Groebner",
+        "reduced_refinement_entry_module": (
             "MyProject.Determinantalideals.ReducedGroebner"
         ),
-        "main_groebner_basis_theorem": (
+        "unnormalized_groebner_basis_theorem": (
             "Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
         ),
-        "main_reduced_refinement_theorem": (
+        "normalized_reduced_groebner_basis_theorem": (
             "Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
         ),
-        "groebner_basis_paper_alias": (
+        "unnormalized_groebner_basis_paper_alias": (
             "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
         ),
-        "reduced_refinement_paper_alias": (
+        "normalized_reduced_groebner_basis_paper_alias": (
             "Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
         ),
         "ci_workflow_path": ".github/workflows/lean.yml",
@@ -121,14 +115,20 @@ def markdown(metadata: dict[str, object]) -> str:
         "resolved_groebner_commit": "Resolved groebner commit",
         "license": "License",
         "principal_import": "Principal import",
-        "main_descriptive_theorem": "Main descriptive theorem",
-        "main_paper_number_alias": "Main paper-number alias",
-        "principal_groebner_module": "Principal Groebner-basis module",
-        "reduced_refinement_module": "Reduced-refinement module",
-        "main_groebner_basis_theorem": "Main Groebner-basis theorem",
-        "main_reduced_refinement_theorem": "Main reduced refinement",
-        "groebner_basis_paper_alias": "Groebner-basis paper alias",
-        "reduced_refinement_paper_alias": "Reduced-refinement paper alias",
+        "groebner_basis_proof_module": "Groebner-basis proof module",
+        "reduced_refinement_entry_module": "Reduced-refinement entry module",
+        "unnormalized_groebner_basis_theorem": (
+            "Unnormalized Groebner-basis theorem"
+        ),
+        "normalized_reduced_groebner_basis_theorem": (
+            "Normalized reduced Groebner-basis theorem"
+        ),
+        "unnormalized_groebner_basis_paper_alias": (
+            "Unnormalized Groebner-basis paper alias"
+        ),
+        "normalized_reduced_groebner_basis_paper_alias": (
+            "Normalized reduced Groebner-basis paper alias"
+        ),
         "ci_workflow_path": "CI workflow",
     }
     rows = ["| Artifact field | Value |", "| --- | --- |"]

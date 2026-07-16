@@ -35,15 +35,18 @@ check_pattern() {
   fi
 }
 
-check_pattern '\b(sorry|admit)\b' "Found sorry or admit in tracked Lean sources."
-check_pattern '^\s*axiom\b' "Found a project axiom declaration in tracked Lean sources."
-check_pattern '^\s*unsafe\b' "Found an unsafe declaration in tracked Lean sources."
+check_pattern '\b(sorry|admit|sorryAx)\b' \
+  "Found sorry, admit, or sorryAx in tracked Lean sources."
+check_pattern '^\s*(?:(?:private|protected)\s+)?axiom\b' \
+  "Found a project axiom declaration in tracked Lean sources."
+check_pattern '^\s*(?:(?:private|protected)\s+)?unsafe\b' \
+  "Found an unsafe declaration in tracked Lean sources."
 if ((failed)); then
   exit 1
 fi
 
 printf 'Checked %d tracked Lean files:\n' "${#lean_files[@]}"
 echo "- scan backend: $scan_backend"
-echo "- no sorry/admit"
-echo "- no project axiom declarations"
-echo "- no unsafe declarations"
+echo "- no sorry/admit/sorryAx"
+echo "- no project axiom declarations (including private/protected)"
+echo "- no unsafe declarations (including private/protected)"

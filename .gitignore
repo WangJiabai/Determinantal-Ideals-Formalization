@@ -19,3 +19,14 @@ bin/
 # Misc
 *.log
 .env
+
+# Python audit-tool caches
+__pycache__/
+*.py[cod]
+
+# Local scratch and generated manuscript auxiliaries
+/output/
+/tmp/
+*.aux
+*.out
+*.synctex.gz
