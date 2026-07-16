@@ -9,3 +9,4 @@ import MyProject.Determinantalideals.Bitableaux
 import MyProject.Determinantalideals.KRScorrespondence
 import MyProject.Determinantalideals.StraighteningLaw
 import MyProject.Determinantalideals.Groebner
+import MyProject.Determinantalideals.ReducedGroebner
