@@ -1,4 +1,4 @@
-import MyProject.Determinantalideals.Groebner
+import MyProject.Determinantalideals.ReducedGroebner
 
 /-!
 Reproducible artifact audit for selected paper-facing declarations. The output
@@ -16,3 +16,13 @@ project-specific axiom declarations.
 #print axioms Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
 #print axioms Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
 #print axioms Determinantal.GrPlusOne_isGroebnerBasis_antiDiagonalLex
+#print axioms Determinantal.support_normalizedGenericMinor
+#print axioms Determinantal.leadingCoeff_normalizedGenericMinor
+#print axioms Determinantal.antidiagExp_le_permExp_imp_minorIndex_eq
+#print axioms Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
+#print axioms Determinantal.normalizedGrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+#print axioms Determinantal.normalizedGrPlusOne_isReduced_of_isAntidiagonalTermOrder
+#print axioms Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
+#print axioms Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
+#print axioms Determinantal.normalizedGrPlusOne_isReduced_antiDiagonalLex
+#print axioms Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex

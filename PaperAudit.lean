@@ -1,4 +1,4 @@
-import MyProject.Determinantalideals.Groebner
+import MyProject.Determinantalideals.ReducedGroebner
 
 /-!
 # Paper-facing declaration audit
@@ -31,6 +31,18 @@ is renamed or if either checked signature drifts.
 #check Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
 #check Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
 #check Determinantal.GrPlusOne_isGroebnerBasis_antiDiagonalLex
+#check Determinantal.normalizedGenericMinor
+#check Determinantal.normalizedGrPlusOne
+#check Determinantal.support_normalizedGenericMinor
+#check Determinantal.leadingCoeff_normalizedGenericMinor
+#check Determinantal.antidiagExp_le_permExp_imp_minorIndex_eq
+#check Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
+#check Determinantal.normalizedGrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+#check Determinantal.normalizedGrPlusOne_isReduced_of_isAntidiagonalTermOrder
+#check Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
+#check Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
+#check Determinantal.normalizedGrPlusOne_isReduced_antiDiagonalLex
+#check Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex
 
 example {m n r : ℕ}
     (k : Type*) [Field k]
@@ -53,3 +65,45 @@ example {m n : ℕ}
   exact
     Determinantal.hilbertFunction_detRing_eq_card_monomialExp_width_le
       k r d
+
+example {m n r : ℕ}
+    (k : Type*) [Field k]
+    (ord : MonomialOrder (Fin m × Fin n))
+    (hanti : Determinantal.IsAntidiagonalTermOrder ord) :
+    ∀ p ∈ Determinantal.GrPlusOne m n r k,
+      ord.IsRemainder p
+        (Determinantal.GrPlusOne m n r k \ {p}) p := by
+  exact
+    Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
+      k ord hanti
+
+example {m n r : ℕ}
+    (k : Type*) [Field k]
+    (ord : MonomialOrder (Fin m × Fin n))
+    (hanti : Determinantal.IsAntidiagonalTermOrder ord) :
+    ∃ hGB :
+        ord.IsGroebnerBasis
+          (Determinantal.normalizedGrPlusOne m n r k)
+          (Determinantal.Jr m n r k),
+      hGB.IsReduced := by
+  exact
+    Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
+      k ord hanti
+
+example {m n r : ℕ}
+    (k : Type*) [Field k] :
+    (Determinantal.normalizedGrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+      (r := r) k (Determinantal.antiDiagonalLex m n)
+      (Determinantal.antiDiagonalLex_isAntidiagonal m n)).IsReduced := by
+  exact Determinantal.normalizedGrPlusOne_isReduced_antiDiagonalLex k
+
+example {m n r : ℕ}
+    (k : Type*) [Field k] :
+    ∃ hGB :
+        (Determinantal.antiDiagonalLex m n).IsGroebnerBasis
+          (Determinantal.normalizedGrPlusOne m n r k)
+          (Determinantal.Jr m n r k),
+      hGB.IsReduced := by
+  exact
+    Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex
+      k

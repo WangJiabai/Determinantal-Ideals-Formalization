@@ -84,6 +84,22 @@ def collect(require_clean: bool = False) -> dict[str, object]:
         "main_paper_number_alias": (
             "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
         ),
+        "principal_groebner_module": "MyProject.Determinantalideals.Groebner",
+        "reduced_refinement_module": (
+            "MyProject.Determinantalideals.ReducedGroebner"
+        ),
+        "main_groebner_basis_theorem": (
+            "Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
+        ),
+        "main_reduced_refinement_theorem": (
+            "Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
+        ),
+        "groebner_basis_paper_alias": (
+            "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
+        ),
+        "reduced_refinement_paper_alias": (
+            "Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
+        ),
         "ci_workflow_path": ".github/workflows/lean.yml",
     }
 
@@ -107,6 +123,12 @@ def markdown(metadata: dict[str, object]) -> str:
         "principal_import": "Principal import",
         "main_descriptive_theorem": "Main descriptive theorem",
         "main_paper_number_alias": "Main paper-number alias",
+        "principal_groebner_module": "Principal Groebner-basis module",
+        "reduced_refinement_module": "Reduced-refinement module",
+        "main_groebner_basis_theorem": "Main Groebner-basis theorem",
+        "main_reduced_refinement_theorem": "Main reduced refinement",
+        "groebner_basis_paper_alias": "Groebner-basis paper alias",
+        "reduced_refinement_paper_alias": "Reduced-refinement paper alias",
         "ci_workflow_path": "CI workflow",
     }
     rows = ["| Artifact field | Value |", "| --- | --- |"]

@@ -172,18 +172,66 @@ would make equalities false or conceal a required unit argument.
 The source separately proves the exponent theorem (`ord.degree`), leading
 coefficient theorem, and signed `leadingTerm` theorem. Over a field, the sign
 is normalized as a unit to show that signed terms and coefficient-one
-anti-diagonal monomials generate the same ideal.
+anti-diagonal monomials generate the same ideal. `normalizedGenericMinor`
+makes the corresponding inverse scalar multiplication explicit when a monic
+representative is required.
 
 ### Downstream payoff
 
 The combinatorial width ideal can be used without misstating the actual
-`leadingTerm`, and the missing reducedness refinement is visible rather than
-silently assumed.
+`leadingTerm`, while the later reducedness theorem can distinguish the
+interreduced original family from its monic normalization.
 
 ### Reusable lesson
 
 At every Gröbner interface, specify whether a claim is exponent-level,
 monomial-level, coefficient-level, or term-level.
+
+## Design case: Interreduction and monic normalization
+
+### Mathematical requirement
+
+The library's reducedness definition requires both monicity and the absence of
+terms divisible by leading monomials of other generators. The determinant
+family satisfies the second condition before its coefficients are normalized.
+
+### Direct alternative
+
+One could call the original signed minors reduced by treating unit multiples
+as interchangeable, or prove reducedness only for a normalized set in one
+monolithic argument.
+
+### Formalization cost or failure mode
+
+The first choice is false under a definition that requires leading coefficient
+literally equal to `1`; a reverse-permutation coefficient can be `-1`. The
+second hides the stronger structural fact that normalization changes no
+support or divisibility relation and is needed only for monicity.
+
+### Chosen representation or API
+
+`GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder` exposes the remainder
+condition for the original minors. The public rigidity lemma
+`antidiagExp_le_permExp_imp_minorIndex_eq` proves that divisibility of an
+anti-diagonal exponent into any permutation-term exponent forces equality of
+the two minor indices. `normalizedGenericMinor` and `normalizedGrPlusOne`
+apply the inverse of the common anti-diagonal coefficient. The convenience
+lemmas `support_normalizedGenericMinor` and
+`leadingCoeff_normalizedGenericMinor` record the unchanged support and the new
+leading coefficient. The existing Gröbner-basis result is transferred through
+unit scalar multiplication before reducedness is packaged separately.
+
+### Downstream payoff
+
+Clients can use the original family when only Gröbner-basis or interreduction
+facts are needed and use the normalized family when a strictly monic reduced
+basis is required. The proof audit identifies coefficient normalization as the
+only adjustment between these two families.
+
+### Reusable lesson
+
+When a normal-form API fixes canonical coefficients, separate combinatorial
+interreduction from unit normalization instead of hiding the scalar convention.
 
 ## Design case: Filtered straightening and independent uniqueness
 
@@ -277,8 +325,11 @@ APIs appear necessary for the final theorem.
 
 The core path is the generic-minor/determinantal-ideal foundation, followed by
 `Bitableaux.lean`, `KRScorrespondence.lean`, `StraighteningLaw.lean`, and
-`Groebner.lean`. The submitted Lean sources are restricted to this transitive
-dependency closure. The external `Groebner` package enters at the final layer.
+`Groebner.lean`. `ReducedGroebner.lean` is a final refinement layer that reuses
+the Gröbner-basis theorem and adds interreduction and coefficient
+normalization. The submitted Lean sources are restricted to this transitive
+dependency closure. The external `Groebner` package enters at the final
+theorem layers.
 
 ### Downstream payoff
 

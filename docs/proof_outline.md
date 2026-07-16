@@ -1,8 +1,9 @@
 # Proof Outline
 
 The formalization follows the standard-bitableau route to the Gröbner-basis
-part of Sturmfels’s theorem. Each stage below states its mathematical role, its
-Lean representation, and why the next stage needs it.
+part of Sturmfels’s theorem, then makes the coefficient normalization needed
+for the library's reducedness definition explicit. Each stage below states its
+mathematical role, its Lean representation, and why the next stage needs it.
 
 ## 1. Generic minors and generated ideals
 
@@ -125,4 +126,42 @@ function from Step 7.
 `GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder` states the result for
 an arbitrary anti-diagonal term order;
 `GrPlusOne_isGroebnerBasis_antiDiagonalLex` is its concrete specialization.
-Neither theorem asserts reducedness.
+These theorems concern the original minors and supply the Gröbner-basis input
+for the coefficient-normalized refinement.
+
+## 9. Coefficient normalization and reducedness
+
+The original minors already satisfy the nondivisibility half of reducedness.
+More precisely,
+`GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder` proves that every minor
+is an `IsRemainder` of itself with respect to all the other minors. The key
+rigidity statement is
+`antidiagExp_le_permExp_imp_minorIndex_eq`: if the anti-diagonal exponent of
+one size-`r + 1` minor divides a permutation-term exponent of another, then
+their row and column ranges, and hence their `MinorIndex` values, are equal.
+Thus the leading exponent of one minor cannot divide any supported term of a
+different minor.
+
+Interreduction alone does not make the original family reduced under the
+library's definition, because a reverse-permutation leading coefficient may
+be `-1` rather than literally `1`. `normalizedGenericMinor` multiplies each
+minor by the inverse of this common nonzero coefficient, and
+`normalizedGrPlusOne` collects the normalized minors. This unit rescaling
+preserves support and leading exponents, as recorded by
+`support_normalizedGenericMinor`, and generates the same ideal `Jr`.
+`leadingCoeff_normalizedGenericMinor` records that the new leading coefficient
+is `1`. Unit rescaling transfers the Gröbner-basis theorem through
+`MonomialOrder.IsGroebnerBasis.smul`.
+
+`normalizedGrPlusOne_isReduced_of_isAntidiagonalTermOrder` combines monicity
+with the same rigidity argument to prove the library's `.IsReduced` condition.
+`normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder`
+packages the Gröbner-basis proof and reducedness existentially, while
+`theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder`
+is the paper-number alias. The `antiDiagonalLex` corollaries specialize this
+refinement to the concrete order;
+`normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex` provides the
+concrete existential wrapper. The remaining mismatch with the source statement
+is geometric rather than Gröbner-theoretic: Lean's `Jr` is defined as the
+minor-generated ideal, without formalizing its identification with the
+rank-variety vanishing ideal.

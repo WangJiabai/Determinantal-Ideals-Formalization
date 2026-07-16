@@ -35,7 +35,42 @@ noncomputable def normalizedGrPlusOne
   Set.range fun I : MinorIndex m n (r + 1) =>
     normalizedGenericMinor k I
 
-private lemma minorIndex_eq_of_antidiagExp_le_permExp
+/-- Normalizing a generic minor does not change its monomial support. -/
+theorem support_normalizedGenericMinor
+    (k : Type*) [Field k]
+    {m n t : ℕ}
+    (I : MinorIndex m n t) :
+    (normalizedGenericMinor k I).support = (genericMinor k I).support := by
+  classical
+  rw [normalizedGenericMinor, MvPolynomial.support_smul_eq
+    (inv_ne_zero (permCoeff_ne_zero k
+      (Fin.revPerm : Equiv.Perm (Fin t))))]
+
+/--
+For an anti-diagonal term order, a normalized generic minor has leading
+coefficient one.
+-/
+theorem leadingCoeff_normalizedGenericMinor
+    (k : Type*) [Field k]
+    {m n t : ℕ}
+    (ord : MonomialOrder (Fin m × Fin n))
+    (hanti : IsAntidiagonalTermOrder ord)
+    (I : MinorIndex m n t) :
+    ord.leadingCoeff (normalizedGenericMinor k I) = 1 := by
+  classical
+  dsimp only [normalizedGenericMinor]
+  rw [MvPolynomial.smul_eq_C_mul,
+    ord.leadingCoeff_mul',
+    ord.leadingCoeff_C,
+    leadingCoeff_minor_eq_revPermCoeff k ord hanti I,
+    inv_mul_cancel₀ (permCoeff_ne_zero k
+      (Fin.revPerm : Equiv.Perm (Fin t)))]
+
+/--
+If the anti-diagonal exponent of one minor divides a permutation exponent of
+another minor of the same size, then the two minor indices are equal.
+-/
+lemma antidiagExp_le_permExp_imp_minorIndex_eq
     {m n t : ℕ}
     (I J : MinorIndex m n t) (σ : Equiv.Perm (Fin t))
     (h : antidiagExp J ≤ permExp I σ) :
@@ -117,7 +152,7 @@ theorem GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
   rcases (genericMinor_mem_support_iff_exists_permExp k I a).1 ha with
     ⟨σ, rfl⟩
   rw [degree_minor_eq_antidiagExp k ord hanti J] at hle
-  have hIJ := minorIndex_eq_of_antidiagExp_le_permExp I J σ hle
+  have hIJ := antidiagExp_le_permExp_imp_minorIndex_eq I J σ hle
   subst J
   exact hne rfl
 
@@ -168,27 +203,20 @@ theorem normalizedGrPlusOne_isReduced_of_isAntidiagonalTermOrder
   constructor
   · intro p hp
     rcases hp with ⟨I, rfl⟩
-    dsimp only [normalizedGenericMinor]
-    rw [MonomialOrder.Monic, MvPolynomial.smul_eq_C_mul,
-      ord.leadingCoeff_mul',
-      ord.leadingCoeff_C,
-      leadingCoeff_minor_eq_revPermCoeff k ord hanti I,
-      inv_mul_cancel₀ (permCoeff_ne_zero k
-        (Fin.revPerm : Equiv.Perm (Fin (r + 1))))]
+    simpa only [MonomialOrder.Monic] using
+      leadingCoeff_normalizedGenericMinor k ord hanti I
   · intro p hp a ha q hq hpq hle
     rcases hp with ⟨I, rfl⟩
     rcases hq with ⟨J, rfl⟩
-    dsimp only [normalizedGenericMinor] at ha hle hpq
-    rw [MvPolynomial.support_smul_eq
-      (inv_ne_zero (permCoeff_ne_zero k
-        (Fin.revPerm : Equiv.Perm (Fin (r + 1)))))] at ha
+    rw [support_normalizedGenericMinor k I] at ha
+    dsimp only [normalizedGenericMinor] at hle hpq
     rcases (genericMinor_mem_support_iff_exists_permExp k I a).1 ha with
       ⟨σ, rfl⟩
     rw [ord.degree_smul_of_mem_nonZeroDivisors
         (by simp [permCoeff_ne_zero k
           (Fin.revPerm : Equiv.Perm (Fin (r + 1)))]),
       degree_minor_eq_antidiagExp k ord hanti J] at hle
-    have hIJ := minorIndex_eq_of_antidiagExp_le_permExp I J σ hle
+    have hIJ := antidiagExp_le_permExp_imp_minorIndex_eq I J σ hle
     subst J
     exact hpq rfl
 
@@ -239,6 +267,22 @@ theorem normalizedGrPlusOne_isReduced_antiDiagonalLex
       (r := r) k (antiDiagonalLex m n)
       (antiDiagonalLex_isAntidiagonal m n)).IsReduced := by
   exact normalizedGrPlusOne_isReduced_of_isAntidiagonalTermOrder
+    (r := r) k (antiDiagonalLex m n)
+      (antiDiagonalLex_isAntidiagonal m n)
+
+/--
+The coefficient-normalized minors form a reduced Gröbner basis for the
+concrete anti-diagonal lexicographic order.
+-/
+theorem normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex
+    {m n r : ℕ}
+    (k : Type*) [Field k] :
+    ∃ hGB :
+        (antiDiagonalLex m n).IsGroebnerBasis
+          (normalizedGrPlusOne m n r k)
+          (Jr m n r k),
+      hGB.IsReduced :=
+  normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
     (r := r) k (antiDiagonalLex m n)
       (antiDiagonalLex_isAntidiagonal m n)
 
