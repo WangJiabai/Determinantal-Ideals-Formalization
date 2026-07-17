@@ -1,69 +1,78 @@
 # AFM Submission and Artifact Release Checklist
 
-This checklist separates repository checks that can be automated from
-manuscript and submission checks that require an author. Passing the artifact
-audit does not by itself certify the manuscript for submission.
+This checklist distinguishes automated repository checks from manuscript and
+submission checks that require review by the author. Passing the artifact audit
+alone does not certify the manuscript as ready for submission.
 
 ## Repository readiness
 
-1. Confirm that the repository is publicly accessible, carries an open-source
+1. Verify that the repository is publicly accessible, carries an open-source
    license, and contains every source file needed to check the formal results.
-2. Ensure the working tree is clean.
+2. Verify that the working tree is clean.
 3. Run `lake exe cache get`.
 4. Run `bash scripts/check_artifact.sh`.
 5. Commit the final source, documentation, and tooling changes.
-6. Wait for green CI on that exact commit.
-7. Verify the committed revision from a fresh checkout or release tarball.
+6. Verify that CI passes on that exact commit.
+7. Verify the exact committed revision from a fresh clone: check out the
+   intended immutable commit or tag, run `lake exe cache get`, and run
+   `bash scripts/check_artifact.sh`.
 
 ## Manuscript-to-artifact correspondence
 
-8. Check that the manuscript explains how each main informal result maps to a
-   formal declaration, including all representation choices, stronger or
-   weaker assumptions, totalized edge cases, and unformalized geometry. Use
+8. Verify that the manuscript maps each main informal result to a formal
+   declaration and explains every representation choice, each stronger or
+   weaker aspect, all totalized edge cases, and the unformalized geometry. Use
    [`statement_correspondence.md`](statement_correspondence.md) as the audit
    source.
-9. Run
+9. On a clean working tree, run
    `python3 scripts/artifact_metadata.py --require-clean --format markdown`
-   and copy the exact Lean, Mathlib, `groebner`, and commit metadata into the
-   manuscript or artifact appendix.
-10. Run `python3 scripts/paper_links.py --format markdown` and give every main
-    result a fixed link to the cited revision. Do not use links to the changing
-    `main` branch as final manuscript evidence.
-11. Confirm that code excerpts in the manuscript are limited to places where
+   and record the exact Lean toolchain and version, the requested revisions and
+   resolved commits for Mathlib and `groebner_proj` (the `groebner` Lake
+   dependency), and the artifact commit in the manuscript or artifact
+   appendix.
+10. On the same clean working tree, run
+    `python3 scripts/paper_links.py --format markdown` and assign every main
+    result a fixed link to the cited revision. Do not use the mutable `main`
+    branch as final manuscript evidence.
+11. Verify that code excerpts in the manuscript are limited to places where
     they materially complement the mathematical exposition.
 
 ## Submission and archival steps
 
-12. Deposit the manuscript PDF in an AFM-supported open archive (HAL, arXiv,
+12. Deposit the manuscript PDF in an open archive accepted by AFM (HAL, arXiv,
     or Zenodo) before submitting it through Episciences; do not place the PDF
     inside a zip archive for submission.
-13. Create an annotated artifact tag, for example `afm-artifact-v1`; the final
-    name is chosen by the authors.
-14. Create a GitHub release from that exact tag and archive the code release
-    with Zenodo, Software Heritage, or another long-term service.
-15. Add the verified DOI, archive identifier, and immutable revision to the
-    manuscript and repository metadata. Do not add guessed identifiers.
-16. Confirm that the manuscript declares all funding sources and any potential
+13. Create an annotated artifact tag, for example
+    `afm-artifact-v1.0.0`; the author chooses the final tag name.
+14. Create a GitHub release from exactly that annotated tag and archive the
+    code release with Zenodo, Software Heritage, or another long-term service.
+    Verify that the GitHub release and every archival record resolve to the
+    same tag and commit. Standard source archives omit `.git`, so run the full
+    audit from the fresh clone in Step 7 rather than from an unpacked archive.
+15. Record any assigned DOI or archive identifier, together with the immutable
+    artifact revision, in the manuscript and repository metadata. Do not add
+    guessed identifiers.
+16. Verify that the manuscript declares all funding sources and any potential
     conflicts of interest, cites every publication used, and is not
     simultaneously submitted to another journal.
 
 ## After acceptance
 
-17. Upload the accepted AFM-formatted version as a new version of the original
-    open-archive record.
-18. Provide AFM with a permanent Software Heritage identifier (SWHID) for the
-    code repository when available, and record it in the manuscript and
+17. Upload the accepted AFM-formatted manuscript as a new version of the
+    original open-archive record.
+18. If available, provide AFM with a permanent Software Heritage identifier
+    (SWHID) for the code repository and record it in the manuscript and
     repository metadata.
 
-The journal requirements referenced by this checklist are the official
+The AFM-specific portions of this checklist refer to the official
 [AFM instructions for authors](https://afm.episciences.org/page/instructions-for-authors),
 [aims and scope](https://afm.episciences.org/page/aims-and-scope), and
 [publishing policies](https://afm.episciences.org/page/publishing-policies).
 
 The workflow
 [`create-release.yml`](../.github/workflows/create-release.yml) is a Lean
-toolchain/version release helper triggered by changes to `lean-toolchain`. It
-is not the AFM manuscript-artifact freezing procedure.
+toolchain release helper triggered when `lean-toolchain` changes on `main` or
+`master`. It is not the AFM manuscript-artifact freezing procedure.
 
-After publication, authors may add verified article metadata to
+After publication, the author may add verified article metadata to
 [`CITATION.cff`](../CITATION.cff); do not add guessed DOI, venue, or issue data.
