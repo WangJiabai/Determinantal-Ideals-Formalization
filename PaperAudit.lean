@@ -3,11 +3,12 @@ import MyProject.Determinantalideals.ReducedGroebner
 /-!
 # Paper-facing declaration audit
 
-This file checks the names and displayed types used by the AFM manuscript. It
-does not add mathematical API; compilation fails if a referenced declaration
-is renamed or if any checked signature drifts.
+This file locks the principal declarations and exact theorem signatures used by
+the AFM manuscript. It does not add mathematical API; compilation fails if a
+referenced declaration is renamed or if any checked signature drifts.
 -/
 
+-- Determinantal ideals, minors, and anti-diagonal orders.
 #check Determinantal.MinorIndex
 #check Determinantal.genericMinor
 #check Determinantal.Jr
@@ -17,6 +18,8 @@ is renamed or if any checked signature drifts.
 #check Determinantal.degree_minor_eq_antidiagExp
 #check Determinantal.leadingCoeff_minor_eq_revPermCoeff
 #check Determinantal.leadingTerm_minor_eq_antidiagMonomial_coeff
+
+-- KRS and straightening interfaces.
 #check Determinantal.exists_krsEquiv
 #check Determinantal.KRS.krsEquiv
 #check Determinantal.exists_krsEquiv_of_degree
@@ -24,17 +27,24 @@ is renamed or if any checked signature drifts.
 #check Determinantal.straightening_law_exists_filtered
 #check Determinantal.straightening_law
 #check Determinantal.exists_standardBitableau_basis_determinantalRing
+
+-- Hilbert-function and width interfaces.
 #check Determinantal.RrDegree
 #check Determinantal.initGrPlusOne
 #check Determinantal.hilbertFunction_detRing_eq_card_monomialExp_width_le
+#check Determinantal.monomial_mem_initGrPlusOne_iff_width
 #check Determinantal.lemma6_monomial_mem_initGrPlusOne_iff_width
-#check Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+
+-- Raw Gröbner-basis interfaces.
 #check Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
 #check Determinantal.GrPlusOne_isGroebnerBasis_antiDiagonalLex
+#check Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+
+-- Interreduction and coefficient-normalized reduced refinement.
 #check Determinantal.normalizedGenericMinor
-#check Determinantal.normalizedGrPlusOne
 #check Determinantal.support_normalizedGenericMinor
 #check Determinantal.leadingCoeff_normalizedGenericMinor
+#check Determinantal.normalizedGrPlusOne
 #check Determinantal.antidiagExp_le_permExp_imp_minorIndex_eq
 #check Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
 #check Determinantal.normalizedGrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
@@ -44,6 +54,7 @@ is renamed or if any checked signature drifts.
 #check Determinantal.normalizedGrPlusOne_isReduced_antiDiagonalLex
 #check Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_antiDiagonalLex
 
+-- Full manuscript-facing signature: KRS equivalence.
 example (m n : ℕ) :
     ∃ κ :
       ((Fin m × Fin n) →₀ ℕ) ≃
@@ -57,6 +68,7 @@ example (m n : ℕ) :
           Determinantal.YoungBitableau.length ((κ E).1)) := by
   exact Determinantal.exists_krsEquiv m n
 
+-- Full manuscript-facing signature: filtered straightening.
 example {m n : ℕ}
     (k : Type*) [Field k]
     (B : Determinantal.YoungBitableau m n) :
@@ -75,6 +87,7 @@ example {m n : ℕ}
           Determinantal.YoungBitableau.length S.1) := by
   exact Determinantal.straightening_law_exists_filtered k B
 
+-- Full manuscript-facing signature: raw abstract Gröbner basis.
 example {m n r : ℕ}
     (k : Type*) [Field k]
     (ord : MonomialOrder (Fin m × Fin n))
@@ -83,9 +96,10 @@ example {m n r : ℕ}
       (Determinantal.GrPlusOne m n r k)
       (Determinantal.Jr m n r k) := by
   exact
-    Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
+    Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder
       k ord hanti
 
+-- Full manuscript-facing signature: Hilbert function.
 example {m n : ℕ}
     (k : Type*) [Field k]
     (r d : ℕ) :
@@ -97,6 +111,7 @@ example {m n : ℕ}
     Determinantal.hilbertFunction_detRing_eq_card_monomialExp_width_le
       k r d
 
+-- Full manuscript-facing signature: interreduction of the original minors.
 example {m n r : ℕ}
     (k : Type*) [Field k]
     (ord : MonomialOrder (Fin m × Fin n))
@@ -108,6 +123,7 @@ example {m n r : ℕ}
     Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder
       k ord hanti
 
+-- Full manuscript-facing signature: normalized reduced Gröbner basis.
 example {m n r : ℕ}
     (k : Type*) [Field k]
     (ord : MonomialOrder (Fin m × Fin n))
@@ -121,6 +137,7 @@ example {m n r : ℕ}
     Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder
       k ord hanti
 
+-- Concrete anti-diagonal-order corollaries used by reviewers.
 example {m n r : ℕ}
     (k : Type*) [Field k] :
     (Determinantal.normalizedGrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder

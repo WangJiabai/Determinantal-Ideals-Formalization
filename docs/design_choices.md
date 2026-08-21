@@ -418,12 +418,16 @@ compile time. `Audit.lean` reports transitive axiom dependencies, and
 `scripts/check_axioms.py` enforces their allowlist.
 `scripts/artifact_metadata.py` collects revision and package metadata, while
 `scripts/paper_links.py` locates declarations at the current commit. CI runs
-the non-publishing checks.
+the non-publishing checks. `scripts/check_paper_contract.py` verifies that the
+principal import and core declaration lists remain synchronized across these
+interfaces and the scope documentation. `Examples/PaperExamples.lean` checks
+two minimal reviewer-facing uses of the concrete public API.
 
 ### Downstream payoff
 
-The declaration map, artifact metadata, and fixed permalinks can therefore be
-generated or checked mechanically from the same revision.
+The declaration map, artifact metadata, fixed permalinks, and reviewer usage
+examples can therefore be generated or checked mechanically from the same
+revision.
 
 ### Reusable lesson
 

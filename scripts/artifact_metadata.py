@@ -12,6 +12,55 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PRINCIPAL_IMPORT = "MyProject.Determinantalideals.ReducedGroebner"
+MAIN_RAW_GROEBNER_THEOREM = (
+    "Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
+)
+MAIN_INTERREDUCTION_THEOREM = (
+    "Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder"
+)
+MAIN_NORMALIZED_REDUCED_THEOREM = (
+    "Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
+)
+CONCRETE_ORDER = "Determinantal.antiDiagonalLex"
+PAPER_METADATA = {
+    "principal_import": PRINCIPAL_IMPORT,
+    "groebner_basis_proof_module": "MyProject.Determinantalideals.Groebner",
+    "reduced_refinement_entry_module": PRINCIPAL_IMPORT,
+    "main_raw_groebner_theorem": MAIN_RAW_GROEBNER_THEOREM,
+    "main_interreduction_theorem": MAIN_INTERREDUCTION_THEOREM,
+    "main_normalized_reduced_theorem": MAIN_NORMALIZED_REDUCED_THEOREM,
+    "concrete_order": CONCRETE_ORDER,
+    "raw_groebner_paper_number_alias": (
+        "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
+    ),
+    "normalized_reduced_paper_number_alias": (
+        "Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
+    ),
+    "artifact_release_status": "frozen",
+    "artifact_tag": "afm-artifact-v1.0.0",
+}
+REQUIRED_METADATA_KEYS = frozenset(
+    {
+        "principal_import",
+        "main_raw_groebner_theorem",
+        "main_interreduction_theorem",
+        "main_normalized_reduced_theorem",
+        "concrete_order",
+        "lean_toolchain",
+        "lean_version",
+        "requested_mathlib_revision",
+        "resolved_mathlib_commit",
+        "requested_groebner_revision",
+        "resolved_groebner_commit",
+        "license",
+        "head_sha",
+        "working_tree",
+        "ci_workflow_path",
+        "artifact_release_status",
+        "artifact_tag",
+    }
+)
 
 
 def run(*args: str) -> str:
@@ -62,7 +111,7 @@ def collect(require_clean: bool = False) -> dict[str, object]:
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8", errors="replace")
     if "Apache License" not in license_text or "Version 2.0" not in license_text:
         raise RuntimeError("LICENSE is not recognizable as Apache-2.0")
-    return {
+    metadata = {
         "repository_remote_url": run("git", "remote", "get-url", "origin"),
         "current_branch": branch,
         "head_sha": run("git", "rev-parse", "HEAD"),
@@ -77,25 +126,15 @@ def collect(require_clean: bool = False) -> dict[str, object]:
         "requested_groebner_revision": groebner_req.get("rev"),
         "resolved_groebner_commit": groebner.get("rev"),
         "license": "Apache-2.0",
-        "principal_import": "MyProject.Determinantalideals.ReducedGroebner",
-        "groebner_basis_proof_module": "MyProject.Determinantalideals.Groebner",
-        "reduced_refinement_entry_module": (
-            "MyProject.Determinantalideals.ReducedGroebner"
-        ),
-        "unnormalized_groebner_basis_theorem": (
-            "Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
-        "normalized_reduced_groebner_basis_theorem": (
-            "Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
-        "unnormalized_groebner_basis_paper_alias": (
-            "Determinantal.theorem1_GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
-        "normalized_reduced_groebner_basis_paper_alias": (
-            "Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
-        ),
+        **PAPER_METADATA,
         "ci_workflow_path": ".github/workflows/lean.yml",
     }
+    missing = REQUIRED_METADATA_KEYS - metadata.keys()
+    if missing:
+        raise RuntimeError(
+            "internal metadata schema is missing keys: " + ", ".join(sorted(missing))
+        )
+    return metadata
 
 
 def markdown(metadata: dict[str, object]) -> str:
@@ -117,18 +156,18 @@ def markdown(metadata: dict[str, object]) -> str:
         "principal_import": "Principal import",
         "groebner_basis_proof_module": "Groebner-basis proof module",
         "reduced_refinement_entry_module": "Reduced-refinement entry module",
-        "unnormalized_groebner_basis_theorem": (
-            "Unnormalized Groebner-basis theorem"
+        "main_raw_groebner_theorem": "Main raw Groebner-basis theorem",
+        "main_interreduction_theorem": "Main interreduction theorem",
+        "main_normalized_reduced_theorem": (
+            "Main normalized reduced Groebner-basis theorem"
         ),
-        "normalized_reduced_groebner_basis_theorem": (
-            "Normalized reduced Groebner-basis theorem"
+        "concrete_order": "Verified concrete order",
+        "raw_groebner_paper_number_alias": "Raw Groebner paper-number alias",
+        "normalized_reduced_paper_number_alias": (
+            "Normalized reduced paper-number alias"
         ),
-        "unnormalized_groebner_basis_paper_alias": (
-            "Unnormalized Groebner-basis paper alias"
-        ),
-        "normalized_reduced_groebner_basis_paper_alias": (
-            "Normalized reduced Groebner-basis paper alias"
-        ),
+        "artifact_release_status": "Artifact release status",
+        "artifact_tag": "Artifact tag",
         "ci_workflow_path": "CI workflow",
     }
     rows = ["| Artifact field | Value |", "| --- | --- |"]

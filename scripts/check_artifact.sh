@@ -32,8 +32,14 @@ fi
 echo "==> Compiling paper-facing signatures"
 lake env lean PaperAudit.lean
 
+echo "==> Compiling reviewer-facing examples"
+lake env lean Examples/PaperExamples.lean
+
 echo "==> Enforcing the axiom allowlist"
 "$python_bin" scripts/check_axioms.py
+
+echo "==> Checking the manuscript-artifact contract"
+"$python_bin" scripts/check_paper_contract.py
 
 echo "==> Locating paper-facing declarations"
 "$python_bin" scripts/paper_links.py --check-only

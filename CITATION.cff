@@ -1,10 +1,24 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite the archived artifact revision identified by the authors."
+message: "If you use this software, please cite version 1.0.0 at tag afm-artifact-v1.0.0."
 title: "Determinantal Ideals in Lean 4"
 type: software
+abstract: >-
+  A Lean 4 formalization of the Gröbner-basis component of Sturmfels's theorem
+  for determinantal ideals, including KRS and straightening-law infrastructure,
+  a total-degree Hilbert-function argument, interreduction of the original
+  minors, and a coefficient-normalized reduced Gröbner-basis refinement.
 authors:
   - given-names: Jiabai
     family-names: Wang
 repository-code: "https://github.com/WangJiabai/Determinantal-Ideals-Formalization"
 license: Apache-2.0
 version: 1.0.0
+date-released: 2026-08-21
+keywords:
+  - "Lean 4"
+  - "formalized mathematics"
+  - "Gröbner basis"
+  - "determinantal ideal"
+  - "standard monomial theory"
+  - "KRS correspondence"
+  - "straightening law"

@@ -10,7 +10,9 @@ alone does not certify the manuscript as ready for submission.
    license, and contains every source file needed to check the formal results.
 2. Verify that the working tree is clean.
 3. Run `lake exe cache get`.
-4. Run `bash scripts/check_artifact.sh`.
+4. Run `bash scripts/check_artifact.sh`. Confirm that it checks the
+   paper-facing contract and compiles `Examples/PaperExamples.lean` in addition
+   to the source, interface, axiom, link-location, and metadata checks.
 5. Commit the final source, documentation, and tooling changes.
 6. Verify that CI passes on that exact commit.
 7. Verify the exact committed revision from a fresh clone: check out the
@@ -42,8 +44,8 @@ alone does not certify the manuscript as ready for submission.
 12. Deposit the manuscript PDF in an open archive accepted by AFM (HAL, arXiv,
     or Zenodo) before submitting it through Episciences; do not place the PDF
     inside a zip archive for submission.
-13. Create an annotated artifact tag, for example
-    `afm-artifact-v1.0.0`; the author chooses the final tag name.
+13. Create the annotated artifact tag `afm-artifact-v1.0.0` for version
+    `1.0.0`.
 14. Create a GitHub release from exactly that annotated tag and archive the
     code release with Zenodo, Software Heritage, or another long-term service.
     Verify that the GitHub release and every archival record resolve to the
