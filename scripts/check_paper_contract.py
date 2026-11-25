@@ -140,6 +140,11 @@ def main() -> int:
         if not missing and not unexpected:
             errors.append("paper_links.py declarations are not in manuscript proof-chain order")
 
+    try:
+        checked_links, _ = paper_links.check_source_links()
+    except RuntimeError as error:
+        errors.append(str(error))
+
     if not REQUIRED_METADATA_KEYS.issubset(artifact_metadata.REQUIRED_METADATA_KEYS):
         missing = REQUIRED_METADATA_KEYS - artifact_metadata.REQUIRED_METADATA_KEYS
         errors.append(
@@ -190,7 +195,8 @@ def main() -> int:
 
     print(
         "Paper contract checks passed: six exact interfaces, "
-        "24 fixed-link declarations, metadata, audits, and scope claims agree."
+        f"24 fixed-link declarations, {checked_links} documentation source links, "
+        "metadata, audits, and scope claims agree."
     )
     return 0
 
