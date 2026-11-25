@@ -12,7 +12,7 @@ generic `m × n` matrix form a Gröbner basis of the ideal they generate in
 | Result | Lean declaration |
 | --- | --- |
 | The leading monomials of the `(r + 1) × (r + 1)` minors generate the initial ideal | [`Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/Groebner.lean#L1204) |
-| The original minors are interreduced | [`Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/ReducedGroebner.lean) |
+| The original minors are interreduced | [`Determinantal.GrPlusOne_isInterreduced_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/ReducedGroebner.lean#L137) |
 | The normalized minors form a reduced Gröbner basis of the same ideal | [`Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/ReducedGroebner.lean#L227) |
 
 Each normalized generator is scaled by the inverse of its leading coefficient
@@ -45,6 +45,15 @@ results relate to the classical statements.
 
 The [proof outline](docs/proof_outline.md) and [design notes](docs/design_choices.md)
 give the declaration-level proof dependencies and representation choices.
+
+## Mathlib Integration
+
+The foundational API was merged upstream through [Mathlib PR #40266](https://github.com/leanprover-community/mathlib4/pull/40266).
+It includes `Matrix.mvPolynomialMinor`, `MvPolynomial.determinantalMinors`, and
+`MvPolynomial.determinantalIdeal`, with membership, coefficient-map, and
+finite-generation lemmas. This repository’s pinned build uses its local
+foundational definitions and provides the KRS correspondence, straightening
+law, Hilbert-function argument, and Gröbner-basis theorems.
 
 ## Repository layout
 

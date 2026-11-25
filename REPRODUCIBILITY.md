@@ -46,9 +46,9 @@ to their definitions in a Lean editor.
 
 | Stage | Declaration and source |
 | --- | --- |
-| KRS equivalence | [`Determinantal.KRS.krsEquiv`](MyProject/Determinantalideals/KRScorrespondence.lean) |
-| Straightening law | [`Determinantal.straightening_law`](MyProject/Determinantalideals/StraighteningLaw.lean) |
-| Standard-bitableau quotient basis | [`Determinantal.exists_standardBitableau_basis_determinantalRing`](MyProject/Determinantalideals/StraighteningLaw.lean) |
+| KRS equivalence | [`Determinantal.KRS.krsEquiv`](MyProject/Determinantalideals/KRScorrespondence.lean#L10453) |
+| Straightening law | [`Determinantal.straightening_law`](MyProject/Determinantalideals/StraighteningLaw.lean#L7636) |
+| Standard-bitableau quotient basis | [`Determinantal.exists_standardBitableau_basis_determinantalRing`](MyProject/Determinantalideals/StraighteningLaw.lean#L8532) |
 | Total-degree Hilbert function | [`Determinantal.hilbertFunction_detRing_eq_card_monomialExp_width_le`](MyProject/Determinantalideals/Groebner.lean#L395) |
 | Gröbner basis of the fixed-size minors | [`Determinantal.GrPlusOne_isGroebnerBasis_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/Groebner.lean#L1204) |
 | Reduced Gröbner basis of the normalized minors | [`Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder`](MyProject/Determinantalideals/ReducedGroebner.lean#L227) |
@@ -88,8 +88,14 @@ in place of `python3` if that is the local name for Python 3.11 or later.
 | `lake env lean Audit.lean` | Prints the transitive axiom dependencies from `#print axioms` for the principal results and selected supporting declarations. |
 | `python3 scripts/check_axioms.py` | Runs the axiom report and requires a report for each configured declaration. It rejects `sorryAx` and any axiom outside the allowlist. |
 | `python3 scripts/check_paper_contract.py` | Checks consistency between the declared interfaces, audit files, metadata, declaration links, and documented scope. |
-| `python3 scripts/paper_links.py --check-only` | Checks that each listed declaration occurs exactly once in its expected source file. |
+| `python3 scripts/paper_links.py --check-only` | Locates the listed declarations and checks Lean source links in this guide, the README, and the project notes. |
 | `python3 scripts/artifact_metadata.py --format markdown` | Reports the current commit, working-tree status, toolchain, dependency revisions, and declaration names. |
+
+The link check covers inline Markdown links. It checks file paths and line
+bounds, and checks the starting line against the declaration when the link
+label names a declaration in the audit list. Other labels receive path and
+line checks only. Historical GitHub links are checked against locally
+available Git revisions.
 
 For the two Gröbner-basis theorems, the expected dependencies are
 `Classical.choice`, `propext`, and `Quot.sound`. These are standard
