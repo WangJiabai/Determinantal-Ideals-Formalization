@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the manuscript-facing artifact interfaces remain synchronized."""
+"""Check that the manuscript-facing interfaces remain synchronized."""
 
 from __future__ import annotations
 
@@ -62,8 +62,6 @@ EXPECTED_METADATA = {
         "Determinantal.normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
     ),
     "concrete_order": "Determinantal.antiDiagonalLex",
-    "artifact_release_status": "frozen",
-    "artifact_tag": "afm-artifact-v1.0.0",
 }
 REQUIRED_METADATA_KEYS = frozenset(
     {
@@ -82,8 +80,7 @@ REQUIRED_METADATA_KEYS = frozenset(
         "head_sha",
         "working_tree",
         "ci_workflow_path",
-        "artifact_release_status",
-        "artifact_tag",
+        "package_version",
     }
 )
 OBSOLETE_PHRASES = (
@@ -157,7 +154,7 @@ def main() -> int:
 
     prose_paths = (
         "README.md",
-        "ARTIFACT.md",
+        "REPRODUCIBILITY.md",
         "docs/statement_correspondence.md",
     )
     prose = {path: read(path) for path in prose_paths}

@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite version 1.0.0 at tag afm-artifact-v1.0.0."
+message: "If you use this software, please cite this repository and include the full Git commit SHA used."
 title: "Determinantal Ideals in Lean 4"
 type: software
 abstract: >-
@@ -13,7 +13,6 @@ authors:
 repository-code: "https://github.com/WangJiabai/Determinantal-Ideals-Formalization"
 license: Apache-2.0
 version: 1.0.0
-date-released: 2026-08-21
 keywords:
   - "Lean 4"
   - "formalized mathematics"

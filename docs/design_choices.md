@@ -392,13 +392,12 @@ import migration or public API breakage.
 Separate namespace migrations from factual documentation corrections so that
 each change has a clear, reviewable compatibility boundary.
 
-## Design case: Paper-facing artifact synchronization
+## Design case: Reproducible paper-facing declarations
 
 ### Mathematical requirement
 
-The Lean declarations and signatures cited in the manuscript, together with
-the artifact commit, dependency versions, and source links, must agree with
-the frozen artifact revision.
+The Lean declarations and signatures cited in the manuscript, dependency
+versions, and source links must agree with the cited commit.
 
 ### Direct alternative
 
@@ -425,7 +424,7 @@ two minimal reviewer-facing uses of the concrete public API.
 
 ### Downstream payoff
 
-The declaration map, artifact metadata, fixed permalinks, and reviewer usage
+The declaration map, revision metadata, fixed permalinks, and reviewer usage
 examples can therefore be generated or checked mechanically from the same
 revision.
 
@@ -434,5 +433,4 @@ revision.
 Treat the manuscript-facing interface as an audited API rather than a manually
 maintained theorem list. These tools check declaration names, signatures, and
 axiom dependencies, and they generate revision metadata and fixed source links
-from the current revision. They support artifact synchronization but do not
-validate the manuscript’s mathematical prose.
+from the current revision.

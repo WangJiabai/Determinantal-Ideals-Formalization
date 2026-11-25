@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate revision and dependency metadata for the paper artifact."""
+"""Generate revision and dependency metadata for reproduction."""
 
 from __future__ import annotations
 
@@ -37,8 +37,6 @@ PAPER_METADATA = {
     "normalized_reduced_paper_number_alias": (
         "Determinantal.theorem1_normalizedGrPlusOne_isReducedGroebnerBasis_of_isAntidiagonalTermOrder"
     ),
-    "artifact_release_status": "frozen",
-    "artifact_tag": "afm-artifact-v1.0.0",
 }
 REQUIRED_METADATA_KEYS = frozenset(
     {
@@ -57,8 +55,7 @@ REQUIRED_METADATA_KEYS = frozenset(
         "head_sha",
         "working_tree",
         "ci_workflow_path",
-        "artifact_release_status",
-        "artifact_tag",
+        "package_version",
     }
 )
 
@@ -166,11 +163,9 @@ def markdown(metadata: dict[str, object]) -> str:
         "normalized_reduced_paper_number_alias": (
             "Normalized reduced paper-number alias"
         ),
-        "artifact_release_status": "Artifact release status",
-        "artifact_tag": "Artifact tag",
         "ci_workflow_path": "CI workflow",
     }
-    rows = ["| Artifact field | Value |", "| --- | --- |"]
+    rows = ["| Metadata field | Value |", "| --- | --- |"]
     for key, label in labels.items():
         value = str(metadata.get(key, "")).replace("|", "\\|").replace("\n", "<br>")
         rows.append(f"| {label} | `{value}` |")

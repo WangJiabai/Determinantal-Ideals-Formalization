@@ -3,9 +3,9 @@ import MyProject.Determinantalideals.ReducedGroebner
 /-!
 # Paper-facing declaration audit
 
-This file locks the principal declarations and exact theorem signatures used by
-the AFM manuscript. It does not add mathematical API; compilation fails if a
-referenced declaration is renamed or if any checked signature drifts.
+This file checks the principal declarations and selected exact theorem
+signatures. Compilation fails if a referenced declaration is renamed or if a
+checked signature changes.
 -/
 
 -- Determinantal ideals, minors, and anti-diagonal orders.
